@@ -20,6 +20,34 @@ Problem definitions now live in the separate [scb-problems repository](https://g
 > [!NOTE]
 > This is an initial release. We're actively developing and welcome feedback via [GitHub Issues](https://github.com/SprocketLab/slop-code-bench/issues).
 
+## Repository layout
+
+- `src/slop_code/` contains the core library, including the CLI, agent
+  runners, execution environments, evaluation, metrics, and dashboard.
+- `tests/` contains the pytest suite and generally mirrors the core library.
+- `configs/` contains agent, model, provider, prompt, environment, and run
+  configuration.
+- `.agents/skills/` contains local workflows for experiment analysis and fault
+  catalog maintenance.
+- `.experiments/` contains dated experiment observations, the fault catalog,
+  and detailed Fault Category Records.
+- `docs/` contains guides for agents, evaluation, execution, metrics, commands,
+  and problem authoring.
+- `outputs/` contains benchmark run artifacts and evaluation results.
+- `assets/` contains project images and other static media.
+
+Dashboard visualization is documented with the `viz diff` command in
+[`docs/commands/viz.md`](docs/commands/viz.md).
+
+## Experiment analysis workflow
+
+Benchmark runs persist their artifacts and evaluation results under `outputs/`.
+The `experiment-observations` skill analyzes those artifacts and creates a
+dated observation record under `.experiments/`. The `fault-catalog` skill then
+reconciles supported findings with the fault catalog and detailed Fault
+Category Records. This keeps benchmark evidence, analysis, and tracked failure
+modes traceable without treating generated records as agent instructions.
+
 ## Prerequisites
 
 Before installing, ensure you have:
