@@ -194,14 +194,16 @@ class TestSaveResults:
         }
         run_spec.model_dump.return_value = {
             "seed": 42,
-            "pass_policy": "any-case",
+            "assessment_policy": "all-cases",
+            "continue_after_test_failure": False,
             "skip_evaluation": False,
             "template": "test.jinja",
             "environment": {},
             "problem": {},
         }
         run_spec.seed = 42
-        run_spec.pass_policy = PassPolicy.ANY
+        run_spec.assessment_policy = PassPolicy.ALL_CASES
+        run_spec.continue_after_test_failure = False
         run_spec.skip_evaluation = False
         run_spec.environment.get_command.return_value = "python main.py"
 
@@ -262,13 +264,15 @@ class TestSaveResults:
         run_spec.problem.model_dump.return_value = {"name": "test_problem"}
         run_spec.model_dump.return_value = {
             "seed": 42,
-            "pass_policy": "any-case",
+            "assessment_policy": "all-cases",
+            "continue_after_test_failure": False,
             "skip_evaluation": False,
             "environment": {},
             "problem": {},
         }
         run_spec.seed = 42
-        run_spec.pass_policy = PassPolicy.ANY
+        run_spec.assessment_policy = PassPolicy.ALL_CASES
+        run_spec.continue_after_test_failure = False
         run_spec.skip_evaluation = False
         run_spec.environment.get_command.return_value = "python main.py"
 

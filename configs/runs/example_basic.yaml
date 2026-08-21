@@ -7,4 +7,5 @@ model:
 
 # Optional overrides (uncomment to use)
 # thinking: medium
-# pass_policy: all-cases
+# assessment_policy: all-cases
+# continue_after_test_failure: false

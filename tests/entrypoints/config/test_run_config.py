@@ -51,7 +51,8 @@ class TestRunConfig:
         assert config.model.provider == "anthropic"
         assert config.model.name == "sonnet-4.5"
         assert config.thinking == "none"
-        assert config.pass_policy == PassPolicy.ANY
+        assert config.assessment_policy == PassPolicy.ALL_CASES
+        assert config.continue_after_test_failure is False
         assert config.save_dir == "outputs"
         assert "${model.name}" in config.save_template
         assert "${now:" in config.save_template
@@ -63,7 +64,8 @@ class TestRunConfig:
             prompt="best_practice",
             model=ModelConfig(provider="openai", name="gpt-4.1"),
             thinking="high",
-            pass_policy=PassPolicy.ALL_CASES,
+            assessment_policy=PassPolicy.ALL_CASES,
+            continue_after_test_failure=True,
             save_dir="custom",
             save_template="path",
         )
@@ -73,7 +75,8 @@ class TestRunConfig:
         assert config.model.provider == "openai"
         assert config.model.name == "gpt-4.1"
         assert config.thinking == "high"
-        assert config.pass_policy == PassPolicy.ALL_CASES
+        assert config.assessment_policy == PassPolicy.ALL_CASES
+        assert config.continue_after_test_failure is True
         assert config.save_dir == "custom"
         assert config.save_template == "path"
 
@@ -114,10 +117,10 @@ class TestRunConfig:
         with pytest.raises(ValueError):
             RunConfig(thinking="invalid_preset")
 
-    def test_valid_pass_policies(self):
+    def test_valid_assessment_policies(self):
         for policy in PassPolicy:
-            config = RunConfig(pass_policy=policy)
-            assert config.pass_policy == policy
+            config = RunConfig(assessment_policy=policy)
+            assert config.assessment_policy == policy
 
     def test_rejects_extra_fields(self):
         with pytest.raises(ValueError, match="extra"):

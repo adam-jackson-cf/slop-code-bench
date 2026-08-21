@@ -80,8 +80,8 @@ class RunConfig(BaseModel):
         prompt: Prompt template reference (bare name or path, stem only for bare names)
         model: Model configuration with provider and name
         thinking: Thinking budget as preset string or ThinkingConfig object
-        pass_policy: Policy for determining checkpoint pass/fail
-        problems: Optional list of specific problems to run
+        assessment_policy: Policy for determining checkpoint success
+        continue_after_test_failure: Whether failed assessments stop execution
         save_dir: Base directory for run outputs
         save_template: Output path template with OmegaConf interpolation support
         one_shot: Whether to run the problem as a single checkpoint with a
@@ -105,7 +105,8 @@ class RunConfig(BaseModel):
     # Thinking - either preset string or ThinkingConfig object
     thinking: ThinkingPresetType | ThinkingConfig = "none"
 
-    pass_policy: PassPolicy = PassPolicy.ANY
+    assessment_policy: PassPolicy = PassPolicy.ALL_CASES
+    continue_after_test_failure: bool = False
 
     # Optional list of specific problems to run (otherwise auto-discover)
     problems: list[str] = Field(default_factory=list)
@@ -149,8 +150,8 @@ class ResolvedRunConfig(BaseModel):
         model: Model configuration
         thinking: Resolved thinking preset (or None)
         thinking_max_tokens: Resolved max thinking tokens (or None)
-        pass_policy: Policy for checkpoint evaluation
-        problems: List of specific problems to run (empty -> auto-discover)
+        assessment_policy: Policy for determining checkpoint success
+        continue_after_test_failure: Whether failed assessments stop execution
         save_dir: Base directory for run outputs
         save_template: Resolved output path template (interpolations applied)
         output_path: Full output path (save_dir/save_template)
@@ -168,7 +169,8 @@ class ResolvedRunConfig(BaseModel):
     model: ModelConfig
     thinking: ThinkingPresetType | None
     thinking_max_tokens: int | None
-    pass_policy: PassPolicy
+    assessment_policy: PassPolicy
+    continue_after_test_failure: bool
     problems: list[str]
     save_dir: str
     save_template: str

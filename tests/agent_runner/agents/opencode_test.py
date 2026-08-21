@@ -230,6 +230,28 @@ class TestOpenCodeConfigGeneration:
         assert cfg["agent"]["build"]["reasonEffort"] == "medium"
 
 
+def test_get_docker_file_renders_configured_opencode_version():
+    config = OpenCodeAgentConfig(
+        type="opencode",
+        version="1.18.18",
+        cost_limits=AgentCostLimits(
+            step_limit=0,
+            cost_limit=100.0,
+            net_cost_limit=200.0,
+        ),
+    )
+
+    dockerfile = config.get_docker_file("base-image:latest")
+
+    assert dockerfile is not None
+    assert "FROM base-image:latest" in dockerfile
+    assert 'npm install --global "opencode-ai@1.18.18"' in dockerfile
+    assert 'test "$(opencode --version)" = "1.18.18"' in dockerfile
+    assert 'ENV NPM_CONFIG_PREFIX="$HOME/.npm-global"' in dockerfile
+    assert 'ENV PATH="$HOME/.npm-global/bin:$PATH"' in dockerfile
+    assert "@ai-sdk/openai-compatible" not in dockerfile
+
+
 @pytest.mark.parametrize("model_name", ["gpt-5.2-codex", "gpt-5.4-mini"])
 def test_from_config_with_opencode_auth_file_mounts_auth_without_base_url(
     tmp_path,
@@ -252,7 +274,7 @@ def test_from_config_with_opencode_auth_file_mounts_auth_without_base_url(
     agent = OpenCodeAgent._from_config(
         config=OpenCodeAgentConfig(
             type="opencode",
-            version="1.0.134",
+            version="1.18.18",
             cost_limits=AgentCostLimits(
                 step_limit=0,
                 cost_limit=100.0,
@@ -274,11 +296,13 @@ def test_from_config_with_opencode_auth_file_mounts_auth_without_base_url(
     mounts = session.spawn_kwargs["mounts"]
     assert isinstance(mounts, dict)
 
-    assert any(
-        isinstance(mount, dict)
-        and mount.get("bind") == f"{HOME_PATH}/.local/share/opencode/auth.json"
+    auth_mount = next(
+        mount
         for mount in mounts.values()
+        if isinstance(mount, dict)
+        and mount.get("bind") == f"{HOME_PATH}/.local/share/opencode/auth.json"
     )
+    assert auth_mount["mode"] == "ro"
     opencode_config_source = next(
         source
         for source, mount in mounts.items()
@@ -307,7 +331,7 @@ def test_run_collects_messages_and_updates_usage(make_agent):
                 "input": 10,
                 "output": 4,
                 "reasoning": 1,
-                "cache": {"read": 2, "write": 0},
+                "cache": {"read": 2, "write": 3},
             },
         },
     }
@@ -320,7 +344,7 @@ def test_run_collects_messages_and_updates_usage(make_agent):
                 "input": 5,
                 "output": 6,
                 "reasoning": 2,
-                "cache": {"read": 4, "write": 0},
+                "cache": {"read": 4, "write": 5},
             },
         },
     }
@@ -339,18 +363,19 @@ def test_run_collects_messages_and_updates_usage(make_agent):
     assert agent.usage.steps == 2
     expected_cost = first_step["part"]["cost"] + final_step["part"]["cost"]
     assert agent.usage.cost == pytest.approx(expected_cost)
-    assert (
-        agent.usage.current_tokens.input
-        == final_step["part"]["tokens"]["input"]
+    assert agent.usage.current_tokens == TokenUsage(
+        input=5,
+        output=6,
+        cache_read=4,
+        cache_write=5,
+        reasoning=2,
     )
-    assert (
-        agent.usage.current_tokens.output
-        == final_step["part"]["tokens"]["output"]
-    )
-    assert agent.usage.net_tokens.reasoning == 3
-    assert (
-        agent.usage.current_tokens.cache_read
-        == final_step["part"]["tokens"]["cache"]["read"]
+    assert agent.usage.net_tokens == TokenUsage(
+        input=15,
+        output=10,
+        cache_read=6,
+        cache_write=8,
+        reasoning=3,
     )
     assert agent.continue_on_run is False
 
@@ -367,7 +392,7 @@ def test_run_falls_back_to_pricing_when_reported_cost_is_zero(make_agent):
                 "input": 1500,
                 "output": 600,
                 "reasoning": 0,
-                "cache": {"read": 300, "write": 0},
+                "cache": {"read": 300, "write": 100},
             },
         },
     }
@@ -379,6 +404,60 @@ def test_run_falls_back_to_pricing_when_reported_cost_is_zero(make_agent):
     assert agent.usage.steps == 1
     assert agent.usage.cost == pytest.approx(expected_cost)
     assert agent.usage.cost > 0
+
+
+def test_run_falls_back_to_pricing_when_reported_cost_is_absent(make_agent):
+    agent, runtime = make_agent()
+
+    step = {
+        "type": "step_finish",
+        "part": {
+            "reason": "stop",
+            "tokens": {
+                "input": 1500,
+                "output": 600,
+                "reasoning": 200,
+                "cache": {"read": 300, "write": 100},
+            },
+        },
+    }
+    runtime.events = _runtime_events_from_stdout_chunks([json.dumps(step)])
+
+    agent.run("subscription-pricing")
+
+    expected_tokens = _token_usage_from_part(step["part"])
+    assert agent.usage.steps == 1
+    assert agent.usage.current_tokens == expected_tokens
+    assert agent.usage.net_tokens == expected_tokens
+    assert agent.usage.cost == pytest.approx(
+        agent.pricing.get_cost(expected_tokens)
+    )
+    assert agent.usage.cost > 0
+
+def test_run_uses_catalog_pricing_for_subscription_model(make_agent):
+    agent, runtime = make_agent()
+    agent.use_catalog_pricing = True
+    step = {
+        "type": "step_finish",
+        "part": {
+            "reason": "stop",
+            "cost": 99.0,
+            "tokens": {
+                "input": 1500,
+                "output": 600,
+                "reasoning": 0,
+                "cache": {"read": 300, "write": 100},
+            },
+        },
+    }
+    runtime.events = _runtime_events_from_stdout_chunks([json.dumps(step)])
+
+    agent.run("subscription-pricing")
+
+    expected_tokens = _token_usage_from_part(step["part"])
+    assert agent.usage.cost == pytest.approx(
+        agent.pricing.get_cost(expected_tokens)
+    )
 
 
 def test_build_command_matches_harbor_shape(make_agent):
@@ -744,6 +823,23 @@ def test_run_raises_on_opencode_error_event(make_agent):
 
     with pytest.raises(AgentError, match="Model not found"):
         agent.run("trigger error")
+
+def test_run_raises_on_nested_opencode_error_event(make_agent):
+    agent, runtime = make_agent()
+
+    error_message = {
+        "type": "error",
+        "error": {
+            "name": "ProviderAuthError",
+            "data": {"message": "OAuth session expired.", "ref": "request-id"},
+        },
+    }
+    runtime.events = _runtime_events_from_stdout_chunks(
+        [json.dumps(error_message)]
+    )
+
+    with pytest.raises(AgentError, match="OAuth session expired"):
+        agent.run("trigger nested error")
 
 
 def test_run_raises_when_no_step_finish_messages(make_agent):

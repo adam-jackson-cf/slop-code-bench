@@ -24,7 +24,6 @@ from slop_code.agent_runner.resume import ResumeInfo
 from slop_code.agent_runner.state import AgentStateEnum
 from slop_code.evaluation import CheckpointConfig
 from slop_code.evaluation import CorrectnessResults
-from slop_code.evaluation import PassPolicy
 from slop_code.evaluation import ProblemConfig
 from slop_code.evaluation import run_checkpoint as evaluate_checkpoint
 from slop_code.execution import EnvironmentSpec
@@ -693,9 +692,9 @@ class AgentRunner:
         if self.run_spec.skip_evaluation or self.run_spec.concurrent_evaluation:
             # No inline eval results to gate on; agent errors below still stop the run.
             did_fail_tests = False
-        if did_fail_tests and self.run_spec.pass_policy != PassPolicy.ANY_CASE:
+        if did_fail_tests and not self.run_spec.continue_after_test_failure:
             logger.info(
-                "Checkpoint failed due to solution failing tests and thus not passing pass policy"
+                "Checkpoint failed its assessment policy; stopping execution"
             )
             if self.metrics_tracker.state not in {
                 AgentStateEnum.ERROR,
@@ -803,7 +802,7 @@ class AgentRunner:
                     artifacts=artifacts_path,
                     usage=self.agent.usage,
                     had_error=had_error,
-                    pass_policy=self.run_spec.pass_policy,
+                    assessment_policy=self.run_spec.assessment_policy,
                     evaluation_result=None,
                 )
 
@@ -833,7 +832,7 @@ class AgentRunner:
                 artifacts=artifacts_path,
                 usage=self.agent.usage,
                 had_error=result.had_error,
-                pass_policy=self.run_spec.pass_policy,
+                assessment_policy=self.run_spec.assessment_policy,
                 evaluation_result=report,
             )
         except BaseException as error:  # noqa: BLE001
@@ -927,7 +926,7 @@ class AgentRunner:
             artifacts=artifacts_path,
             usage=UsageTracker.model_validate(usage_data),
             had_error=result_data.get("had_error", False),
-            pass_policy=self.run_spec.pass_policy,
+            assessment_policy=self.run_spec.assessment_policy,
             evaluation_result=evaluation_result,
         )
 
@@ -989,7 +988,7 @@ class AgentRunner:
                     artifacts=summary.artifacts,
                     usage=summary.usage,
                     had_error=summary.had_error,
-                    pass_policy=self.run_spec.pass_policy,
+                    assessment_policy=self.run_spec.assessment_policy,
                     evaluation_result=report,
                 )
             )
@@ -1085,7 +1084,8 @@ class AgentRunner:
                 "Checkpoint finished",
                 passed_policy=summary.passed_policy,
                 had_error=summary.had_error,
-                pass_policy=self.run_spec.pass_policy.value,
+                assessment_policy=self.run_spec.assessment_policy.value,
+                continue_after_test_failure=self.run_spec.continue_after_test_failure,
                 save_dir=str(checkpoint_save_dir.absolute()),
                 checkpoint_name=summary.checkpoint_name,
             )

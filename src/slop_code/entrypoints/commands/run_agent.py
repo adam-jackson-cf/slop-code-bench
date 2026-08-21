@@ -918,7 +918,8 @@ def _create_task_config(
         thinking_preset=run_cfg.thinking,
         thinking_max_tokens=run_cfg.thinking_max_tokens,
         prompt_template=run_cfg.prompt_content,
-        pass_policy=run_cfg.pass_policy,
+        assessment_policy=run_cfg.assessment_policy,
+        continue_after_test_failure=run_cfg.continue_after_test_failure,
         seed=seed,
         verbosity=verbosity,
         debug=debug,
@@ -1162,7 +1163,7 @@ def run_agent(
         slop-code run --agent claude_code --model anthropic/sonnet-4.5
 
         # Mix of flags and overrides
-        slop-code run --model anthropic/sonnet-4.5 thinking=medium pass_policy=ALL_CASES
+        slop-code run --model anthropic/sonnet-4.5 thinking=medium assessment_policy=all-cases
 
         # Resume from an existing run directory (loads saved config)
         slop-code run --resume outputs/sonnet-4/my-run/
@@ -1293,7 +1294,8 @@ def run_agent(
         prompt_path=str(run_cfg.prompt_path),
         model=f"{run_cfg.model.provider}/{run_cfg.model.name}",
         thinking=run_cfg.thinking,
-        pass_policy=run_cfg.pass_policy.value,
+        assessment_policy=run_cfg.assessment_policy.value,
+        continue_after_test_failure=run_cfg.continue_after_test_failure,
         problem_names=problem_names_resolved,
         one_shot=run_cfg.one_shot.enabled,
     )

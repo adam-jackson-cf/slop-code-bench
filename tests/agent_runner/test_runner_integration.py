@@ -211,7 +211,7 @@ def _make_run_spec(
         template="{{ spec }}",
         problem=problem,
         environment=environment,
-        pass_policy=PassPolicy.ANY,
+        assessment_policy=PassPolicy.ANY,
         skip_evaluation=False,
         verbose=False,
         compress_artifacts=compress_artifacts,

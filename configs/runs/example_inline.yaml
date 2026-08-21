@@ -17,4 +17,5 @@ model:
   name: opus-4.5
 
 thinking: high
-pass_policy: all-cases
+assessment_policy: all-cases
+continue_after_test_failure: false

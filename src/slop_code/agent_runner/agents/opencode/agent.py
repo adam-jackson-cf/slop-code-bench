@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
+from jinja2 import Template
 from pydantic import Field
 from pydantic import JsonValue
 
@@ -51,6 +52,16 @@ class OpenCodeAgentConfig(AgentConfigBase):
         description="Environment variable overrides applied to the invocation.",
     )
 
+    def get_docker_file(self, base_image: str) -> str | None:
+        """Render the Docker template with the configured OpenCode version."""
+        if self.docker_template is None:
+            return None
+        template = self.docker_template.read_text()
+        return Template(template).render(
+            base_image=base_image,
+            version=self.version,
+        )
+
 
 class OpenCodeAgent(Agent):
     def __init__(  # noqa: FBT001
@@ -67,6 +78,8 @@ class OpenCodeAgent(Agent):
         opencode_config: dict[str, Any],
         env: dict[str, str],
         thinking: ThinkingPreset | None,
+        *,
+        use_catalog_pricing: bool = False,
         image: str = "sc-opencode:latest",
     ) -> None:
         super().__init__(
@@ -79,7 +92,6 @@ class OpenCodeAgent(Agent):
         self.provider = provider
         self.open_code_config = opencode_config
         self.env = env
-        self.image = image
 
         self.messages: list[dict[str, Any]] = []
         self.continue_on_run = True
@@ -90,6 +102,8 @@ class OpenCodeAgent(Agent):
         self._stderr: str = ""
         self._stdout: str = ""
         self.thinking: ThinkingPreset | None = thinking
+        self.use_catalog_pricing = use_catalog_pricing
+        self.image = image
         self._retry_next_run = False
 
     @classmethod
@@ -179,6 +193,7 @@ class OpenCodeAgent(Agent):
             opencode_config=opencode_config,
             env=env,
             thinking=thinking,
+            use_catalog_pricing=model.cost_accounting is not None,
             image=image or "sc-opencode:latest",
         )
 
@@ -474,6 +489,10 @@ class OpenCodeAgent(Agent):
         error_message: str | None = None
         if isinstance(error_payload, dict):
             message_value = error_payload.get("message")
+            if not isinstance(message_value, str):
+                data = error_payload.get("data")
+                if isinstance(data, dict):
+                    message_value = data.get("message")
             if isinstance(message_value, str):
                 error_message = message_value
         elif isinstance(error_payload, str):
@@ -534,7 +553,10 @@ class OpenCodeAgent(Agent):
             with contextlib.suppress(ValueError):
                 step_cost = float(reported_cost)
 
-        # Trust a positive reported cost; otherwise fall back to catalog pricing.
+        # Subscription-backed models must report catalog-derived estimates,
+        # never a provider-reported request charge.
+        if self.use_catalog_pricing and self.pricing is not None:
+            return self.pricing.get_cost(token_usage)
         if step_cost is not None and step_cost > 0:
             return step_cost
         if self.pricing is not None:

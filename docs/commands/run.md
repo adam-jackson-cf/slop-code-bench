@@ -110,8 +110,8 @@ The result is:
 | `prompt` | string | `just-solve` | Prompt template |
 | `model` | object | `anthropic/sonnet-4.5` | Model configuration |
 | `thinking` | string \| object | `none` | Thinking budget |
-| `pass_policy` | string | `any` | Checkpoint pass policy |
-| `one_shot` | object | disabled | Collapse checkpoints; prefix is a Jinja template with `idx` |
+| `assessment_policy` | string | `all-cases` | Strict checkpoint assessment policy |
+| `continue_after_test_failure` | boolean | `false` | Continue later checkpoints after failed assessment |
 | `problems` | list<string> | `[]` | Specific problems to run (otherwise auto-discover) |
 | `save_dir` | string | `outputs` | Base directory for run outputs |
 | `save_template` | string | (template) | Output path template with interpolation |
@@ -213,7 +213,7 @@ thinking:
 
 **Note**: `preset` and `max_tokens` are mutually exclusive.
 
-### pass_policy
+### assessment_policy
 
 Policy for determining whether a checkpoint passes:
 
@@ -227,9 +227,15 @@ Policy for determining whether a checkpoint passes:
 | `any-core-cases` | Pass if any core case passes |
 | `all-core-cases` | Same as `core-cases` |
 
+Strict assessment is the default:
+
 ```yaml
-pass_policy: all-cases
+assessment_policy: all-cases
 ```
+
+`continue_after_test_failure` controls execution independently. Set it to
+`true` for longitudinal experiments that must evaluate every checkpoint while
+retaining strict `all-cases` assessment.
 
 ### one_shot
 
@@ -403,7 +409,7 @@ Positional arguments in `key=value` format override all other sources:
 slop-code run --config my_run.yaml \
   model.name=opus-4.5 \
   thinking=high \
-  pass_policy=all-cases
+  assessment_policy=all-cases
 ```
 
 #### Type Inference
@@ -476,7 +482,8 @@ model:
   name: sonnet-4.5
 
 thinking: medium
-pass_policy: all-cases
+assessment_policy: all-cases
+continue_after_test_failure: false
 
 save_dir: outputs
 save_template: ${model.name}/${agent.type}-${agent.version}_${prompt}_${thinking}_${now:%Y%m%dT%H%M}
@@ -519,7 +526,7 @@ slop-code run --config base.yaml thinking=high --problem file_backup
 
 **Strict evaluation (all cases must pass):**
 ```bash
-slop-code run --config base.yaml pass_policy=all-cases --problem file_backup
+slop-code run --config base.yaml assessment_policy=all-cases --problem file_backup
 ```
 
 **Custom output directory:**
@@ -563,7 +570,8 @@ class RunConfig(BaseModel):
     prompt: str = "just-solve"
     model: ModelConfig
     thinking: ThinkingPresetType | ThinkingConfig = "none"
-    pass_policy: PassPolicy = PassPolicy.ANY
+    assessment_policy: PassPolicy = PassPolicy.ALL_CASES
+    continue_after_test_failure: bool = False
     problems: list[str] = []
     save_dir: str = "outputs"
     save_template: str = "..."
@@ -586,7 +594,8 @@ class ResolvedRunConfig(BaseModel):
     model: ModelConfig
     thinking: ThinkingPresetType | None
     thinking_max_tokens: int | None
-    pass_policy: PassPolicy
+    assessment_policy: PassPolicy
+    continue_after_test_failure: bool
     problems: list[str]
     save_dir: str
     save_template: str  # Resolved template

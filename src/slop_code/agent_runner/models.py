@@ -141,8 +141,8 @@ class AgentRunSpec(BaseModel):
         template: Jinja template for generating prompts
         problem: Problem configuration with checkpoints
         environment: Environment specification for execution
-        pass_policy: Policy for determining checkpoint success
-        skip_evaluation: Whether to skip evaluation and run all checkpoints
+        assessment_policy: Policy for determining checkpoint success
+        continue_after_test_failure: Whether failed assessments stop execution
         verbose: Whether to enable verbose logging output
     """
 
@@ -160,10 +160,14 @@ class AgentRunSpec(BaseModel):
         str,
         Field(description="Image name to use if running with docker."),
     ]
-    pass_policy: Annotated[
+    assessment_policy: Annotated[
         PassPolicy,
         Field(description="Policy to determine if the checkpoint passed"),
-    ]
+    ] = PassPolicy.ALL_CASES
+    continue_after_test_failure: Annotated[
+        bool,
+        Field(description="Whether to continue after a failed test assessment"),
+    ] = False
     skip_evaluation: Annotated[
         bool,
         Field(
@@ -176,10 +180,8 @@ class AgentRunSpec(BaseModel):
             description="Evaluate each checkpoint concurrently with the next "
             "checkpoint's solve, instead of serially between checkpoints, so "
             "eval no longer blocks progress. At most one solve and one eval "
-            "run at a time. Eval results never feed the agent, so scores are "
-            "unchanged for the ANY_CASE pass policy. Trade-off: cannot "
-            "early-stop on test failures (a checkpoint's eval finishes during "
-            "the next solve); agent errors and rate limits still stop the run."
+            "run at a time. Evaluations never feed the agent; agent errors and "
+            "rate limits still stop the run."
         ),
     ] = False
     verbose: Annotated[

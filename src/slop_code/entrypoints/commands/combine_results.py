@@ -216,7 +216,10 @@ def _load_run_metadata(run_dir: Path, base_dir: Path) -> dict[str, Any]:
 
     meta["thinking_level"] = config_data.get("thinking")
     meta["thinking_max_tokens"] = config_data.get("thinking_max_tokens")
-    meta["pass_policy"] = config_data.get("pass_policy")
+    meta["assessment_policy"] = config_data.get("assessment_policy")
+    meta["continue_after_test_failure"] = config_data.get(
+        "continue_after_test_failure"
+    )
 
     meta["agent_type"] = agent.get("type")
     meta["agent_version"] = agent.get("version")

@@ -24,9 +24,9 @@ model:
 # Or use max_tokens for explicit control
 thinking: medium
 
-# Pass policy for evaluation
-# Options: any, any-case, all-cases, all-non-error-cases, core-cases, any-core-cases, all-core-cases
-pass_policy: all-cases
+# Strict assessment is independent from whether later checkpoints execute
+assessment_policy: all-cases
+continue_after_test_failure: false
 
 # One-shot mode: collapse all checkpoint specs into one prompt using the final checkpoint's tests
 # one_shot:

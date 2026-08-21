@@ -76,7 +76,8 @@ class RunTaskConfig:
     model_def: ModelDefinition
     credential: ProviderCredential
     prompt_template: str
-    pass_policy: PassPolicy
+    assessment_policy: PassPolicy
+    continue_after_test_failure: bool
     seed: int
     verbosity: int
     thinking_preset: ThinkingPreset | None = None

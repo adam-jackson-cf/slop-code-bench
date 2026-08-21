@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typing as tp
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -76,8 +77,10 @@ class APIPricingTier(BaseModel):
 
 
 class APIPricing(BaseModel):
-    """Costs for API calls. These are per million tokens."""
+    """Costs for API calls, per million tokens, with pricing provenance."""
 
+    source: str | None = None
+    effective_date: date | None = None
     input: float = 0
     output: float = 0
     cache_read: float = 0
@@ -108,6 +111,13 @@ class APIPricing(BaseModel):
         return self
 
 
+class CostAccounting(BaseModel):
+    """Describe actual billing independently from estimated catalog pricing."""
+
+    actual_billed_cost: tp.Literal["subscription_included"]
+    estimated_api_equivalent_cost: tp.Literal["catalog_pricing"]
+
+
 class ModelDefinition(BaseModel):
     """Definition of a model in the catalog.
 
@@ -115,9 +125,9 @@ class ModelDefinition(BaseModel):
         name: Registered name derived from the config filename (set during registration)
         internal_name: Model identifier used for API calls (e.g., "claude-sonnet-4-5-20250929")
         provider: Credential provider name (must match APIKeyStore providers)
-        pricing: API pricing per million tokens
-        aliases: Alternative names that resolve to this model
-        agent_specific: Agent-type to settings map for agent-specific configuration
+        authentication_mode: Authentication mechanism when not API-key based
+        pricing: Estimated API-equivalent pricing per million tokens
+        cost_accounting: Actual billing and estimated-cost relationship
         provider_slugs: Provider to model slug mapping. When resolving the model
             identifier for a specific provider via get_model_slug(), this takes
             precedence over internal_name. Example: {"openrouter": "z-ai/glm-4.6"}
@@ -157,12 +167,15 @@ class ModelDefinition(BaseModel):
 
     internal_name: str
     provider: str
+    authentication_mode: tp.Literal["chatgpt_subscription_oauth"] | None = None
     pricing: APIPricing
     # name is set during registration from the config filename
     name: str = ""
     aliases: list[str] = Field(default_factory=list)
     agent_specific: dict[str, dict[str, Any]] = Field(default_factory=dict)
     provider_slugs: dict[str, str] = Field(default_factory=dict)
+
+    cost_accounting: CostAccounting | None = None
 
     # Thinking configuration (top-level defaults)
     thinking: ThinkingPreset | None = None

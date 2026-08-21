@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import io
+import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
 from docker.errors import ImageNotFound
 
 from slop_code.execution.docker_runtime.images import BASE_IMAGE_HASH_LABEL
+from slop_code.execution.docker_runtime.images import NODE_RELEASE
 from slop_code.execution.docker_runtime.images import _build_image
 from slop_code.execution.docker_runtime.images import _get_base_image_hash
 from slop_code.execution.docker_runtime.images import build_base_image
 from slop_code.execution.docker_runtime.images import build_submission_image
+from slop_code.execution.docker_runtime.images import make_base_image
 from slop_code.execution.docker_runtime.models import DockerEnvironmentSpec
 
 
@@ -67,6 +71,47 @@ def test_build_base_image_rebuilds_stale_image(
 
     assert result is rebuilt_image
     build.assert_called_once()
+
+    context_tar = build.call_args.args[2]
+    with tarfile.open(fileobj=context_tar) as context:
+        dockerfile = context.extractfile("Dockerfile")
+        assert dockerfile is not None
+        rendered_dockerfile = dockerfile.read().decode()
+
+    assert "xz-utils" in rendered_dockerfile
+    assert (
+        "# Install the canonical pinned Node release directly with checksum verification."
+        in rendered_dockerfile
+    )
+    assert f"ENV NODE_VERSION={NODE_RELEASE.version}" in rendered_dockerfile
+    assert (
+        "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}"
+        in rendered_dockerfile
+    )
+    assert "sha256sum --check --status" in rendered_dockerfile
+    assert (
+        'tar --extract --xz --file="/tmp/${NODE_TARBALL}"'
+        in rendered_dockerfile
+    )
+    assert "NVM_DIR" not in rendered_dockerfile
+
+
+def test_make_base_image_rejects_node_version_drift(
+    docker_spec: DockerEnvironmentSpec,
+) -> None:
+    drifted_spec = docker_spec.model_copy(
+        update={
+            "environment": docker_spec.environment.model_copy(
+                update={"env": {"NODE_VERSION": "20.0.0"}}
+            )
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="NODE_VERSION must match the pinned Node release",
+    ):
+        make_base_image(drifted_spec)
 
 
 def test_build_submission_image_rebuilds_stale_base_image(

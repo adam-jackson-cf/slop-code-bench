@@ -184,7 +184,7 @@ def run_spec(
         problem=problem,
         environment=local_environment,
         image="test-local-image",
-        pass_policy=PassPolicy.ANY,
+        assessment_policy=PassPolicy.ANY,
         skip_evaluation=False,
         verbose=True,
     )

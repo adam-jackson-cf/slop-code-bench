@@ -70,6 +70,7 @@ class ProviderDefinition(BaseModel):
         credential_type: Whether this uses env var or file
         env_var: Environment variable name (for env_var type)
         file_path: Default file path (for file type)
+        mount_only: Whether a file credential is mounted without loading contents
         description: Human-readable description for discoverability
         endpoints: Named API endpoints for this provider
     """
@@ -78,6 +79,7 @@ class ProviderDefinition(BaseModel):
     credential_type: CredentialType
     env_var: str | None = None
     file_path: str | None = None
+    mount_only: bool = False
     description: str = ""
     endpoints: dict[str, EndpointDefinition] = Field(default_factory=dict)
 
@@ -169,6 +171,7 @@ class ProviderCatalog:
                 credential_type=CredentialType(config["type"]),
                 env_var=config.get("env_var"),
                 file_path=config.get("file_path"),
+                mount_only=config.get("mount_only", False),
                 description=config.get("description", ""),
                 endpoints=endpoints,
             )
@@ -514,26 +517,27 @@ class APIKeyStore:
     def _resolve_file(
         self, provider: str, file_path: Path
     ) -> ProviderCredential:
-        """Resolve a file-based credential.
+        """Resolve a file-based credential without retaining its contents.
 
-        Args:
-            provider: The provider name
-            file_path: Path to the credential file
-
-        Returns:
-            ProviderCredential with the file contents
+        Mount-only providers validate the source path but leave ``value`` empty;
+        their runtime adapter binds the original file directly into the container.
 
         Raises:
             CredentialNotFoundError: If file does not exist
         """
         expanded_path = file_path.expanduser().absolute()
 
-        if not expanded_path.exists():
+        if not expanded_path.is_file():
             raise CredentialNotFoundError(
                 f"Credential file not found for provider '{provider}': {expanded_path}"
             )
 
-        value = expanded_path.read_text()
+        provider_def = ProviderCatalog.get(provider)
+        value = (
+            ""
+            if provider_def is not None and provider_def.mount_only
+            else expanded_path.read_text()
+        )
 
         return ProviderCredential(
             provider=provider,

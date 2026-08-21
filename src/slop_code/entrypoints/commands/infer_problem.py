@@ -98,11 +98,15 @@ def infer_problem(
         "--max-thinking-tokens",
         help="Maximum thinking tokens (mutually exclusive with --thinking)",
     ),
-    pass_policy: evaluation.PassPolicy = typer.Option(
-        evaluation.PassPolicy.ANY,
-        "--pass-policy",
-        "-pass",
-        help="Policy to determine if the checkpoint passed",
+    assessment_policy: evaluation.PassPolicy = typer.Option(
+        evaluation.PassPolicy.ALL_CASES,
+        "--assessment-policy",
+        help="Policy used to assess whether a checkpoint passed",
+    ),
+    continue_after_test_failure: bool = typer.Option(  # noqa: FBT001
+        False,  # noqa: FBT003
+        "--continue-after-test-failure/--stop-after-test-failure",
+        help="Continue to later checkpoints after a failed assessment",
     ),
     evaluate: bool = typer.Option(
         True,
@@ -236,7 +240,8 @@ def infer_problem(
         template=prompt_template,
         problem=problem,
         environment=env_spec,
-        pass_policy=pass_policy,
+        assessment_policy=assessment_policy,
+        continue_after_test_failure=continue_after_test_failure,
         skip_evaluation=not evaluate,
         verbose=ctx.obj.verbosity > 0,
         image=image_name,  # type: ignore[arg-type]

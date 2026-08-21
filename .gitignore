@@ -208,6 +208,8 @@ __marimo__/
 
 scratch/*
 outputs/*
+.experiments/
+.todo/
 logs/*
 .vscode/*
 results/*

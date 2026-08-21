@@ -51,7 +51,7 @@ def get_run_summary(submission_dir: Path) -> dict[str, Any] | None:
     return {
         # Run spec fields
         "seed": run_info.get("seed"),
-        "pass_policy": run_info.get("pass_policy"),
+        "assessment_policy": run_info.get("assessment_policy"),
         "skip_evaluation": run_info.get("skip_evaluation"),
         # Summary fields
         "state": summary.get("state"),

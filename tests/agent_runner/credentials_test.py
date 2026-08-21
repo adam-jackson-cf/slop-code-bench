@@ -122,6 +122,19 @@ class TestAPIKeyStore:
             assert cred.value == '{"token": "secret"}'
             assert str(auth_file) in cred.source
 
+    def test_resolve_mount_only_file_does_not_load_contents(self):
+        """Test mount-only credentials retain only their source path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            auth_file = Path(tmpdir) / "auth.json"
+            auth_file.write_text('{"token": "secret"}')
+
+            store = APIKeyStore()
+            cred = store.resolve("opencode_auth", file_path_override=auth_file)
+
+            assert cred.credential_type == CredentialType.FILE
+            assert cred.value == ""
+            assert cred.source == str(auth_file)
+
     def test_resolve_file_missing_raises(self):
         """Test that missing file raises CredentialNotFoundError."""
         store = APIKeyStore()

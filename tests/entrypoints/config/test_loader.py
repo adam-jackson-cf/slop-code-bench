@@ -150,8 +150,8 @@ class TestLoadRunConfig:
         assert config.model.provider == "anthropic"
         assert config.model.name == "sonnet-4.5"
         assert config.thinking == "none"
-        assert config.pass_policy == PassPolicy.ANY
-        assert config.one_shot.enabled is False
+        assert config.assessment_policy == PassPolicy.ALL_CASES
+        assert config.continue_after_test_failure is False
         assert config.one_shot.prefix == ""
         assert config.one_shot.include_first_prefix is False
         # Output path should have been resolved (no ${} remaining)
@@ -195,7 +195,8 @@ model:
   provider: openai
   name: gpt-4.1
 thinking: medium
-pass_policy: all-cases
+assessment_policy: all-cases
+continue_after_test_failure: true
 save_dir: custom
 save_template: output/path
 """
@@ -206,7 +207,8 @@ save_template: output/path
         assert config.model.provider == "openai"
         assert config.model.name == "gpt-4.1"
         assert config.thinking == "medium"
-        assert config.pass_policy == PassPolicy.ALL_CASES
+        assert config.assessment_policy == PassPolicy.ALL_CASES
+        assert config.continue_after_test_failure is True
         assert config.save_dir == "custom"
         assert config.save_template == "output/path"
         assert config.output_path == "custom/output/path"
@@ -265,11 +267,17 @@ agent:
 
         assert config.thinking == "high"
 
-    def test_pass_policy_override(self):
-        """Test overriding pass_policy via key=value."""
-        config = load_run_config(cli_overrides=["pass_policy=all-cases"])
+    def test_assessment_and_continuation_override(self):
+        """Assessment and continuation can be overridden independently."""
+        config = load_run_config(
+            cli_overrides=[
+                "assessment_policy=core-cases",
+                "continue_after_test_failure=true",
+            ]
+        )
 
-        assert config.pass_policy == PassPolicy.ALL_CASES
+        assert config.assessment_policy == PassPolicy.CORE_CASES
+        assert config.continue_after_test_failure is True
 
     def test_output_path_interpolation(self):
         """Test that output_path interpolation works."""

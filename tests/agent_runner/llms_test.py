@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,18 @@ class TestAPIPricing:
         assert pricing.get_cost(high_tokens) == pytest.approx(
             ((150_001 * 4.0) + (1_000 * 18.0) + (50_000 * 0.4)) / 1_000_000
         )
+
+    def test_pricing_metadata_parses_effective_date(self) -> None:
+        """Pricing provenance should retain a typed effective date."""
+        pricing = APIPricing.model_validate(
+            {
+                "source": "https://example.com/pricing",
+                "effective_date": "2026-08-17",
+            }
+        )
+
+        assert pricing.source == "https://example.com/pricing"
+        assert pricing.effective_date == date(2026, 8, 17)
 
 
 class TestModelDefinition:
@@ -730,6 +743,44 @@ class TestYAMLLoadedModels:
         assert tier.cache_read == 0.20
         assert tier.cache_write == 0.0
         assert ModelCatalog.get("gemini-3.1") is model
+
+    @pytest.mark.parametrize(
+        ("model_name", "input_rate", "output_rate"),
+        [
+            ("gpt-5.6-sol", 10.0, 45.0),
+            ("gpt-5.6-terra", 4.0, 18.0),
+            ("gpt-5.6-luna", 0.4, 1.8),
+        ],
+    )
+    def test_gpt_5_6_subscription_models_resolve_unambiguously(
+        self, model_name: str, input_rate: float, output_rate: float
+    ) -> None:
+        """GPT-5.6 models declare OAuth billing separately from estimates."""
+        model = ModelCatalog.get(model_name)
+
+        assert model is not None
+        assert model.internal_name == model_name
+        assert model.provider == "opencode_auth"
+        assert model.authentication_mode == "chatgpt_subscription_oauth"
+        assert model.aliases == []
+        assert model.pricing.source == (
+            f"https://developers.openai.com/api/docs/models/{model_name}"
+        )
+        assert model.pricing.effective_date == date(2026, 8, 17)
+        assert model.pricing.input == input_rate
+        assert model.pricing.output == output_rate
+        assert model.cost_accounting is not None
+        assert model.cost_accounting.actual_billed_cost == "subscription_included"
+        assert (
+            model.cost_accounting.estimated_api_equivalent_cost
+            == "catalog_pricing"
+        )
+        assert model.get_agent_settings("opencode") == {
+            "provider_name": "openai",
+            "model": model_name,
+            "thinking_enabled": True,
+            "config": {"$schema": "https://opencode.ai/config.json"},
+        }
 
     @pytest.mark.parametrize(
         ("model_name", "openrouter_slug"),

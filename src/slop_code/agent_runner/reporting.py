@@ -63,20 +63,20 @@ class AgentCheckpointSummary(BaseModel):
         usage: UsageTracker,
         *,
         had_error: bool,
-        pass_policy: PassPolicy,
+        assessment_policy: PassPolicy,
         evaluation_result: CorrectnessResults | None = None,
     ) -> AgentCheckpointSummary:
-        if isinstance(pass_policy, str):
-            pass_policy = PassPolicy(pass_policy)
+        if isinstance(assessment_policy, str):
+            assessment_policy = PassPolicy(assessment_policy)
 
         if evaluation_result is not None:
-            passed_policy = pass_policy.check(
+            passed_policy = assessment_policy.check(
                 evaluation_result.pass_counts,
                 evaluation_result.total_counts,
             )
         else:
             # No evaluation - pass if policy allows any case
-            passed_policy = pass_policy == PassPolicy.ANY_CASE
+            passed_policy = assessment_policy == PassPolicy.ANY_CASE
 
         return cls(
             checkpoint_name=checkpoint_name,

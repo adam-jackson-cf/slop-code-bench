@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import tarfile
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,6 +17,21 @@ from slop_code.execution.docker_runtime.models import IMAGE_NAME_PREFIX
 from slop_code.execution.docker_runtime.models import DockerEnvironmentSpec
 from slop_code.execution.models import EnvironmentSpec
 from slop_code.logging import get_logger
+
+
+@dataclass(frozen=True)
+class _NodeRelease:
+    version: str
+    linux_arm64_sha256: str
+    linux_x64_sha256: str
+
+
+NODE_RELEASE = _NodeRelease(
+    version="22.21.1",
+    linux_arm64_sha256="e660365729b434af422bcd2e8e14228637ecf24a1de2cd7c916ad48f2a0521e1",
+    linux_x64_sha256="680d3f30b24a7ff24b98db5e96f294c0070f8f9078df658da1bce1b9c9873c88",
+)
+
 
 logger = get_logger(__name__)
 
@@ -109,9 +125,21 @@ def get_submission_image_name(submission_path: Path) -> str:
 
 
 def _render_base_image(environment_spec: DockerEnvironmentSpec) -> str:
+    configured_node_version = environment_spec.environment.env.get(
+        "NODE_VERSION"
+    )
+    if configured_node_version not in (None, NODE_RELEASE.version):
+        raise ValueError(
+            "NODE_VERSION must match the pinned Node release "
+            f"{NODE_RELEASE.version}; got {configured_node_version}"
+        )
+
     return Template(BASE_IMAGE_TEMPLATE.read_text()).render(
         base_image=environment_spec.docker.image,
         env=environment_spec.environment.env,
+        node_version=NODE_RELEASE.version,
+        node_linux_arm64_sha256=NODE_RELEASE.linux_arm64_sha256,
+        node_linux_x64_sha256=NODE_RELEASE.linux_x64_sha256,
     )
 
 

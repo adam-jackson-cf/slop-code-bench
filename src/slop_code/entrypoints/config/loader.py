@@ -318,7 +318,8 @@ def _get_default_config() -> dict[str, Any]:
         "prompt": "just-solve",
         "model": {"provider": "anthropic", "name": "sonnet-4.5"},
         "thinking": "none",
-        "pass_policy": "any",
+        "assessment_policy": "all-cases",
+        "continue_after_test_failure": False,
         "problems": [],
         "one_shot": {
             "enabled": False,
@@ -473,14 +474,16 @@ def load_run_config(
         cfg_dict["thinking"]
     )
 
-    # 10. Handle pass_policy
-    pass_policy_value = cfg_dict["pass_policy"]
-    if isinstance(pass_policy_value, str):
-        pass_policy = PassPolicy(pass_policy_value)
-    elif isinstance(pass_policy_value, PassPolicy):
-        pass_policy = pass_policy_value
+    # 10. Handle assessment policy independently from continuation behavior
+    assessment_policy_value = cfg_dict["assessment_policy"]
+    if isinstance(assessment_policy_value, str):
+        assessment_policy = PassPolicy(assessment_policy_value)
+    elif isinstance(assessment_policy_value, PassPolicy):
+        assessment_policy = assessment_policy_value
     else:
-        raise ValueError(f"Invalid pass_policy: {pass_policy_value}")
+        raise ValueError(
+            f"Invalid assessment_policy: {assessment_policy_value}"
+        )
 
     # 11. Normalize problems list (optional)
     try:
@@ -551,7 +554,8 @@ def load_run_config(
         model=model,
         thinking=thinking_preset,
         thinking_max_tokens=thinking_max_tokens,
-        pass_policy=pass_policy,
+        assessment_policy=assessment_policy,
+        continue_after_test_failure=cfg_dict["continue_after_test_failure"],
         problems=problems,
         save_dir=save_dir,
         save_template=save_template,
@@ -721,11 +725,13 @@ def load_config_from_run_dir(run_dir: Path) -> ResolvedRunConfig:
     if "model" in config_dict and isinstance(config_dict["model"], dict):
         config_dict["model"] = ModelConfig(**config_dict["model"])
 
-    # Handle pass_policy as string -> enum
-    if "pass_policy" in config_dict and isinstance(
-        config_dict["pass_policy"], str
+    # Handle assessment_policy as string -> enum
+    if "assessment_policy" in config_dict and isinstance(
+        config_dict["assessment_policy"], str
     ):
-        config_dict["pass_policy"] = PassPolicy(config_dict["pass_policy"])
+        config_dict["assessment_policy"] = PassPolicy(
+            config_dict["assessment_policy"]
+        )
 
     # Handle one_shot as dict -> OneShotConfig
     if "one_shot" in config_dict and isinstance(config_dict["one_shot"], dict):

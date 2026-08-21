@@ -106,14 +106,14 @@ def resolve_problem(
 
 def _compute_aggregated_eval_results(
     summaries: dict[str, tuple[CorrectnessResults, SnapshotQualityReport]],
-    pass_policy: PassPolicy,
+    assessment_policy: PassPolicy,
     expected_checkpoint_count: int | None = None,
 ) -> tuple[bool, bool, float | None]:
     """Compute aggregated evaluation results from checkpoint summaries.
 
     Args:
         summaries: Checkpoint evaluation summaries
-        pass_policy: Policy for determining pass/fail
+        assessment_policy: Policy for determining pass/fail
         expected_checkpoint_count: If provided, missing checkpoints count as failures
 
     Returns:
@@ -137,7 +137,7 @@ def _compute_aggregated_eval_results(
             pass_rates.append(total_passed / total_count)
 
         # Check if this checkpoint passed
-        checkpoint_passed_policy = pass_policy.check(
+        checkpoint_passed_policy = assessment_policy.check(
             report.pass_counts, report.total_counts
         )
         if not checkpoint_passed_policy:
@@ -171,7 +171,9 @@ def maybe_update_problem_report(
     with run_info_path.open("r") as f:
         run_info = yaml.safe_load(f)
 
-    pass_policy = PassPolicy(run_info.get("pass_policy", "any-case"))
+    assessment_policy = PassPolicy(
+        run_info.get("assessment_policy", "all-cases")
+    )
 
     # Get expected checkpoint count from run_info if available
     summary = run_info.get("summary", {})
@@ -180,7 +182,9 @@ def maybe_update_problem_report(
 
     all_passed, all_passed_policy, overall_pass_rate = (
         _compute_aggregated_eval_results(
-            summaries, pass_policy, expected_checkpoint_count=expected_count
+            summaries,
+            assessment_policy,
+            expected_checkpoint_count=expected_count,
         )
     )
 

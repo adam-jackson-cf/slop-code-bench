@@ -485,7 +485,7 @@ class TestCreateTaskConfig:
         mock_run_cfg.thinking = "low"
         mock_run_cfg.thinking_max_tokens = None
         mock_run_cfg.prompt_content = "template content"
-        mock_run_cfg.pass_policy = MagicMock()
+        mock_run_cfg.assessment_policy = MagicMock()
         mock_run_cfg.one_shot = MagicMock()
 
         result = _create_task_config(
@@ -519,7 +519,7 @@ class TestCreateTaskConfig:
         mock_run_cfg.thinking = "low"
         mock_run_cfg.thinking_max_tokens = None
         mock_run_cfg.prompt_content = "template"
-        mock_run_cfg.pass_policy = MagicMock()
+        mock_run_cfg.assessment_policy = MagicMock()
         mock_run_cfg.one_shot = MagicMock()
 
         result = _create_task_config(

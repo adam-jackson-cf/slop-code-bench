@@ -37,7 +37,7 @@ slop-code eval [OPTIONS] RUN_DIR
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `--problem` | string | (all) | Name of specific problems to evaluate (repeatable) |
-| `--pass-policy` | enum | `ALL_CASES` | Policy to determine if checkpoint passed |
+| `--assessment-policy` | enum | `ALL_CASES` | Policy used to assess checkpoint success |
 | `-e, --env-config` | path | `<run>/environment.yaml` | Path to environment configuration |
 | `--live-progress/--no-live-progress` | flag | false | Enable live progress display |
 | `-proc, --num-workers` | int | 1 | Number of parallel evaluation workers |

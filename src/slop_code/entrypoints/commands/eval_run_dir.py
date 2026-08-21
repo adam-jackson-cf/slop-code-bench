@@ -147,10 +147,10 @@ def evaluate_agent_run(
         "--problem",
         help="Name of the specific problems to run",
     ),
-    pass_policy: evaluation.PassPolicy = typer.Option(
+    assessment_policy: evaluation.PassPolicy = typer.Option(
         evaluation.PassPolicy.ALL_CASES,
-        "--pass-policy",
-        help="Policy to determine if the checkpoint passed",
+        "--assessment-policy",
+        help="Policy used to assess whether a checkpoint passed",
     ),
     env_config: Path | None = typer.Option(
         None,
@@ -214,7 +214,7 @@ def evaluate_agent_run(
         submission_path=str(agent_run_dir),
         problem_names=problem_names,
         env_config=str(env_path),
-        pass_policy=pass_policy.value,
+        assessment_policy=assessment_policy.value,
         overwrite=overwrite,
     )
 

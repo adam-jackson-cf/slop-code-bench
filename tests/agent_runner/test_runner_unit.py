@@ -408,7 +408,7 @@ def test_run_problem_resume_does_not_treat_first_executed_as_checkpoint_1(
     }
     run_spec.skip_evaluation = True
     run_spec.concurrent_evaluation = False
-    run_spec.pass_policy = Mock()
+    run_spec.assessment_policy = Mock()
 
     resume_info = ResumeInfo(
         resume_from_checkpoint="checkpoint_3",
@@ -484,7 +484,7 @@ def test_run_problem_resume_does_not_double_count_prior_usage(
     }
     run_spec.skip_evaluation = True
     run_spec.concurrent_evaluation = False
-    run_spec.pass_policy = Mock()
+    run_spec.assessment_policy = Mock()
 
     resume_info = ResumeInfo(
         resume_from_checkpoint="checkpoint_3",
@@ -560,7 +560,7 @@ def test_run_problem_resume_does_not_duplicate_preloaded_checkpoint_results(
     run_spec.compress_artifacts = False
     run_spec.skip_evaluation = True
     run_spec.concurrent_evaluation = False
-    run_spec.pass_policy = Mock()
+    run_spec.assessment_policy = Mock()
 
     resume_info = ResumeInfo(
         resume_from_checkpoint="checkpoint_3",
@@ -645,8 +645,8 @@ def test_run_problem_concurrent_eval_bounds_inflight(tmp_path):
     run_spec.skip_evaluation = False
     run_spec.concurrent_evaluation = True
     run_spec.environment = Mock()
-    run_spec.pass_policy = Mock()
-    run_spec.pass_policy.check.return_value = True
+    run_spec.assessment_policy = Mock()
+    run_spec.assessment_policy.check.return_value = True
 
     ar = runner.AgentRunner(
         run_spec=run_spec,
@@ -739,7 +739,7 @@ def test_run_problem_concurrent_eval_records_failure_and_continues(
     run_spec.concurrent_evaluation = True
     # Use a real PassPolicy so _merge_eval_reports can rebuild summaries via
     # AgentCheckpointSummary.from_results (which validates with pydantic).
-    run_spec.pass_policy = PassPolicy.ANY_CASE
+    run_spec.assessment_policy = PassPolicy.ANY_CASE
 
     ar = runner.AgentRunner(
         run_spec=run_spec,
@@ -842,3 +842,33 @@ def test_run_problem_concurrent_eval_records_failure_and_continues(
         "checkpoint_1"
     ]
     assert summary_warnings[0].kwargs.get("count") == 1
+
+
+def test_failed_assessment_stops_by_default() -> None:
+    agent_runner = Mock()
+    agent_runner.run_spec.skip_evaluation = False
+    agent_runner.run_spec.concurrent_evaluation = False
+    agent_runner.run_spec.continue_after_test_failure = False
+    agent_runner.metrics_tracker.state = runner.AgentStateEnum.RUNNING
+    summary = Mock(passed_policy=False)
+
+    should_stop = runner.AgentRunner._should_early_stop(agent_runner, summary)
+
+    assert should_stop is True
+    assert agent_runner.metrics_tracker.state == runner.AgentStateEnum.FAILED
+
+
+def test_failed_assessment_can_continue_without_changing_assessment() -> None:
+    agent_runner = Mock()
+    agent_runner.run_spec.skip_evaluation = False
+    agent_runner.run_spec.concurrent_evaluation = False
+    agent_runner.run_spec.assessment_policy = PassPolicy.ALL_CASES
+    agent_runner.run_spec.continue_after_test_failure = True
+    agent_runner.metrics_tracker.state = runner.AgentStateEnum.RUNNING
+    summary = Mock(passed_policy=False)
+
+    should_stop = runner.AgentRunner._should_early_stop(agent_runner, summary)
+
+    assert should_stop is False
+    assert agent_runner.run_spec.assessment_policy == PassPolicy.ALL_CASES
+    assert agent_runner.metrics_tracker.state == runner.AgentStateEnum.RUNNING

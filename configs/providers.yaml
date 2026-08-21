@@ -162,6 +162,7 @@ providers:
     type: file
     file_path: ~/.local/share/opencode/auth.json
     description: OpenCode authentication file
+    mount_only: true
 
   gemini_auth:
     type: file

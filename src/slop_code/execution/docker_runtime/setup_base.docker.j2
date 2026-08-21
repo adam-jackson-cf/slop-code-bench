@@ -13,6 +13,7 @@ RUN apt-get update \
         gzip \
         zip \
         unzip \
+        xz-utils \
         curl \
         ca-certificates \
         gnupg \
@@ -67,27 +68,21 @@ RUN apt-get update \
 RUN curl -sSL https://dl.min.io/server/minio/release/linux-amd64/minio \
     -o /usr/local/bin/minio && chmod +x /usr/local/bin/minio
 
-# Install Node via nvm and make it the default
-ENV NVM_DIR=/usr/local/nvm
-ENV NODE_VERSION=22.21.1
-
-SHELL ["/bin/bash", "-lc"]
-# Install Node via nvm and make it the default
-RUN mkdir -p "$NVM_DIR" \
-    && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-
-RUN . "$NVM_DIR/nvm.sh" \
-    && nvm install "$NODE_VERSION" \
-    && nvm alias default "$NODE_VERSION" \
-    && nvm use $NODE_VERSION
-
-RUN . "$NVM_DIR/nvm.sh" \
-  && nvm use $NODE_VERSION \
-  && NODE_PATH="$(nvm which node)" \
-  && NODE_BIN_DIR="$(dirname "$NODE_PATH")" \
-  && ln -s "$NODE_BIN_DIR/node" /usr/local/bin/node \
-  && ln -s "$NODE_BIN_DIR/npm" /usr/local/bin/npm \
-  && ln -s "$NODE_BIN_DIR/npx" /usr/local/bin/npx
+# Install the canonical pinned Node release directly with checksum verification.
+ENV NODE_VERSION={{ node_version }}
+RUN case "$(dpkg --print-architecture)" in \
+        arm64) NODE_ARCH=arm64; NODE_SHA256="{{ node_linux_arm64_sha256 }}" ;; \
+        amd64) NODE_ARCH=x64; NODE_SHA256="{{ node_linux_x64_sha256 }}" ;; \
+        *) echo "Unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac \
+    && NODE_TARBALL="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" \
+    && curl --fail --location --silent --show-error \
+        "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TARBALL}" \
+        -o "/tmp/${NODE_TARBALL}" \
+    && echo "${NODE_SHA256}  /tmp/${NODE_TARBALL}" | sha256sum --check --status \
+    && tar --extract --xz --file="/tmp/${NODE_TARBALL}" \
+        --strip-components=1 --directory=/usr/local \
+    && rm "/tmp/${NODE_TARBALL}"
 
 
 # Install Rust
