@@ -23,7 +23,7 @@ Run pytest tests for a snapshot and output raw stdout.
 
 ```bash
 slop-code tools run-case \
-  -s outputs/my_run/file_backup/checkpoint_1/snapshot \
+  -s experiments/my_run/file_backup/checkpoint_1/snapshot \
   -p file_backup \
   -c 1 \
   -e configs/environments/docker-python3.12-uv.yaml
@@ -62,14 +62,14 @@ info.
 ```bash
 # Run all tests
 slop-code tools run-case \
-  -s outputs/snapshot \
+  -s experiments/snapshot \
   -p file_backup \
   -c 1 \
   -e configs/environments/docker-python3.12-uv.yaml
 
 # Run specific tests with -k filter
 slop-code tools run-case \
-  -s outputs/snapshot \
+  -s experiments/snapshot \
   -p file_backup \
   -c 1 \
   -e configs/environments/docker-python3.12-uv.yaml \
@@ -77,7 +77,7 @@ slop-code tools run-case \
 
 # JSON output
 slop-code tools run-case \
-  -s outputs/snapshot \
+  -s experiments/snapshot \
   -p file_backup \
   -c 1 \
   -e configs/environments/docker-python3.12-uv.yaml \
@@ -85,7 +85,7 @@ slop-code tools run-case \
 
 # Full JSON output with debug info
 slop-code tools run-case \
-  -s outputs/snapshot \
+  -s experiments/snapshot \
   -p file_backup \
   -c 1 \
   -e configs/environments/docker-python3.12-uv.yaml \
@@ -93,7 +93,7 @@ slop-code tools run-case \
 
 # Pass extra pytest args
 slop-code tools run-case \
-  -s outputs/snapshot \
+  -s experiments/snapshot \
   -p file_backup \
   -c 1 \
   -e configs/environments/docker-python3.12-uv.yaml \

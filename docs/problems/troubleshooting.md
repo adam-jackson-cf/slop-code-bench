@@ -157,10 +157,10 @@ def test_basic(entrypoint_argv):
 
 ```bash
 # Wrong:
-pytest tests/
+.venv/bin/python -m pytest tests/
 
 # Right:
-pytest tests/ --entrypoint="python main.py" --checkpoint=checkpoint_1
+.venv/bin/python -m pytest tests/ --entrypoint="python main.py" --checkpoint=checkpoint_1
 ```
 
 ### Problem: "scope mismatch"
@@ -367,19 +367,18 @@ ImportError: No module named 'yaml'
 
 #### Cause: Missing dependencies
 
-**Fix 1**: Document in spec:
-```markdown
-## Requirements
+For a dependency imported by the submitted solution, document it in the
+specification so the agent adds it to the solution's package manifest.
 
-Create a `requirements.txt` or `pyproject.toml`:
-```
-pyyaml>=6.0
-```
+For a dependency imported only by trusted tests:
 
-**Fix 2**: Add to test_dependencies in config.yaml:
+1. Add the exact requirement to the problem's `pyproject.toml`
+2. Regenerate and commit `uv.lock`
+3. Add the identical requirement to `config.yaml`
+
 ```yaml
 test_dependencies:
-  - pyyaml>=6.0
+  - "pyyaml==6.0.2"
 ```
 
 ### Problem: "FileNotFoundError" in tests
@@ -620,27 +619,28 @@ def test_legacy_error():
 
 ```bash
 cd problems/my_problem
+uv sync --frozen --no-install-project
 
 # Run with verbose output
-pytest tests/ \
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solution.py" \
   --checkpoint=checkpoint_1 \
   -v
 
 # Run single test
-pytest tests/test_checkpoint_1.py::test_basic \
+.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_basic \
   --entrypoint="python solution.py" \
   --checkpoint=checkpoint_1 \
   -v
 
 # Show print statements
-pytest tests/ ... -s
+.venv/bin/python -m pytest tests/ ... -s
 
 # Stop on first failure
-pytest tests/ ... -x
+.venv/bin/python -m pytest tests/ ... -x
 
 # Show full assertion diffs
-pytest tests/ ... --tb=long
+.venv/bin/python -m pytest tests/ ... --tb=long
 ```
 
 ### Tool 2: Debug test case manually
@@ -686,7 +686,7 @@ def test_example(entrypoint_argv, tmp_path):
 
 Run with `-s` to see print output:
 ```bash
-pytest tests/ ... -s
+.venv/bin/python -m pytest tests/ ... -s
 ```
 
 ### Tool 4: Validate case files
@@ -701,7 +701,7 @@ find problems/my_problem/tests -name "*.yaml" -exec \
 
 ```bash
 # See what tests will be collected
-pytest tests/ --collect-only \
+.venv/bin/python -m pytest tests/ --collect-only \
   --entrypoint="python main.py" \
   --checkpoint=checkpoint_1
 
@@ -712,7 +712,7 @@ pytest tests/ --collect-only \
 
 ```bash
 # Drop into debugger on failure
-pytest tests/ ... --pdb
+.venv/bin/python -m pytest tests/ ... --pdb
 
 # Or set breakpoint in code
 def test_example():

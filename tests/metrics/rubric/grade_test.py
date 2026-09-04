@@ -10,6 +10,9 @@ import pytest
 from slop_code.metrics.rubric.llm_grade import OPENROUTER_API_URL
 from slop_code.metrics.rubric.llm_grade import _parse_json_text
 from slop_code.metrics.rubric.llm_grade import grade_file_async
+from slop_code.metrics.rubric.router import (
+    grade_file_async as route_grade_file_async,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -49,10 +52,10 @@ def mock_openrouter_response():
 
 
 @pytest.mark.asyncio
-async def test_grade_file_grades_single_file(
+async def test_grade_file_routes_multi_file_response(
     mock_openrouter_response,
 ) -> None:
-    """Ensure grade_file_async calls API and parses the returned JSON."""
+    """Ensure multi-file responses retain their block file identities."""
     # Use multi-file format as that's what the implementation expects
     response_data = """=== FILE: app.py ===
 ```json
@@ -64,18 +67,31 @@ async def test_grade_file_grades_single_file(
   }
 ]
 ```
+=== END FILE ===
+
+=== FILE: utils.py ===
+```json
+[
+  {
+    "criteria": "test_criteria",
+    "start": 2,
+    "explanation": "another issue"
+  }
+]
+```
 === END FILE ==="""
     mock_response = mock_openrouter_response(response_data)
 
     mock_client = MagicMock(spec=httpx.AsyncClient)
     mock_client.post.return_value = mock_response
 
-    grades, raw = await grade_file_async(
+    grades, raw = await route_grade_file_async(
         prompt_prefix="test prefix content",
         criteria_text="test criteria text",
-        file_name="app.py",
+        file_name=None,
         model="anthropic/claude-3.5-sonnet",
         client=mock_client,
+        api_key="test-key",
     )
 
     mock_client.post.assert_called_once()
@@ -102,10 +118,12 @@ async def test_grade_file_grades_single_file(
     assert "test criteria text" in user_text
     assert call_kwargs["headers"]["Authorization"] == "Bearer test-key"
 
-    assert len(grades) == 1
+    assert len(grades) == 2
     assert grades[0]["criteria"] == "test_criteria"
     assert grades[0]["file_name"] == "app.py"
     assert grades[0]["start"] == 1
+    assert grades[1]["file_name"] == "utils.py"
+    assert grades[1]["start"] == 2
 
     assert "usage" in raw
     assert raw["usage"]["prompt_tokens"] == 100

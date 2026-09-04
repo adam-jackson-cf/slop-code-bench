@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-17
+last_updated: 2026-08-29
 ---
 
 # infer-problem
@@ -13,7 +13,7 @@ Run inference on a single problem with explicit configuration.
 slop-code infer-problem file_backup \
   -a configs/agents/claude_code-2.0.51.yaml \
   -e configs/environments/docker-python3.12-uv.yaml \
-  -o outputs/test_run \
+  -o experiments/test_run \
   -prompt configs/prompts/just-solve.jinja \
   -m anthropic/sonnet-4.5
 ```
@@ -42,8 +42,9 @@ slop-code infer-problem [OPTIONS] PROBLEM_NAME
 | `--provider-api-key-env` | string | - | Override API key environment variable |
 | `--thinking` | string | - | Thinking budget: none, low, medium, high |
 | `--max-thinking-tokens` | int | - | Maximum thinking tokens |
-| `--assessment-policy` | enum | `ALL_CASES` | Policy used to assess checkpoint success |
+| `--assessment-policy` | enum | `all-cases` | Policy used to assess checkpoint success |
 | `--continue-after-test-failure/--stop-after-test-failure` | flag | stop | Continue later checkpoints after failed assessment |
+| `--evaluate/--no-evaluate` | flag | evaluate | Run evaluation after inference |
 
 ## Behavior
 
@@ -52,8 +53,9 @@ This command provides low-level control over running a single problem. It:
 1. Loads agent, environment, and prompt configurations
 2. Resolves API credentials for the specified provider
 3. Builds Docker image if required by agent
-4. Runs the agent through all checkpoints
-5. Optionally evaluates results after inference
+4. Runs checkpoints until an agent error, rate limit, or failed assessment stops execution
+5. Evaluates each checkpoint by default; `--no-evaluate` disables assessment
+6. Continues after a failed assessment only with `--continue-after-test-failure`
 
 ### Thinking Options
 
@@ -74,7 +76,7 @@ This command provides low-level control over running a single problem. It:
 slop-code infer-problem file_backup \
   -a configs/agents/claude_code-2.0.51.yaml \
   -e configs/environments/docker-python3.12-uv.yaml \
-  -o outputs/test \
+  -o experiments/test \
   -prompt configs/prompts/just-solve.jinja \
   -m anthropic/sonnet-4.5
 ```
@@ -84,7 +86,7 @@ slop-code infer-problem file_backup \
 slop-code infer-problem file_backup \
   -a configs/agents/claude_code-2.0.51.yaml \
   -e configs/environments/docker-python3.12-uv.yaml \
-  -o outputs/test_thinking \
+  -o experiments/test_thinking \
   -prompt configs/prompts/just-solve.jinja \
   -m anthropic/sonnet-4.5 \
   --thinking high
@@ -95,7 +97,7 @@ slop-code infer-problem file_backup \
 slop-code infer-problem file_backup \
   -a configs/agents/claude_code-2.0.51.yaml \
   -e configs/environments/docker-python3.12-uv.yaml \
-  -o outputs/infer_only \
+  -o experiments/infer_only \
   -prompt configs/prompts/just-solve.jinja \
   -m anthropic/sonnet-4.5 \
   --no-evaluate
@@ -106,7 +108,7 @@ slop-code infer-problem file_backup \
 slop-code infer-problem file_backup \
   -a configs/agents/claude_code-2.0.51.yaml \
   -e configs/environments/docker-python3.12-uv.yaml \
-  -o outputs/test \
+  -o experiments/test \
   -prompt configs/prompts/just-solve.jinja \
   -m anthropic/sonnet-4.5 \
   --provider-api-key-env MY_ANTHROPIC_KEY

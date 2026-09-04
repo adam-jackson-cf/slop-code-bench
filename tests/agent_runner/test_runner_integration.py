@@ -225,7 +225,7 @@ def test_agent_runner_stops_after_failed_checkpoint(tmp_path: Path) -> None:
     agent = FailingAgent()
 
     progress_queue: queue.Queue = queue.Queue()
-    output_path = tmp_path / "outputs"
+    output_path = tmp_path / "experiments"
     output_path.mkdir(parents=True, exist_ok=True)
 
     workspace = tmp_path / "workspace"
@@ -333,7 +333,7 @@ def test_agent_runner_saves_artifacts_when_checkpoint_raises(
     agent = ExplodingCheckpointAgent()
 
     progress_queue: queue.Queue = queue.Queue()
-    output_path = tmp_path / "outputs"
+    output_path = tmp_path / "experiments"
     output_path.mkdir(parents=True, exist_ok=True)
 
     workspace = tmp_path / "workspace"
@@ -423,7 +423,7 @@ def test_agent_runner_saves_artifacts_when_checkpoint_is_interrupted(
     run_spec = _make_run_spec(problem, environment)
     agent = InterruptingAgent()
 
-    output_path = tmp_path / "outputs"
+    output_path = tmp_path / "experiments"
     checkpoint_dir = output_path / "first"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
@@ -458,7 +458,7 @@ def test_agent_runner_saves_artifacts_when_checkpoint_returns_no_result(
     run_spec = _make_run_spec(problem, environment)
     agent = FailingAgent()
 
-    output_path = tmp_path / "outputs"
+    output_path = tmp_path / "experiments"
     checkpoint_dir = output_path / "first"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     snapshot_dir = checkpoint_dir / "snapshot"

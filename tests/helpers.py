@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
-import shutil
-import subprocess
 from functools import cache
+
+import docker
+from docker.errors import DockerException
+from requests.exceptions import RequestException
 
 DOCKER_TEST_IMAGE = os.environ.get(
     "SLOP_CODE_TEST_DOCKER_IMAGE",
@@ -13,25 +15,30 @@ DOCKER_TEST_IMAGE = os.environ.get(
 )
 
 
-def _docker_binary() -> str | None:
-    """Return the path to the docker binary if it exists."""
-    return shutil.which("docker")
+def _docker_client() -> docker.DockerClient | None:
+    """Return a Docker client when the daemon can be reached."""
+    try:
+        client = docker.from_env()
+        client.ping()
+    except (DockerException, RequestException):
+        return None
+    return client
 
 
 @cache
 def docker_tests_available(image: str = DOCKER_TEST_IMAGE) -> bool:
     """Check that Docker is usable and the provided image is present."""
-    docker_bin = _docker_binary()
-    if not docker_bin:
+    client = _docker_client()
+    if client is None:
         return False
 
-    result = subprocess.run(
-        [docker_bin, "image", "inspect", image],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    return result.returncode == 0
+    try:
+        client.images.get(image)
+    except (DockerException, RequestException):
+        return False
+    finally:
+        client.close()
+    return True
 
 
 __all__ = ["DOCKER_TEST_IMAGE", "docker_tests_available"]

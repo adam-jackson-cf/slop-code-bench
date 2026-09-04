@@ -65,12 +65,12 @@ class TestInterpolationContext:
         cfg = OmegaConf.create(
             {
                 "model": {"name": "sonnet-4.5", "provider": "anthropic"},
-                "output_path": "outputs/${model.name}/${model.provider}",
+                "output_path": "experiments/${model.name}/${model.provider}",
             }
         )
         OmegaConf.resolve(cfg)
 
-        assert cfg.output_path == "outputs/sonnet-4.5/anthropic"
+        assert cfg.output_path == "experiments/sonnet-4.5/anthropic"
 
     def test_combined_interpolation(self):
         """Test combining multiple interpolations in one string."""
@@ -92,12 +92,12 @@ class TestInterpolationContext:
         cfg = OmegaConf.create(
             {
                 "model": {"name": "test"},
-                "output_path": "outputs/${model.name}/${now:%Y%m%d}",
+                "output_path": "experiments/${model.name}/${now:%Y%m%d}",
             }
         )
         OmegaConf.resolve(cfg)
 
         parts = cfg.output_path.split("/")
-        assert parts[0] == "outputs"
+        assert parts[0] == "experiments"
         assert parts[1] == "test"
         assert re.match(r"^\d{8}$", parts[2])

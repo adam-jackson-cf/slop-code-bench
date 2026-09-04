@@ -67,8 +67,8 @@ The command displays:
 
 **Basic evaluation:**
 ```bash
-slop-code eval-snapshot outputs/snapshot \
-  -o outputs/eval \
+slop-code eval-snapshot experiments/snapshot \
+  -o experiments/eval \
   -p file_backup \
   -c 1 \
   -e configs/environments/docker-python3.12-uv.yaml
@@ -76,8 +76,8 @@ slop-code eval-snapshot outputs/snapshot \
 
 **With rubric grading:**
 ```bash
-slop-code eval-snapshot outputs/snapshot \
-  -o outputs/eval \
+slop-code eval-snapshot experiments/snapshot \
+  -o experiments/eval \
   -p file_backup \
   -c 2 \
   -e configs/environments/docker-python3.12-uv.yaml \
@@ -88,8 +88,8 @@ slop-code eval-snapshot outputs/snapshot \
 **Evaluate different checkpoint:**
 ```bash
 # Evaluate checkpoint 3 of a problem
-slop-code eval-snapshot outputs/snapshot \
-  -o outputs/eval_c3 \
+slop-code eval-snapshot experiments/snapshot \
+  -o experiments/eval_c3 \
   -p trajectory_api \
   -c 3 \
   -e configs/environments/docker-python3.12-uv.yaml

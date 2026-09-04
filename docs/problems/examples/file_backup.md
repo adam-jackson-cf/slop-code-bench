@@ -21,6 +21,8 @@ Complete walkthrough of the `file_backup` problem, a CLI-based backup scheduler.
 ```
 problems/file_backup/
 ├── config.yaml              # Problem configuration
+├── pyproject.toml         # Pinned evaluator dependencies
+├── uv.lock                # Exact evaluator lock
 ├── checkpoint_1.md          # Spec: Basic scheduling
 ├── checkpoint_2.md          # Spec: Execution modes
 ├── checkpoint_3.md          # Spec: Verification
@@ -382,9 +384,10 @@ def parse_jsonl(text):
 
 ```bash
 cd problems/file_backup
+uv sync --frozen --no-install-project
 
 # Run tests against reference solution
-pytest tests/ \
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solutions/reference/backup_scheduler.py" \
   --checkpoint=checkpoint_1 \
   -v

@@ -6,8 +6,8 @@ Define the canonical catalog index, Fault Category Record shape, statuses, and i
 
 ## Canonical paths
 
-- `.experiments/fault-catalog.md` is the high-level index and status view.
-- `.experiments/fault-category-records/` contains one Fault Category Record per reusable fault category.
+- `experiment_analysis/fault-catalog.md` is the high-level index and status view.
+- `experiment_analysis/fault-category-records/` contains one Fault Category Record per reusable fault category.
 - Name records `FCR-NNN-<canonical-fault-category-slug>.md`.
 - Never create a parallel catalog or reuse an identifier.
 

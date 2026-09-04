@@ -107,8 +107,6 @@ class OpenHandsAgent(Agent):
     def __init__(
         self,
         problem_name: str,
-        verbose: bool,  # noqa: FBT001
-        image: str,
         # From base config
         cost_limits: AgentCostLimits,
         pricing: APIPricing | None,
@@ -118,6 +116,9 @@ class OpenHandsAgent(Agent):
         base_url: str | None,
         timeout: int | None,
         env: dict[str, str],
+        *,
+        verbose: bool,
+        image: str,
     ) -> None:
         super().__init__(
             agent_name="openhands",
@@ -152,7 +153,8 @@ class OpenHandsAgent(Agent):
         model: ModelDefinition,
         credential: ProviderCredential,
         problem_name: str,
-        verbose: bool,  # noqa: FBT001
+        *,
+        verbose: bool,
         image: str | None,
         thinking_preset: ThinkingPreset | None = None,
         thinking_max_tokens: int | None = None,

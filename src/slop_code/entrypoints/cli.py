@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 import typer
 from dotenv import load_dotenv
 from structlog import get_logger
@@ -61,6 +63,7 @@ app.add_typer(viz_app, name="viz")
 @app.callback()
 def main(
     ctx: typer.Context,
+    *,
     verbose: int = typer.Option(
         0,
         "-v",
@@ -68,23 +71,23 @@ def main(
         count=True,
         help="Increase verbosity (repeatable)",
     ),
-    quiet: bool = typer.Option(
-        False,
-        "-q",
-        "--quiet",
-        help="Suppress console logging. Logs still written to file.",
-    ),
+    quiet: Annotated[
+        bool,
+        typer.Option(
+            "-q",
+            "--quiet",
+            help="Suppress console logging. Logs still written to file.",
+        ),
+    ] = False,
     seed: int = typer.Option(42, "--seed", help="Random seed"),
-    overwrite: bool = typer.Option(
-        False,
-        "--overwrite",
-        help="Overwrite existing output directory",
-    ),
-    debug: bool = typer.Option(
-        False,
-        "--debug",
-        help="Enable debugging mode",
-    ),
+    overwrite: Annotated[
+        bool,
+        typer.Option("--overwrite", help="Overwrite existing output directory"),
+    ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Enable debugging mode"),
+    ] = False,
     snapshot_dir_name: str = typer.Option(
         common.SNAPSHOT_DIR_NAME,
         "--snapshot-dir-name",

@@ -46,8 +46,11 @@ class CatalogManifest:
     def from_payload(cls, payload: object) -> CatalogManifest | None:
         if not isinstance(payload, dict):
             return None
-        version = payload.get("version")
-        commit = payload.get("commit")
+        string_keyed_payload = {
+            key: value for key, value in payload.items() if isinstance(key, str)
+        }
+        version = string_keyed_payload.get("version")
+        commit = string_keyed_payload.get("commit")
         if not isinstance(version, str) or not isinstance(commit, str):
             return None
         if not version.strip() or not commit.strip():

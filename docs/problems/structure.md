@@ -32,6 +32,12 @@ problems/{problem_name}/
 │       order: 1                 └─────────────────────────────
 │       state: Core Tests
 │
+├── pyproject.toml             ─────────────────────────────
+│   [project]                  │ Evaluator Environment     │
+│   dependencies = [...]       │ • Pinned dependencies     │
+├── uv.lock                    │ • Exact frozen lock       │
+│                              └─────────────────────────────
+│
 ├── checkpoint_1.md              ─────────────────────────────
 │   # Checkpoint 1: Feature      │ Specification            │
 │   Build a tool that...         │ • What agents must build │
@@ -124,14 +130,28 @@ static_assets:
     path: static_assets/files
 
 test_dependencies:
-  - pyyaml
-  - requests
+  - "pyyaml==6.0.2"        # Must exactly match pyproject.toml
+  - "requests==2.32.5"
 
 markers:
   slow:
     description: slow tests
     group: FUNCTIONALITY
 ```
+
+### pyproject.toml and uv.lock (Required)
+
+`pyproject.toml` declares the complete trusted evaluator dependency set.
+Generate `uv.lock` after every manifest change and commit both files:
+
+```bash
+uv lock --project problems/my_problem
+```
+
+Evaluation copies both files into a content-addressed environment, runs
+`uv sync --frozen --no-install-project`, and verifies the completed environment
+before reuse. Every `test_dependencies` entry in `config.yaml` must exactly
+match one `[project].dependencies` entry.
 
 ### checkpoint_N.md (Required)
 
@@ -348,6 +368,9 @@ problems/etl_pipeline/
 │       order: 3
 │       state: Core Tests
 │       include_prior_tests: true
+│
+├── pyproject.toml
+├── uv.lock
 │
 ├── checkpoint_1.md              # Basic parsing
 ├── checkpoint_2.md              # Add filtering

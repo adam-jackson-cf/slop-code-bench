@@ -610,7 +610,7 @@ pytest -k "core" tests/
 pytest -k "case_1 or case_2" tests/
 
 # Run specific parametrized test
-pytest tests/test_checkpoint_1.py::test_core[case_1]
+.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_core[case_1]
 ```
 
 ## Edge Cases and Gotchas

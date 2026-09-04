@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pandas as pd
-import plotly.graph_objects as go
+
+if TYPE_CHECKING:
+    import plotly.graph_objects as go
 
 from slop_code.dashboard.data import ChartContext
 from slop_code.dashboard.graphs.boxplot import build_checkpoint_delta_boxplot

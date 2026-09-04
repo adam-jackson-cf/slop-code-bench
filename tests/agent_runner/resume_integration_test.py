@@ -6,11 +6,14 @@ environment with proper user permissions.
 
 from __future__ import annotations
 
-import subprocess
+import contextlib
+import shutil
 from pathlib import Path
 
+import docker
 import pytest
 import yaml
+from docker.errors import DockerException
 
 from slop_code.execution.docker_runtime import DockerEnvironmentSpec
 from slop_code.execution.docker_runtime import DockerExecRuntime
@@ -57,26 +60,17 @@ def docker_python_env() -> DockerEnvironmentSpec:
 
 
 def cleanup_as_root(path: Path) -> None:
-    """Clean up a directory that may have root-owned files using docker."""
+    """Clean up a directory that may have root-owned files using Docker."""
     if not path.exists():
         return
-    # Use docker to remove files as root
-    subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "-v",
-            f"{path}:/cleanup",
+
+    with contextlib.suppress(DockerException):
+        docker.from_env().containers.run(
             "alpine:latest",
-            "rm",
-            "-rf",
-            "/cleanup",
-        ],
-        capture_output=True,
-        check=False,
-    )
-    # Remove the now-empty directory
+            ["rm", "-rf", "/cleanup"],
+            volumes={str(path): {"bind": "/cleanup", "mode": "rw"}},
+            remove=True,
+        )
     if path.exists():
         path.rmdir()
 
@@ -109,7 +103,6 @@ class TestResumeCommandsIntegration:
         (snapshot_dir / "main.py").write_text("print('hello')\n")
 
         # Copy snapshot to workspace
-        import shutil
 
         for item in snapshot_dir.iterdir():
             if item.is_dir():
@@ -148,9 +141,9 @@ class TestResumeCommandsIntegration:
             ".venv/bin/pip --version",
             timeout=30,
         )
-        assert result.exit_code == 0, (
-            f"pip not working in venv: {result.stderr}"
-        )
+        assert (
+            result.exit_code == 0
+        ), f"pip not working in venv: {result.stderr}"
         assert "pip" in result.stdout
 
         # Verify requests was installed

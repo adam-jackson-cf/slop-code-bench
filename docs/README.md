@@ -70,7 +70,7 @@ Deep dive into how SlopCodeBench executes pytest tests against submissions, cate
 - [evaluation/README.md](evaluation/README.md) - Quick start and overview
 - [evaluation/architecture.md](evaluation/architecture.md) - Pytest runner and execution flow
 - [evaluation/configuration.md](evaluation/configuration.md) - Problem and checkpoint configuration
-- [evaluation/reporting.md](evaluation/reporting.md) - Results, pass policies, and export formats
+- [evaluation/reporting.md](evaluation/reporting.md) - Results, assessment policies, and export formats
 
 ### [execution/](execution/)
 **Workspace management, runtime execution, and snapshots**

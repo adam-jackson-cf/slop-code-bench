@@ -434,6 +434,7 @@ def test_run_falls_back_to_pricing_when_reported_cost_is_absent(make_agent):
     )
     assert agent.usage.cost > 0
 
+
 def test_run_uses_catalog_pricing_for_subscription_model(make_agent):
     agent, runtime = make_agent()
     agent.use_catalog_pricing = True
@@ -746,12 +747,14 @@ def test_glm_5_1_openrouter_provider_order_is_preserved():
     assert provider_options["allow_fallbacks"] is False
 
 
-def test_setup_sets_fake_vcs_env(make_agent):
+def test_setup_sets_runtime_environment(make_agent):
     agent, _ = make_agent()
 
     assert isinstance(agent.session, FakeSession)
     assert agent.session.spawn_kwargs is not None
-    assert agent.session.spawn_kwargs["env_vars"]["OPENCODE_FAKE_VCS"] == "git"
+    env_vars = agent.session.spawn_kwargs["env_vars"]
+    assert env_vars["HOME"] == "/tmp/agent_home"
+    assert env_vars["OPENCODE_FAKE_VCS"] == "git"
 
 
 def test_run_skips_invalid_json_lines(make_agent):
@@ -823,6 +826,7 @@ def test_run_raises_on_opencode_error_event(make_agent):
 
     with pytest.raises(AgentError, match="Model not found"):
         agent.run("trigger error")
+
 
 def test_run_raises_on_nested_opencode_error_event(make_agent):
     agent, runtime = make_agent()

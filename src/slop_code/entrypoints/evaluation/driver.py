@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import functools
 import json
 import traceback
 from collections import defaultdict
@@ -16,6 +15,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.progress import BarColumn
 from rich.progress import Progress
+from rich.progress import TaskID
 from rich.progress import TextColumn
 from rich.progress import TimeElapsedColumn
 from rich.progress import TimeRemainingColumn
@@ -109,6 +109,10 @@ def evaluate_checkpoint(
         problem=problem,
         checkpoint=checkpoint,
         env_spec=environment,
+        evaluator_environment_parent=(
+            save_dir.resolve().parents[1] / "measurement_analysis"
+        ),
+        measurement_coverage=True,
     )
     logger.debug(
         "Saving checkpoint report",
@@ -307,13 +311,14 @@ def maybe_progress_bar(
     class Bar:
         progress: Progress
         live: Live
-        task_id: int
+        task_id: TaskID
 
-        def update(self, current: int, core_pct: str | None = None):
-            update_fields: dict[str, int | str] = {"completed": current}
-            if core_pct is not None:
-                update_fields["core_pct"] = core_pct
-            self.progress.update(self.task_id, **update_fields)
+        def update(self, current: int, core_pct: str | None = None) -> None:
+            self.progress.update(
+                self.task_id,
+                completed=current,
+                core_pct=core_pct if core_pct is not None else "0.0%",
+            )
 
         def __enter__(self):
             self.live.__enter__()
@@ -351,14 +356,6 @@ def evaluate(
         problems=[p[0].name for p in problems],
     )
     # Use the worker wrapper to ensure logging is configured in each worker process
-    eval_fn = functools.partial(
-        _evaluate_checkpoint_worker,
-        environment=environment,
-        rubric_path=rubric_path,
-        rubric_model=rubric_model,
-        rubric_temperature=rubric_temperature,
-        rubric_provider=rubric_provider,
-    )
 
     def get_eval_args(
         problem: ProblemConfig, problem_submission: Path
@@ -388,9 +385,22 @@ def evaluate(
 
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         futures = [
-            executor.submit(eval_fn, *args)
+            executor.submit(
+                _evaluate_checkpoint_worker,
+                snapshot,
+                save_dir,
+                checkpoint,
+                problem,
+                environment,
+                rubric_path,
+                rubric_model,
+                rubric_temperature,
+                rubric_provider,
+            )
             for p_cfg, p_submission in problems
-            for args in get_eval_args(p_cfg, p_submission)
+            for snapshot, save_dir, checkpoint, problem in get_eval_args(
+                p_cfg, p_submission
+            )
         ]
         total_checkpoints = len(futures)
 
@@ -426,6 +436,10 @@ def evaluate(
 
                 successful += 1
                 result = eval_result.result
+                if result is None:
+                    raise RuntimeError(
+                        "Successful checkpoint evaluation did not include a result"
+                    )
                 core_passed += result.report.pass_counts.get(GroupType.CORE, 0)
                 core_total += result.report.total_counts.get(GroupType.CORE, 0)
                 core_pct = (

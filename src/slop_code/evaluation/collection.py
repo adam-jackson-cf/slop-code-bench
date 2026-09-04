@@ -5,13 +5,20 @@ from __future__ import annotations
 import hashlib
 import json
 import shlex
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from slop_code.common import WORKSPACE_TEST_DIR
+from slop_code.evaluation import coverage_plugin
 from slop_code.evaluation.config import CheckpointConfig
 from slop_code.evaluation.config import ProblemConfig
+from slop_code.evaluation.locked_environment import LockedEnvironmentError
+from slop_code.evaluation.locked_environment import (
+    ensure_locked_evaluator_environment,
+)
 from slop_code.evaluation.report import CorrectnessResults
 from slop_code.evaluation.report import GroupType
 from slop_code.evaluation.report import TestResult
@@ -26,14 +33,7 @@ EXIT_OK = 0
 EXIT_NOTESTSCOLLECTED = 5
 VALID_COLLECTION_EXIT_CODES = {EXIT_OK, EXIT_NOTESTSCOLLECTED}
 
-TEST_DEPENDENCIES = [
-    "pytest",
-    "pytest-json-ctrf",
-    "pytest-json-report",
-    "pytest-timeout",
-    "jsonschema",
-    "deepdiff",
-]
+EVALUATOR_CACHE_DIRNAME = ".scbench-evaluator-cache"
 
 
 @dataclass(frozen=True)
@@ -148,9 +148,83 @@ markers =
     (workspace_path / "pytest.ini").write_text(content)
 
 
-def _build_with_flags(problem: ProblemConfig) -> list[str]:
-    deps = list(TEST_DEPENDENCIES) + list(problem.test_dependencies or [])
-    return [f"--with={dep}" for dep in deps]
+def _locked_evaluator_python(
+    session: Session,
+    evaluator_environment_parent: Path,
+    problem: ProblemConfig,
+) -> Path:
+    """Build the evaluator in the session's execution environment."""
+    parent = evaluator_environment_parent.resolve()
+    if session.spec.type != "docker":
+        return ensure_locked_evaluator_environment(
+            parent,
+            problem,
+            Path(coverage_plugin.__file__).read_bytes(),
+            Path(sys.executable).resolve().read_bytes(),
+        ).python
+
+    container_parent = (
+        Path(getattr(session.spec, "docker").workdir) / EVALUATOR_CACHE_DIRNAME
+    )
+    mounts: dict[str, dict[str, str] | str] = {
+        str(parent): {"bind": str(container_parent), "mode": "rw"}
+    }
+
+    def run_in_session(target: Path) -> None:
+        relative_target = target.relative_to(parent)
+        command = (
+            f"cd {shlex.quote(str(Path(EVALUATOR_CACHE_DIRNAME) / relative_target))}"
+            " && UV_PROJECT_ENVIRONMENT=.venv uv sync --frozen --no-install-project"
+        )
+        runtime = session.exec(command=command, mounts=mounts)
+        try:
+            result = runtime.execute({}, None, None)
+        finally:
+            runtime.cleanup()
+        if result.exit_code != EXIT_OK:
+            raise subprocess.CalledProcessError(
+                result.exit_code, command, result.stdout, result.stderr
+            )
+
+    identity_runtime = session.exec(
+        command="python -c 'import hashlib,sys; print(sys.executable); print(hashlib.sha256(open(sys.executable, \"rb\").read()).hexdigest())'"
+    )
+    try:
+        identity = identity_runtime.execute({}, None, None)
+    finally:
+        identity_runtime.cleanup()
+    if identity.exit_code != EXIT_OK:
+        raise LockedEnvironmentError("runtime interpreter identity failed")
+    environment = ensure_locked_evaluator_environment(
+        parent,
+        problem,
+        Path(coverage_plugin.__file__).read_bytes(),
+        identity.stdout.encode(),
+        sync_environment=run_in_session,
+    )
+    return (
+        container_parent
+        / environment.root.relative_to(parent)
+        / ".venv"
+        / "bin"
+        / "python"
+    )
+
+
+def _locked_evaluator_mounts(
+    session: Session, evaluator_environment_parent: Path
+) -> dict[str, dict[str, str] | str] | None:
+    if session.spec.type != "docker":
+        return None
+    return {
+        str(evaluator_environment_parent.resolve()): {
+            "bind": str(
+                Path(getattr(session.spec, "docker").workdir)
+                / EVALUATOR_CACHE_DIRNAME
+            ),
+            "mode": "rw",
+        }
+    }
 
 
 def _quote_args(extra_args: list[str] | None) -> list[str]:
@@ -159,18 +233,21 @@ def _quote_args(extra_args: list[str] | None) -> list[str]:
 
 def _build_collect_cmd(
     *,
-    problem: ProblemConfig,
+    evaluator_python: Path,
     checkpoint_name: str,
     entrypoint: str,
     marker: str | None,
     pytest_args: list[str] | None,
 ) -> str:
     parts = [
-        "uvx",
-        *_build_with_flags(problem),
+        shlex.quote(str(evaluator_python)),
+        "-m",
         "pytest",
         "--collect-only",
         "-q",
+        # Explicitly name the trusted evaluator test directory before its
+        # custom options so pytest loads its conftest during startup.
+        WORKSPACE_TEST_DIR,
         # Exclude an agent-authored conftest.py at the workspace root from
         # collection (SCBench's own conftest lives inside WORKSPACE_TEST_DIR).
         f"--confcutdir={WORKSPACE_TEST_DIR}",
@@ -180,10 +257,9 @@ def _build_collect_cmd(
 
     if marker is not None:
         parts.extend(["-m", shlex.quote(marker)])
-
     parts.extend(["-k", shlex.quote(checkpoint_name)])
+
     parts.extend(_quote_args(pytest_args))
-    parts.append(WORKSPACE_TEST_DIR)
     return " ".join(parts)
 
 
@@ -232,6 +308,7 @@ def collect_checkpoint_tc(
     problem: ProblemConfig,
     checkpoint: CheckpointConfig,
     env_spec: EnvironmentSpec,
+    evaluator_environment_parent: Path,
     pytest_args: list[str] | None = None,
 ) -> CheckpointTestCollection:
     """Collect checkpoint tests via marker passes and return classification."""
@@ -277,7 +354,13 @@ def collect_checkpoint_tc(
             **env_spec.get_full_env(checkpoint.env),
             **asset_env_vars,
         }
+        evaluator_python = _locked_evaluator_python(
+            session, evaluator_environment_parent, problem
+        )
 
+        evaluator_mounts = _locked_evaluator_mounts(
+            session, evaluator_environment_parent
+        )
         marker_map: dict[str | None, set[str]] = {
             "error": set(),
             "functionality": set(),
@@ -289,13 +372,13 @@ def collect_checkpoint_tc(
 
         for marker in ("error", "functionality", "regression", None):
             cmd = _build_collect_cmd(
-                problem=problem,
+                evaluator_python=evaluator_python,
                 checkpoint_name=checkpoint.name,
                 entrypoint=entrypoint,
                 marker=marker,
                 pytest_args=pytest_args,
             )
-            runtime = session.exec(command=cmd)
+            runtime = session.exec(command=cmd, mounts=evaluator_mounts)
             try:
                 result = runtime.execute(full_env, None, None)
             finally:
@@ -318,13 +401,13 @@ def collect_checkpoint_tc(
                 if prior_name == checkpoint.name:
                     break
                 cmd = _build_collect_cmd(
-                    problem=problem,
+                    evaluator_python=evaluator_python,
                     checkpoint_name=prior_name,
                     entrypoint=entrypoint,
                     marker=None,
                     pytest_args=pytest_args,
                 )
-                runtime = session.exec(command=cmd)
+                runtime = session.exec(command=cmd, mounts=evaluator_mounts)
                 try:
                     result = runtime.execute(full_env, None, None)
                 finally:
@@ -471,6 +554,8 @@ def run_checkpoint_with_collection(
     checkpoint: CheckpointConfig,
     env_spec: EnvironmentSpec,
     pytest_args: list[str] | None = None,
+    evaluator_environment_parent: Path,
+    measurement_coverage: bool = False,
 ) -> CorrectnessResults:
     """Run checkpoint pytest and apply collection-backed test inventory."""
     from slop_code.evaluation.pytest_runner import PytestRunner
@@ -480,6 +565,8 @@ def run_checkpoint_with_collection(
         checkpoint=checkpoint,
         environment=env_spec,
         submission_path=submission_path,
+        evaluator_environment_parent=evaluator_environment_parent,
+        measurement_coverage=measurement_coverage,
     )
 
     collection: CheckpointTestCollection | None = None
@@ -489,6 +576,7 @@ def run_checkpoint_with_collection(
             problem=problem,
             checkpoint=checkpoint,
             env_spec=env_spec,
+            evaluator_environment_parent=evaluator_environment_parent,
             pytest_args=pytest_args,
         )
 

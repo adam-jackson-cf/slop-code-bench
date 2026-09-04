@@ -4,10 +4,10 @@
 
 - Keep engineering practices and operational instructions in this file.
 - Put project overview, repository structure, architecture, workflows, and
-  descriptions of how the system works in `README.md` or the relevant guide
-  under `docs/`.
+descriptions of how the system works in `README.md` or the relevant guide
+under `docs/`.
 - Do not duplicate this file in tool-specific instruction files; those files
-  should point to `AGENTS.md`.
+should point to `AGENTS.md`.
 
 ## Build, Test, and Development Commands
 
@@ -15,8 +15,8 @@
 uv sync
 uv run slop-code --help
 uv run slop-code run ...
-uv run slop-code eval outputs/<run-dir>
-uv run slop-code tools run-case -s outputs/<snapshot> -p <problem> -c <n> -e configs/environments/docker-python3.12-uv.yaml
+uv run slop-code eval experiments/<run-dir>
+uv run slop-code tools run-case -s experiments/<snapshot> -p <problem> -c <n> -e configs/environments/docker-python3.12-uv.yaml
 
 uv run pytest -q
 uv run pytest tests/path/to/test_file.py
@@ -25,10 +25,24 @@ uv run ruff check --fix .
 
 ## Benchmark Operations
 
-- After a benchmark completes successfully, use the
-  `experiment-observations` skill to capture observations.
-- Use the `fault-catalog` skill to update the fault catalog and corresponding
-  Fault Category Records when the observations require it.
+- After a benchmark (experiment) completes successfully, use the [`experiment-observations`](./.agents/skills/experiment-observations/SKILL.md) skill to capture observations and surface results to the user.
+- Use the [`fault-catalog`](./.agents/skills/fault-catalog/SKILL.md) skill to update the fault catalog and corresponding
+Fault Category Records when the observations require it.
+
+## Experiment Snapshot Integrity
+
+- **NEVER** modify experiment snapshots during implementation, remediation,
+formatting, linting, type-checking, security hardening, or test repair. They
+include intentional challenges and issues to support the benchmark
+experiment.
+- Experiment snapshots include `tests/agent_runner/resources/**`,
+`tests/mining/fixtures/**`, `tests/evaluation/fixtures/**`,
+`examples/**/submission/**`, `examples/**/submissions/**`,
+`scratch/attempts/**`, `scripts/attempts/**`, `problems/**/solution/**`, and
+`problems/**/tests/data/**`.
+- **ALWAYS** exclude experiment snapshots from applicable automated quality
+gates. If tooling modifies one, restore it byte-for-byte rather than repair
+its intentional defects.
 
 ## Benchmark Assessment
 
@@ -41,31 +55,32 @@ uv run ruff check --fix .
 
 - Use Python 3.12+, 4-space indentation, and a maximum line length of 80.
 - Use `from __future__ import annotations`, `pathlib.Path`, and type
-  annotations for all functions.
+annotations for all functions.
 - Use Pydantic models for configuration and
-  `structlog.get_logger(__name__)` for logging.
+`structlog.get_logger(__name__)` for logging.
 - Keep imports on separate lines. Use `snake_case` for modules and `CapWords`
-  for classes.
+for classes.
 
 ## Testing Guidelines
 
 - Use pytest. Test files under `tests/` use `*_test.py` or `test_*.py`.
 - Add tests for new behavior and edge cases.
 - **NEVER** run a benchmark problem's tests directly with pytest. **ALWAYS**
-  use `uv run slop-code --quiet eval-snapshot` or
-  `uv run slop-code --quiet tools run-case`.
+use `uv run slop-code --quiet eval-snapshot` or
+`uv run slop-code --quiet tools run-case`.
 
 ## Commit and Pull Request Guidelines
 
 - Use concise Conventional Commit summaries.
 - For problem contributions, follow
-  `docs/contributing-problems/checklist.md`.
+`docs/contributing-problems/checklist.md`.
 - For other pull requests, include a clear description, link relevant issues,
-  note verification performed, and add screenshots for dashboard or UI
-  changes.
+note verification performed, and add screenshots for dashboard or UI
+changes.
 
 ## Configuration and Credentials
 
 - API keys are provided through environment variables. Do not commit secrets.
 - Environment and runtime settings live in `configs/environments/` and
-  `configs/providers.yaml`.
+`configs/providers.yaml`.
+

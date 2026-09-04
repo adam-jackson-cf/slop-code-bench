@@ -1,11 +1,11 @@
 ---
 version: 1.0
-last_updated: 2025-12-10
+last_updated: 2026-08-29
 ---
 
 # Models Guide
 
-Models define API endpoints, pricing, and agent-specific configuration. The model catalog provides a central registry loaded from `configs/models/*.yaml`.
+Models define API endpoints, estimated API-equivalent pricing, authentication, cost accounting, and agent-specific configuration. The model catalog provides a central registry loaded from `configs/models/*.yaml`.
 
 ## Quick Start
 
@@ -41,6 +41,8 @@ slop-code run --model anthropic/my-model --problem file_backup
 | Field | Type | Description |
 |-------|------|-------------|
 | `aliases` | list[str] | Alternative names for lookup |
+| `authentication_mode` | `chatgpt_subscription_oauth` | Non-API-key authentication used by subscription-backed models |
+| `cost_accounting` | object | Relationship between actual billing and estimated catalog pricing |
 | `provider_slugs` | dict[str, str] | Provider-specific model identifiers |
 | `agent_specific` | dict[str, dict] | Per-agent configuration |
 | `thinking` | string | Thinking preset (`none`/`disabled`/`low`/`medium`/`high`) |
@@ -48,14 +50,41 @@ slop-code run --model anthropic/my-model --problem file_backup
 
 ## Pricing Configuration
 
-Pricing is specified per million tokens:
+Pricing is estimated API-equivalent cost per million tokens. `source` and
+`effective_date` record provenance; prompt tiers override the base rates when
+the request's input-token count is at or below `max_input_tokens`.
 
 ```yaml
 pricing:
-  input: 3.0        # Cost per 1M input tokens
-  output: 15.0      # Cost per 1M output tokens
-  cache_read: 0.30  # Cost per 1M cache read tokens
-  cache_write: 3.75 # Cost per 1M cache write tokens
+  source: https://provider.example/pricing
+  effective_date: 2026-08-17
+  input: 3.0
+  output: 15.0
+  cache_read: 0.30
+  cache_write: 3.75
+  prompt_tiers:
+    - max_input_tokens: 272000
+      input: 1.5
+      output: 10.0
+      cache_read: 0.15
+      cache_write: 1.875
+```
+
+## Subscription Authentication and Cost Accounting
+
+Subscription-backed OpenCode models use the mounted OpenCode auth file instead
+of an API key. Their recorded cost remains the catalog-priced API equivalent,
+not an amount billed to the subscription.
+
+```yaml
+provider: opencode_auth
+authentication_mode: chatgpt_subscription_oauth
+cost_accounting:
+  actual_billed_cost: subscription_included
+  estimated_api_equivalent_cost: catalog_pricing
+agent_specific:
+  opencode:
+    provider_name: openai
 ```
 
 ## Aliases

@@ -35,6 +35,20 @@ def compute_run_summary(
     """
     problems = group_by_problem(checkpoints)
 
+    solve_rates = aggregators.compute_solve_rates(
+        checkpoints, problems, expected_checkpoints
+    )
+    solve_rate_counts = {
+        name: value
+        for name, value in solve_rates.items()
+        if isinstance(value, int)
+    }
+    solve_rate_percentages = {
+        name: float(value)
+        for name, value in solve_rates.items()
+        if isinstance(value, int | float)
+    }
+
     return RunSummary(
         model=config["model"]["name"],
         thinking=config["thinking"],
@@ -48,8 +62,29 @@ def compute_run_summary(
         time=aggregators.compute_time_stats(checkpoints, problems),
         tokens=aggregators.compute_tokens_stats(checkpoints, problems),
         steps=aggregators.compute_steps_stats(checkpoints, problems),
-        **aggregators.compute_solve_rates(
-            checkpoints, problems, expected_checkpoints
+        checkpoints_solved=solve_rate_counts.get("checkpoints_solved", 0),
+        checkpoints_iso_solved=solve_rate_counts.get(
+            "checkpoints_iso_solved", 0
+        ),
+        checkpoints_core_solved=solve_rate_counts.get(
+            "checkpoints_core_solved", 0
+        ),
+        problem_solved=solve_rate_percentages.get("problem_solved", 0.0),
+        problem_partial=solve_rate_percentages.get("problem_partial", 0.0),
+        pct_checkpoints_solved=solve_rate_percentages.get(
+            "pct_checkpoints_solved", 0.0
+        ),
+        pct_checkpoints_iso_solved=solve_rate_percentages.get(
+            "pct_checkpoints_iso_solved", 0.0
+        ),
+        pct_checkpoints_core_solved=solve_rate_percentages.get(
+            "pct_checkpoints_core_solved", 0.0
+        ),
+        pct_problems_solved=solve_rate_percentages.get(
+            "pct_problems_solved", 0.0
+        ),
+        pct_problems_partial=solve_rate_percentages.get(
+            "pct_problems_partial", 0.0
         ),
         pass_rates=aggregators.compute_pass_rates_stats(checkpoints, problems),
         cc=aggregators.compute_cc_stats(checkpoints),

@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2025-12-22
+last_updated: 2026-08-29
 ---
 
 # Troubleshooting Guide
@@ -82,11 +82,9 @@ Infrastructure failures mean pytest itself failed to run properly.
    ```
 
 2. **Missing pytest dependency**
-   ```yaml
-   # Add to problem config
-   test_dependencies:
-     - "some-package>=1.0"
-   ```
+   - Add the requirement to problem `pyproject.toml`
+   - Regenerate `uv.lock`
+   - Add the identical requirement string to `test_dependencies`
 
 3. **Fixture not defined**
    ```python
@@ -109,7 +107,7 @@ cat evaluation/stdout.txt | grep "entrypoint"
 **Check if submission runs:**
 ```bash
 # Try running manually in workspace
-cd outputs/checkpoint_1
+cd experiments/checkpoint_1
 python main.py --help
 ```
 
@@ -152,35 +150,42 @@ for test in ctrf["results"]["tests"]:
 
 3. **Check for blocking I/O**
 
-## uvx Issues
+## Locked Evaluator Issues
 
-### Dependency Installation Fails
+### Frozen Synchronization Fails
 
 **Symptoms:**
-- stderr shows pip/uv errors
+- stderr shows `uv sync --frozen` errors
 - `infrastructure_failure: true`
 
 **Solutions:**
 
-1. **Check dependency format**
+1. **Keep declared dependencies identical**
+   ```toml
+   # pyproject.toml
+   dependencies = ["requests==2.32.5"]
+   ```
    ```yaml
+   # config.yaml
    test_dependencies:
-     - "requests>=2.28"  # Version specifier
-     - "pyyaml"          # Just package name
+     - "requests==2.32.5"
    ```
 
-2. **Check for incompatible versions**
+2. **Regenerate and commit the lock after manifest changes**
    ```bash
-   # Try installing manually
-   uvx --with=pytest --with=my-package pytest --version
+   uv lock --project problems/my_problem
+   uv sync --project problems/my_problem --frozen --no-install-project
    ```
+
+3. **Check immutable environment errors**
+   - Remove neither `READY` nor inventory files from a published evaluator
+   - Investigate source `pyproject.toml`, `uv.lock`, plugin, or interpreter changes
+   - Let the runner create the new content-addressed environment
 
 ### Package Not Found
 
-**Check PyPI name:**
-```bash
-pip search my-package  # Verify package exists
-```
+Add the exact package requirement to `[project].dependencies`, regenerate
+`uv.lock`, and use the same requirement string in `test_dependencies`.
 
 ## Marker Issues
 
@@ -251,17 +256,17 @@ ls -la /workspace  # Inside container
 
 ```bash
 # View stdout (test output)
-cat outputs/checkpoint_1/evaluation/stdout.txt
+cat experiments/checkpoint_1/evaluation/stdout.txt
 
 # View stderr (errors and warnings)
-cat outputs/checkpoint_1/evaluation/stderr.txt
+cat experiments/checkpoint_1/evaluation/stderr.txt
 ```
 
 ### Examine CTRF Report
 
 ```python
 import json
-with open("outputs/checkpoint_1/evaluation/report.json") as f:
+with open("experiments/checkpoint_1/evaluation/report.json") as f:
     report = json.load(f)
 
 # Summary
@@ -276,17 +281,15 @@ for test in report["results"]["tests"]:
 ### Run Pytest Manually
 
 ```bash
-# Navigate to workspace with tests
-cd outputs/run_123/checkpoint_1
+# Build the problem's frozen evaluator environment
+uv sync --project problems/my_problem --frozen --no-install-project
 
-# Run pytest directly (similar to what PytestRunner does)
-uvx \
-  --with=pytest \
-  --with=pytest-json-ctrf \
-  --with=pytest-json-report \
-  pytest \
+# From the checkpoint workspace, run copied trusted tests
+/absolute/path/to/repo/problems/my_problem/.venv/bin/python \
+  -m pytest \
   --entrypoint='python main.py' \
   --checkpoint='checkpoint_1' \
+  --confcutdir=.evaluation_tests \
   -vv \
   .evaluation_tests/
 ```
@@ -305,7 +308,7 @@ results = run_checkpoint_pytest(...)
 
 ```bash
 # Verify tests were copied
-ls -la outputs/checkpoint_1/.evaluation_tests/
+ls -la experiments/checkpoint_1/.evaluation_tests/
 
 # Should contain:
 # - conftest.py
@@ -376,11 +379,10 @@ commands:
    ```
 
 2. **Increase parallelization** (if tests are independent)
-   ```yaml
-   test_dependencies:
-     - "pytest-xdist"
-   # Then use: pytest -n auto
-   ```
+   - Add an exact `pytest-xdist` requirement to `pyproject.toml`
+   - Regenerate `uv.lock`
+   - Add the identical requirement to `test_dependencies`
+   - Run pytest with `-n auto`
 
 3. **Check for slow submission startup**
 
@@ -423,6 +425,8 @@ pytest_collected: 0
 Directory structure:
 problems/my_problem/
 ├── config.yaml
+├── pyproject.toml
+├── uv.lock
 └── tests/
     ├── conftest.py
     └── test_checkpoint_1.py
@@ -430,8 +434,11 @@ problems/my_problem/
 stderr:
 ModuleNotFoundError: No module named 'custom_utils'
 
+pyproject.toml and uv.lock:
+custom_utils is not declared or locked
+
 config.yaml:
-test_dependencies: []  # Missing custom_utils
+test_dependencies: []  # Missing the locked custom_utils requirement
 ```
 
 ## Next Steps

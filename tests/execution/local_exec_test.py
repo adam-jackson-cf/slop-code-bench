@@ -114,7 +114,7 @@ class TestLocalExecRuntimeSpawn:
             name="test",
             commands=CommandConfig(command="python"),
             setup=SetupConfig(
-                commands=[f"touch {marker_file}"],
+                commands=[f"printf ready > {marker_file}"],
             ),
         )
 
@@ -124,7 +124,7 @@ class TestLocalExecRuntimeSpawn:
             command="echo test",
         )
 
-        assert marker_file.exists()
+        assert marker_file.read_text() == "ready"
 
     def test_spawn_with_disable_setup(
         self, local_spec_with_setup: LocalEnvironmentSpec, tmp_path: Path

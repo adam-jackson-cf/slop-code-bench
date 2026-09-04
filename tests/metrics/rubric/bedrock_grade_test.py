@@ -63,8 +63,9 @@ async def test_grade_file_includes_temperature(
     captured_request: dict[str, object] = {}
 
     class FakeClient:
-        def invoke_model(self, *, modelId, body, contentType, accept):
-            del contentType, accept, modelId  # Unused in test
+        def invoke_model(self, **request: object) -> dict[str, io.BytesIO]:
+            body = request["body"]
+            assert isinstance(body, str)
             captured_request.update(json.loads(body))
             return {"body": io.BytesIO(json.dumps(response_body).encode())}
 

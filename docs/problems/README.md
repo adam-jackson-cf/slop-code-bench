@@ -12,13 +12,15 @@ A **problem** is a specification-driven coding challenge that agents must solve.
 
 ## Quick Start
 
-Create a problem in 3 steps:
+Create a problem in 4 steps:
 
 ### Step 1: Create Directory Structure
 
 ```
 problems/my_problem/
 ├── config.yaml           # Problem metadata
+├── pyproject.toml        # Pinned evaluator dependencies
+├── uv.lock               # Exact evaluator lock
 ├── checkpoint_1.md       # Spec for checkpoint 1
 ├── checkpoint_2.md       # Spec for checkpoint 2
 └── tests/
@@ -45,7 +47,17 @@ checkpoints:
     state: Core Tests
 ```
 
-### Step 3: Create Test Files
+### Step 3: Lock Evaluator Dependencies
+
+Declare the complete evaluator environment in `pyproject.toml`, including
+pytest, its report and timeout plugins, coverage, Ruff, and any libraries used
+by tests. Generate and commit the exact lock:
+
+```bash
+uv lock --project problems/my_problem
+```
+
+### Step 4: Create Test Files
 
 **conftest.py** (required fixtures):
 ```python
@@ -91,6 +103,8 @@ def test_invalid_input(entrypoint_argv):
 ```
 problems/{problem_name}/
 ├── config.yaml              # Problem metadata and checkpoint definitions
+├── pyproject.toml           # Pinned evaluator dependencies
+├── uv.lock                  # Exact evaluator lock
 ├── checkpoint_1.md          # Specification for checkpoint 1
 ├── checkpoint_2.md          # Specification for checkpoint 2
 ├── tests/
@@ -130,15 +144,15 @@ Prior checkpoint tests automatically become REGRESSION tests.
 - [Checkpoints](checkpoints.md) - Designing checkpoint progression
 
 ### Pytest System
-- [Overview](../pytest/README.md) - How the pytest evaluation works
-- [conftest Patterns](../pytest/conftest-patterns.md) - Fixture patterns
-- [Markers](../pytest/markers.md) - Built-in and custom markers
-- [Test Data](../pytest/test-data.md) - Organizing test data
-- [Runner Internals](../pytest/runner-internals.md) - Technical reference
-- [Advanced Fixtures](../pytest/fixtures-advanced.md) - Advanced fixture patterns
-- [Stateful Testing](../pytest/stateful-testing.md) - State across checkpoints
-- [Complex Parametrization](../pytest/complex-parametrization.md) - Advanced case loading
-- [Debugging Workflows](../pytest/debugging-workflows.md) - Test debugging and troubleshooting
+- [Overview](pytest/README.md) - How the pytest evaluation works
+- [conftest Patterns](pytest/conftest-patterns.md) - Fixture patterns
+- [Markers](pytest/markers.md) - Built-in and custom markers
+- [Test Data](pytest/test-data.md) - Organizing test data
+- [Runner Internals](pytest/runner-internals.md) - Technical reference
+- [Advanced Fixtures](../evaluation-tests/fixtures-advanced.md) - Advanced fixture patterns
+- [Stateful Testing](../evaluation-tests/stateful-testing.md) - State across checkpoints
+- [Complex Parametrization](../evaluation-tests/complex-parametrization.md) - Advanced case loading
+- [Debugging Workflows](../evaluation-tests/debugging-workflows.md) - Test debugging and troubleshooting
 
 ### Testing Patterns
 - [CLI Testing](patterns/cli-testing.md) - Testing command-line tools

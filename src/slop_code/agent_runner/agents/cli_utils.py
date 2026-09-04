@@ -35,13 +35,15 @@ class AgentCommandResult:
 def stream_cli_command(
     runtime: StreamingRuntime,
     command: str,
-    parser: Callable[[str], tuple[float | None, TokenUsage | None, dict]],
+    parser: Callable[
+        [str], tuple[float | None, TokenUsage | None, dict | None]
+    ],
     env: Mapping[str, str] | None = None,
     timeout: float | None = None,
     *,
     parse_stderr: bool = False,
 ) -> Generator[
-    tuple[float | None, TokenUsage | None, dict] | RuntimeResult | None,
+    tuple[float | None, TokenUsage | None, dict | None] | RuntimeResult | None,
     None,
     None,
 ]:

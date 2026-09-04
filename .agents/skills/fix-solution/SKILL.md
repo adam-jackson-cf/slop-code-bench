@@ -9,7 +9,7 @@ Iteratively test and repair a solution until all tests pass.
 
 **Usage**: `/fix-solution /path/to/snapshot problem_name checkpoint_N`
 
-**Example**: `/fix-solution outputs/run_001/submissions/file_backup/checkpoint_2/snapshot file_backup checkpoint_2`
+**Example**: `/fix-solution experiments/run_001/submissions/file_backup/checkpoint_2/snapshot file_backup checkpoint_2`
 
 ---
 

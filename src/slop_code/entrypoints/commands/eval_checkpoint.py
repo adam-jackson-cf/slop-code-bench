@@ -16,6 +16,7 @@ from slop_code.entrypoints.commands import common
 from slop_code.entrypoints.config import loader as config_loader
 from slop_code.entrypoints.evaluation.driver import evaluate_checkpoint
 from slop_code.evaluation import GroupType
+from slop_code.evaluation.report import TestResult
 from slop_code.logging import get_logger
 from slop_code.metrics import RubricProvider
 
@@ -50,11 +51,11 @@ def _status_icon(status: str) -> str:
 
 
 def _render_tests_tree(
-    console: Console, tests: list, indent: str = "  "
+    console: Console, tests: list[TestResult], indent: str = "  "
 ) -> None:
     """Render tests in tree-style hierarchy, grouping parametrized tests."""
     # Group tests by base name, preserving order
-    grouped: dict[str, list[tuple[str | None, object]]] = defaultdict(list)
+    grouped: dict[str, list[tuple[str | None, TestResult]]] = defaultdict(list)
     order: list[str] = []
     for test in tests:
         base, param = parse_test_id(test.id)
@@ -235,11 +236,14 @@ def evaluate_snapshot(
         help="LLM provider for rubric grading",
         case_sensitive=False,
     ),
-    json_output: bool = typer.Option(
-        False,
-        "--json",
-        help="Output correctness results as JSON.",
-    ),
+    *,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output correctness results as JSON.",
+        ),
+    ] = False,
 ) -> None:
     if isinstance(json_output, typer.models.OptionInfo):
         json_output = bool(json_output.default)
@@ -305,14 +309,15 @@ def evaluate_snapshot(
         log_file_name="evaluation.log",
         quiet=quiet,
     )
-    logger.info(
-        "Evaluating a single snapshot",
-        snapshot_dir=str(snapshot_dir),
-        save_dir=str(save_dir),
-        problem_name=problem_name,
-        checkpoint_num=checkpoint_num,
-        env_config=str(env_config),
-    )
+    if logger is not None:
+        logger.info(
+            "Evaluating a single snapshot",
+            snapshot_dir=str(snapshot_dir),
+            save_dir=str(save_dir),
+            problem_name=problem_name,
+            checkpoint_num=checkpoint_num,
+            env_config=str(env_config),
+        )
 
     common.ensure_docker_ready(environment)
 

@@ -17,7 +17,9 @@ Tests all functions in slop_code.metrics.languages.python.symbols including:
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
+from pathlib import Path
 from textwrap import dedent
 
 import pytest
@@ -45,6 +47,8 @@ from slop_code.metrics.languages.python.symbols import _extract_signature
 from slop_code.metrics.languages.python.symbols import _get_assignment_name
 from slop_code.metrics.languages.python.symbols import _get_name_from_node
 from slop_code.metrics.languages.python.symbols import get_symbols
+
+run_subprocess = subprocess.run
 
 # =============================================================================
 # Test Utilities
@@ -84,10 +88,21 @@ def get_class_node(code: str):
     raise ValueError("No class_definition found in code")
 
 
-def get_radon_complexity(file_path) -> dict[str, int]:
+def get_radon_complexity(file_path: Path) -> dict[str, int]:
     """Run radon cc on a file and return a dict of name -> complexity."""
-    result = subprocess.run(
-        ["uv", "run", "radon", "cc", "-s", str(file_path)],
+    uv_executable = shutil.which("uv")
+    if uv_executable is None:
+        raise RuntimeError("uv executable is required for radon comparison")
+
+    result = run_subprocess(
+        [
+            str(Path(uv_executable).resolve()),
+            "run",
+            "radon",
+            "cc",
+            "-s",
+            str(file_path),
+        ],
         capture_output=True,
         text=True,
         check=True,
@@ -1286,13 +1301,14 @@ class TestGetAssignmentName:
         """Tuple assignment returns None (not simple identifier)."""
         root = parse_code("a, b = 1, 2")
         for child in root.children:
-            if child.type in ("assignment", "expression_statement"):
-                if child.type == "expression_statement":
-                    for subchild in child.children:
-                        if subchild.type == "assignment":
-                            name = _get_assignment_name(subchild)
-                            assert name is None
-                            return
+            if child.type == "expression_statement" and any(
+                subchild.type == "assignment" for subchild in child.children
+            ):
+                for subchild in child.children:
+                    if subchild.type == "assignment":
+                        name = _get_assignment_name(subchild)
+                        assert name is None
+                        return
 
 
 # =============================================================================

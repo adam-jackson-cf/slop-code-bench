@@ -71,7 +71,7 @@ def _process_single_run_worker(
         RunProcessingResult capturing success or failure with full context.
     """
     # Set up logging for this worker process
-    log = setup_logging(log_dir=None, verbosity=0)
+    setup_logging(log_dir=None, verbosity=0)
 
     try:
         all_reports: list[dict] = []
@@ -107,7 +107,7 @@ def _process_single_run_worker(
                 )
                 entry_file = problem_config.entry_file
             except (FileNotFoundError, yaml.YAMLError, ValidationError) as e:
-                log.warning(
+                logger.warning(
                     "Failed to load problem config",
                     problem=problem_dir.name,
                     error=str(e),
@@ -143,7 +143,7 @@ def _process_single_run_worker(
 
     except Exception as e:
         tb_str = traceback.format_exc()
-        log.error(
+        logger.error(
             "Error processing run",
             run_dir=str(run_dir),
             error=str(e),

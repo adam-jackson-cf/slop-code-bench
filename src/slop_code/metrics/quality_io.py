@@ -60,6 +60,7 @@ def save_quality_metrics(
         for fm in file_metrics:
             data = {
                 "file_path": fm.file_path,
+                "success": True,
                 "loc": fm.lines.loc,
                 "total_lines": fm.lines.total_lines,
                 "comments": fm.lines.comments,

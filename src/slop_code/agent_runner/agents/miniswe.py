@@ -7,6 +7,7 @@ import re
 import subprocess
 import time
 import typing as tp
+from contextlib import suppress
 from pathlib import Path
 
 from jinja2 import StrictUndefined
@@ -17,8 +18,11 @@ from slop_code.agent_runner.agent import AgentConfigBase
 from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
 from slop_code.agent_runner.registry import register_agent
-from slop_code.agent_runner.trajectory import StepRole
+from slop_code.agent_runner.trajectory import AgentStep
+from slop_code.agent_runner.trajectory import ThinkingStep
+from slop_code.agent_runner.trajectory import ToolUseStep
 from slop_code.agent_runner.trajectory import TrajectoryStep
+from slop_code.agent_runner.trajectory import UserStep
 from slop_code.common.llms import APIPricing
 from slop_code.common.llms import ModelDefinition
 from slop_code.common.llms import ThinkingPreset
@@ -50,7 +54,11 @@ if tp.TYPE_CHECKING:
     from minisweagent import Model
 
 
-def _or_query_no_cost_error(self, messages, **kwargs):
+def _or_query_no_cost_error(
+    self: openrouter_model.OpenRouterModel,
+    messages: list[dict[str, str]],
+    **kwargs: object,
+) -> dict:
     # call the original _query (not the original query!) to get the raw API response
     response = self._query(messages, **kwargs)
 
@@ -65,11 +73,8 @@ def _or_query_no_cost_error(self, messages, **kwargs):
     # update counters without erroring
     self.n_calls += 1
     self.cost += cost
-    try:
+    with suppress(NameError):
         openrouter_model.GLOBAL_MODEL_STATS.add(cost)
-    except NameError:
-        # if GLOBAL_MODEL_STATS doesn't exist in this runtime, just ignore
-        pass
 
     reasoning = response["choices"][0]["message"].pop("reasoning", None)
 
@@ -80,7 +85,11 @@ def _or_query_no_cost_error(self, messages, **kwargs):
     }
 
 
-def _litellm_query(self, messages: list[dict[str, str]], **kwargs) -> dict:
+def _litellm_query(
+    self: litellm_model.LitellmModel,
+    messages: list[dict[str, str]],
+    **kwargs: object,
+) -> dict:
     import litellm
 
     if self.config.set_cache_control:
@@ -99,15 +108,17 @@ def _litellm_query(self, messages: list[dict[str, str]], **kwargs) -> dict:
 
     self.cost += cost
     return {
-        "content": response.choices[0].message.content or "",  # type: ignore
+        "content": response.choices[0].message.content or "",
         "extra": {
             "response": response.model_dump(),
         },
     }
 
 
-openrouter_model.OpenRouterModel.query = _or_query_no_cost_error
-litellm_model.LitellmModel.query = _litellm_query
+openrouter_model.OpenRouterModel.query: tp.Callable[..., dict] = (
+    _or_query_no_cost_error
+)
+litellm_model.LitellmModel.query: tp.Callable[..., dict] = _litellm_query
 
 
 def _default_model_config() -> dict[str, tp.Any]:
@@ -285,6 +296,7 @@ class MiniSWEAgent(Agent):
     def __init__(
         self,
         problem_name: str,
+        *,
         verbose: bool,
         # From base config
         cost_limits: AgentCostLimits,
@@ -316,9 +328,9 @@ class MiniSWEAgent(Agent):
         self.action_observation_template = action_observation_template
 
         self._finished = False
-        self._steps = []
-        self._messages = []
-        self.extra_template_vars = {}
+        self._steps: list[TrajectoryStep] = []
+        self._messages: list[dict[str, str]] = []
+        self.extra_template_vars: dict[str, str] = {}
         self._env: DockerEnvironment | LocalEnvironment | None = None
 
     @classmethod
@@ -328,6 +340,7 @@ class MiniSWEAgent(Agent):
         model: ModelDefinition,
         credential: ProviderCredential,
         problem_name: str,
+        *,
         verbose: bool,
         image: str | None,
         thinking_preset: ThinkingPreset | None = None,
@@ -511,7 +524,7 @@ class MiniSWEAgent(Agent):
         finally:
             wall_clock_time = time.time() - t0
         self.record_non_agent_step(
-            role=StepRole.ENVIRONMENT,
+            role="environment",
             content=observation,
             wall_clock_time=wall_clock_time,
             meta=output,
@@ -578,8 +591,13 @@ class MiniSWEAgent(Agent):
         return self._env
 
     def setup(self, session: Session) -> None:
-        self._env = self.build_environment(session.working_dir, session.spec)
-        for command in session.spec.setup.commands:
+        spec = session.spec
+        if not isinstance(spec, DockerEnvironmentSpec | LocalEnvironmentSpec):
+            raise NotImplementedError(
+                f"Unsupported environment spec type: {spec.type!r}"
+            )
+        self._env = self.build_environment(session.working_dir, spec)
+        for command in spec.setup.commands:
             self._env.execute(command)
 
     @staticmethod
@@ -626,19 +644,19 @@ class MiniSWEAgent(Agent):
         )
 
     def record_non_agent_step(
-        self, role: StepRole, content: str, wall_clock_time: float, **kwargs
-    ):
-        self._steps.append(
-            TrajectoryStep(
-                role=role,
-                content=content,
-                wall_clock_time=wall_clock_time,
-                **kwargs,
-            )
-        )
-        self.add_message(
-            "system" if role == StepRole.SYSTEM else "user", content
-        )
+        self,
+        role: tp.Literal["system", "user", "environment"],
+        content: str,
+        wall_clock_time: float,
+        **kwargs: object,
+    ) -> None:
+        _ = wall_clock_time
+        _ = kwargs
+        if role == "environment":
+            self._steps.append(ToolUseStep(type="environment", result=content))
+        else:
+            self._steps.append(UserStep(content=content))
+        self.add_message("system" if role == "system" else "user", content)
 
     def agent_step(self) -> dict | None:
         if self.cost_limits.is_above_limits(
@@ -667,7 +685,6 @@ class MiniSWEAgent(Agent):
             cache_write_tokens=self.usage.net_tokens.cache_write,
             reasoning_tokens=self.usage.net_tokens.reasoning,
         )
-        t0 = time.time()
         try:
             query = self.model.query(self._messages)
         except Exception as e:
@@ -679,7 +696,6 @@ class MiniSWEAgent(Agent):
             )
             self.log.exception(e, exc_info=True)
             return None
-        wall_clock_time = time.time() - t0
 
         response_dict = query.get("extra", {})
         cache_read_tokens = cache_write_tokens = reasoning_tokens = None
@@ -711,14 +727,11 @@ class MiniSWEAgent(Agent):
         if self.pricing is not None:
             step_cost = self.pricing.get_cost(token_usage)
 
-        step = TrajectoryStep(
-            role=StepRole.ASSISTANT,
-            content=query["content"],
-            wall_clock_time=wall_clock_time,
-            cost=step_cost,
-            tokens=token_usage,
-            meta=query["extra"],
-        )
+        reasoning = query.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            self._steps.append(ThinkingStep(content=reasoning))
+
+        step = AgentStep(content=query["content"])
         self.usage.step(
             cost=step_cost,
             tokens=token_usage,
@@ -741,14 +754,14 @@ class MiniSWEAgent(Agent):
             self.log.debug("Adding system message")
             system_content = self.render_template(self.system_template)
             self.record_non_agent_step(
-                role=StepRole.SYSTEM,
+                role="system",
                 content=system_content,
                 wall_clock_time=0.0,
             )
 
         task_content = self.render_template(self.instance_template)
         self.record_non_agent_step(
-            role=StepRole.USER, content=task_content, wall_clock_time=0.0
+            role="user", content=task_content, wall_clock_time=0.0
         )
 
         while not self._finished:
@@ -804,8 +817,9 @@ class MiniSWEAgent(Agent):
     def cleanup(self) -> None:
         """Clean up the environment resources."""
         self.log.debug("Cleaning up MiniSWE agent resources")
-        if hasattr(self.env, "cleanup"):
-            self.env.cleanup()
+        cleanup = getattr(self.env, "cleanup", None)
+        if callable(cleanup):
+            cleanup()
         self.log.debug("Cleanup completed")
 
 

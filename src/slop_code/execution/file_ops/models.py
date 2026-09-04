@@ -83,6 +83,7 @@ def open_stream(
     path: Path,
     mode: str,
     compression: Compression,
+    *,
     force_use_tokens: bool = False,
     **kwargs,
 ):
@@ -90,10 +91,11 @@ def open_stream(
     if force_use_tokens and not mode.endswith("t"):
         mode = f"{mode}t"
     if compression is Compression.GZIP:
-        opener = lambda: gzip.open(path, mode, **kwargs)
+        with gzip.open(path, mode, **kwargs) as stream:
+            yield stream
     elif compression is Compression.BZIP2:
-        opener = lambda: bz2.open(path, mode, **kwargs)
+        with bz2.open(path, mode, **kwargs) as stream:
+            yield stream
     else:
-        opener = lambda: path.open(mode, **kwargs)
-    with opener() as stream:
-        yield stream
+        with path.open(mode, **kwargs) as stream:
+            yield stream

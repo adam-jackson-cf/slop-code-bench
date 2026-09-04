@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2026-04-22
+last_updated: 2026-08-29
 ---
 
 # CLI Commands Reference
@@ -68,37 +68,37 @@ slop-code run --model anthropic/sonnet-4.5 --problem file_backup
 **Evaluating results:**
 ```bash
 # Evaluate all problems in a run
-slop-code eval outputs/my_run
+slop-code eval experiments/my_run
 
 # Evaluate a single problem
-slop-code eval-problem outputs/my_run/file_backup
+slop-code eval-problem experiments/my_run/file_backup
 
 # Evaluate a single snapshot
-slop-code eval-snapshot outputs/my_run/file_backup/checkpoint_1/snapshot \
-  -o outputs/eval -p file_backup -c 1 -e configs/environments/docker-python3.12-uv.yaml
+slop-code eval-snapshot experiments/my_run/file_backup/checkpoint_1/snapshot \
+  -o experiments/eval -p file_backup -c 1 -e configs/environments/docker-python3.12-uv.yaml
 ```
 
 ### Metrics and Analysis
 
 ```bash
 # Calculate static code quality metrics
-slop-code metrics static outputs/my_run
+slop-code metrics static experiments/my_run
 
 # Run LLM judge evaluation
-slop-code metrics judge outputs/my_run -r configs/rubrics/slop.jsonl -m anthropic/sonnet-4.5
+slop-code metrics judge experiments/my_run -r configs/rubrics/slop.jsonl -m anthropic/sonnet-4.5
 
 # Compute variance across runs
-slop-code metrics variance base outputs/runs -o outputs/variance
+slop-code metrics variance base experiments/runs -o experiments/variance
 ```
 
 ### Utilities
 
 ```bash
-# Backfill reports for existing runs
-slop-code utils backfill-reports outputs/my_run
+# Publish canonical score state for an existing run
+slop-code utils backfill-reports experiments/my_run
 
 # Combine results from multiple runs
-slop-code utils combine-results outputs/all_runs -o outputs/combined.jsonl
+slop-code utils combine-results experiments/all_runs -o experiments/combined.jsonl
 ```
 
 ### Docker Management
@@ -125,14 +125,14 @@ slop-code problems status file_backup
 
 ```bash
 # Run pytest tests for a snapshot
-slop-code tools run-case -s outputs/snapshot -p file_backup -c 1 -e configs/environments/docker-python3.12-uv.yaml
+slop-code tools run-case -s experiments/snapshot -p file_backup -c 1 -e configs/environments/docker-python3.12-uv.yaml
 ```
 
 ### Visualization
 
 ```bash
 # Launch diff viewer for a run
-slop-code viz diff outputs/my_run
+slop-code viz diff experiments/my_run
 ```
 
 ## Documentation Index

@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-10
+last_updated: 2026-08-29
 ---
 
 # Credentials Guide
@@ -62,9 +62,13 @@ When a credential is resolved, it returns a `ProviderCredential`:
 |-------|------|-------------|
 | `provider` | str | Provider name (e.g., `"anthropic"`) |
 | `credential_type` | `ENV_VAR` \| `FILE` | Type of credential |
-| `value` | str | The actual API key or file contents |
+| `value` | str | API key or file contents; empty for `mount_only` file providers |
 | `source` | str | Where it came from (env var name or file path) |
 | `destination_key` | str | Env var name to export as |
+
+`mount_only` providers preserve file-based authentication boundaries: the
+resolver verifies the file and records its source path, while the agent mounts
+that path directly.
 
 ### Example
 

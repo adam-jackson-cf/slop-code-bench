@@ -6,6 +6,7 @@ import bz2
 import gzip
 import json
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -215,20 +216,20 @@ class TestFileHandlerRoundTrips:
         gz_bytes = gz_file.read_bytes()
 
         # Verify gzip magic number
-        assert gz_bytes[:2] == b"\x1f\x8b", (
-            "GZIP file should start with magic number 0x1f8b"
-        )
+        assert (
+            gz_bytes[:2] == b"\x1f\x8b"
+        ), "GZIP file should start with magic number 0x1f8b"
 
         # Verify it's not plain text (shouldn't start with CSV headers)
-        assert not gz_bytes.startswith(b"col1,col2"), (
-            "File should be compressed, not plain text"
-        )
+        assert not gz_bytes.startswith(
+            b"col1,col2"
+        ), "File should be compressed, not plain text"
 
         # Verify it can be decompressed and contains CSV data
         decompressed_gz = gzip.decompress(gz_bytes)
-        assert decompressed_gz.startswith(b"col1,col2"), (
-            "Decompressed content should be CSV"
-        )
+        assert decompressed_gz.startswith(
+            b"col1,col2"
+        ), "Decompressed content should be CSV"
         assert b"\n" in decompressed_gz, "CSV should contain newlines"
 
         # Test CSV with BZIP2 compression
@@ -242,15 +243,15 @@ class TestFileHandlerRoundTrips:
         assert bz2_bytes[:2] == b"BZ", "BZIP2 file should start with 'BZ'"
 
         # Verify it's not plain text
-        assert not bz2_bytes.startswith(b"col1,col2"), (
-            "File should be compressed, not plain text"
-        )
+        assert not bz2_bytes.startswith(
+            b"col1,col2"
+        ), "File should be compressed, not plain text"
 
         # Verify it can be decompressed
         decompressed_bz2 = bz2.decompress(bz2_bytes)
-        assert decompressed_bz2.startswith(b"col1,col2"), (
-            "Decompressed content should be CSV"
-        )
+        assert decompressed_bz2.startswith(
+            b"col1,col2"
+        ), "Decompressed content should be CSV"
 
     def test_compressed_json_written_as_bytes(self, tmp_path, sample_json_data):
         """Test that compressed JSON files are written as binary compressed data."""
@@ -262,21 +263,21 @@ class TestFileHandlerRoundTrips:
         gz_bytes = gz_file.read_bytes()
 
         # Verify gzip magic number
-        assert gz_bytes[:2] == b"\x1f\x8b", (
-            "GZIP file should start with magic number"
-        )
+        assert (
+            gz_bytes[:2] == b"\x1f\x8b"
+        ), "GZIP file should start with magic number"
 
         # Verify it's not plain JSON text
-        assert not gz_bytes.startswith(b"{"), (
-            "File should be compressed, not plain JSON"
-        )
+        assert not gz_bytes.startswith(
+            b"{"
+        ), "File should be compressed, not plain JSON"
 
         # Verify decompressed content is valid JSON
         decompressed = gzip.decompress(gz_bytes)
         json_data = json.loads(decompressed)
-        assert json_data == sample_json_data, (
-            "Decompressed JSON should match original"
-        )
+        assert (
+            json_data == sample_json_data
+        ), "Decompressed JSON should match original"
 
         # Test JSON with BZIP2 compression
         handler_bz2 = _REGISTRY.get_handler(FileType.JSON, Compression.BZIP2)
@@ -292,9 +293,9 @@ class TestFileHandlerRoundTrips:
         # Verify decompressed content
         decompressed_bz2 = bz2.decompress(bz2_bytes)
         json_data_bz2 = json.loads(decompressed_bz2)
-        assert json_data_bz2 == sample_json_data, (
-            "Decompressed JSON should match"
-        )
+        assert (
+            json_data_bz2 == sample_json_data
+        ), "Decompressed JSON should match"
 
     def test_compressed_jsonl_written_as_bytes(
         self, tmp_path, sample_jsonl_data
@@ -308,27 +309,27 @@ class TestFileHandlerRoundTrips:
         gz_bytes = gz_file.read_bytes()
 
         # Verify gzip magic number
-        assert gz_bytes[:2] == b"\x1f\x8b", (
-            "GZIP file should start with magic number"
-        )
+        assert (
+            gz_bytes[:2] == b"\x1f\x8b"
+        ), "GZIP file should start with magic number"
 
         # Verify it's not plain JSONL text
-        assert not gz_bytes.startswith(b"{"), (
-            "File should be compressed, not plain JSONL"
-        )
+        assert not gz_bytes.startswith(
+            b"{"
+        ), "File should be compressed, not plain JSONL"
 
         # Verify decompressed content is valid JSONL
         decompressed = gzip.decompress(gz_bytes)
         lines = decompressed.strip().split(b"\n")
-        assert len(lines) == len(sample_jsonl_data), (
-            "Should have same number of lines"
-        )
+        assert len(lines) == len(
+            sample_jsonl_data
+        ), "Should have same number of lines"
 
         for i, line in enumerate(lines):
             data = json.loads(line)
-            assert data == sample_jsonl_data[i], (
-                f"Line {i} should match original"
-            )
+            assert (
+                data == sample_jsonl_data[i]
+            ), f"Line {i} should match original"
 
         # Test JSONL with BZIP2 compression
         handler_bz2 = _REGISTRY.get_handler(FileType.JSONL, Compression.BZIP2)
@@ -344,23 +345,32 @@ class TestFileHandlerRoundTrips:
         # Verify decompressed content
         decompressed_bz2 = bz2.decompress(bz2_bytes)
         lines_bz2 = decompressed_bz2.strip().split(b"\n")
-        assert len(lines_bz2) == len(sample_jsonl_data), (
-            "Should have same number of lines"
-        )
+        assert len(lines_bz2) == len(
+            sample_jsonl_data
+        ), "Should have same number of lines"
 
     def test_sqlite_handler_roundtrip(self, tmp_path, sample_sqlite_data):
         """Test SQLite handler round-trip with multiple tables."""
         handler = _REGISTRY.get_handler(FileType.SQLITE)
-        test_file = tmp_path / "test.sqlite"
+        dictionary_file = tmp_path / "dictionary.sqlite"
+        mapping_file = tmp_path / "mapping.sqlite"
 
-        handler.write(test_file, sample_sqlite_data)
-        result = handler.read(test_file)
+        handler.write(dictionary_file, sample_sqlite_data)
+        handler.write(mapping_file, MappingProxyType(sample_sqlite_data))
 
-        assert set(result["tables"]) == {"logs", "users"}
+        dictionary_result = handler.read(dictionary_file)
+        mapping_result = handler.read(mapping_file)
+
+        assert dictionary_result == mapping_result
+        assert set(mapping_result["tables"]) == {"logs", "users"}
         assert (
-            result["tables"]["users"] == sample_sqlite_data["tables"]["users"]
+            mapping_result["tables"]["users"]
+            == sample_sqlite_data["tables"]["users"]
         )
-        assert result["tables"]["logs"] == []
+        assert mapping_result["tables"]["logs"] == []
+
+        with pytest.raises(InputFileWriteError):
+            handler.write(tmp_path / "invalid.sqlite", "not a mapping")
 
     def test_text_handler_roundtrip(self, tmp_path, sample_text_data):
         """Test text handler round-trip."""

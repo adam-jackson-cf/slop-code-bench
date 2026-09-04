@@ -770,7 +770,9 @@ class TestYAMLLoadedModels:
         assert model.pricing.input == input_rate
         assert model.pricing.output == output_rate
         assert model.cost_accounting is not None
-        assert model.cost_accounting.actual_billed_cost == "subscription_included"
+        assert (
+            model.cost_accounting.actual_billed_cost == "subscription_included"
+        )
         assert (
             model.cost_accounting.estimated_api_equivalent_cost
             == "catalog_pricing"

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib
 import sys
+from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -63,8 +65,8 @@ def load_protocol_entrypoint(
     import_path = f"{parent_dir.name}.{module_name}"
 
     added = False
+    parent_root = str(parent_dir.parent.absolute())
     try:
-        parent_root = str(parent_dir.parent.absolute())
         if parent_root not in sys.path:
             sys.path.insert(0, parent_root)
             added = True
@@ -143,12 +145,12 @@ def load_protocol_entrypoint(
         protocol=protocol.__name__,
     )
 
-    return entrypoint  # type: ignore[return-value]
+    return entrypoint
 
 
 def get_source_files(
     module_path: Path,
-    load_function: callable,
+    load_function: Callable[[], object],
 ) -> dict[str, str]:
     """Return source code for a module and any local modules it imports.
 
@@ -171,12 +173,17 @@ def get_source_files(
 
     # Ensure the module (and its dependencies) are imported so they appear in
     # sys.modules.
-    try:
-        load_function()
-    except Exception:
+    with suppress(
+        AttributeError,
+        ImportError,
+        OSError,
+        ProtocolLoadError,
+        TypeError,
+        ValueError,
+    ):
         # Continue even if load function fails - we still want to return
         # whatever source files we can find
-        pass
+        load_function()
 
     problem_root = module_path.parent.resolve()
     sources: dict[str, str] = {}

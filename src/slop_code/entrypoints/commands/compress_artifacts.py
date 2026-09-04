@@ -137,12 +137,15 @@ def compress_artifacts(
             help="Type of path: 'run' for single run, 'collection' for multiple runs",
         ),
     ] = common.PathType.RUN,
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        "-n",
-        help="Show what would be compressed without actually doing it",
-    ),
+    *,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            "-n",
+            help="Show what would be compressed without actually doing it",
+        ),
+    ] = False,
 ) -> None:
     """Compress agent artifact directories into tar.gz files.
 
@@ -152,24 +155,25 @@ def compress_artifacts(
 
     Examples:
         # Compress artifacts in a single run directory
-        slop-code utils compress-artifacts ./outputs/my_run
+        slop-code utils compress-artifacts ./experiments/my_run
 
         # Compress artifacts across all runs in a collection
-        slop-code utils compress-artifacts ./outputs --type collection
+        slop-code utils compress-artifacts ./experiments --type collection
 
         # Preview what would be compressed
-        slop-code utils compress-artifacts ./outputs --dry-run
+        slop-code utils compress-artifacts ./experiments --dry-run
     """
     logger = setup_logging(
         log_dir=None,
         verbosity=ctx.obj.verbosity,
     )
-    logger.info(
-        "Compressing agent artifacts",
-        results_dir=str(results_dir),
-        path_type=path_type.value,
-        dry_run=dry_run,
-    )
+    if logger is not None:
+        logger.info(
+            "Compressing agent artifacts",
+            results_dir=str(results_dir),
+            path_type=path_type.value,
+            dry_run=dry_run,
+        )
 
     if not results_dir.exists():
         typer.echo(

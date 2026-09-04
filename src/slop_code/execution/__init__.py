@@ -81,6 +81,7 @@ __all__ = [
     "resolve_static_assets",
     "resolve_static_placeholders",
     # Docker utilities
+    "DockerConfig",
     "network_mode_for_address",
     # File operations
     "Compression",

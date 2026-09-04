@@ -6,6 +6,9 @@ Complete field-by-field reference for problem configuration files.
 
 Located at: `problems/<problem_name>/config.yaml`
 
+The problem root must also contain `pyproject.toml` and `uv.lock`. They define
+the immutable evaluator environment used for pytest and canonical measurement.
+
 ### Required Fields
 
 | Field | Type | Description | Example |
@@ -26,7 +29,9 @@ Located at: `problems/<problem_name>/config.yaml`
 | `timeout` | integer | `30` | Default timeout in seconds | `60` |
 | `tags` | array | `[]` | Searchable tags | `[cli, json, parsing]` |
 | `static_assets` | object | `{}` | Static file mappings | See below |
-| `test_dependencies` | array | `[]` | Additional pytest packages | `[pyyaml, requests]` |
+| `test_dependencies` | array | `[]` | Problem-specific packages already locked in `pyproject.toml` | `["pyyaml==6.0.2"]` |
+| `measurement_generated_globs` | array | `[]` | Generated-source globs excluded from production scoring | `["src/generated/**"]` |
+| `measurement_test_globs` | array | `[]` | Test-source globs excluded from production scoring | `["tests/**"]` |
 | `markers` | object | `{}` | Custom pytest markers | See below |
 
 ### Checkpoint Configuration
@@ -76,22 +81,36 @@ Static assets are accessible via environment variables:
 
 ### Test Dependencies
 
-Additional packages installed for pytest execution:
+The complete evaluator dependency set is declared in the problem's
+`pyproject.toml`; exact resolution is committed in `uv.lock`. Every
+`test_dependencies` string must exactly match one `[project].dependencies`
+entry:
 
 ```yaml
 test_dependencies:
-  - pyyaml        # For YAML parsing in tests
-  - requests      # For HTTP requests in tests
-  - deepdiff      # For flexible comparisons
+  - "pyyaml==6.0.2"
+  - "requests==2.32.5"
+  - "deepdiff==8.6.1"
 ```
 
-Default packages always available:
-- `pytest`
-- `pytest-json-ctrf`
-- `pytest-json-report`
-- `pytest-timeout`
-- `jsonschema`
-- `deepdiff`
+`pyproject.toml` must also include the standard evaluator packages: pytest,
+pytest-json-ctrf, pytest-json-report, pytest-timeout, coverage, and Ruff.
+Evaluation uses frozen synchronization and never installs undeclared packages.
+
+### Measurement Globs
+
+Use anchored, project-relative POSIX globs to classify generated and test files:
+
+```yaml
+measurement_generated_globs:
+  - "src/generated/**"
+measurement_test_globs:
+  - "tests/**"
+  - "**/test_*.py"
+```
+
+Empty or absolute paths, backslashes, `.` or `..` segments, character classes,
+and embedded `**` are rejected. `**` is allowed only as a complete segment.
 
 ### Custom Markers
 
@@ -165,8 +184,13 @@ static_assets:
     path: data/schemas
 
 test_dependencies:
-  - pyyaml
-  - pandas
+  - "pyyaml==6.0.2"
+  - "pandas==2.3.2"
+
+measurement_generated_globs:
+  - "etl/generated/**"
+measurement_test_globs:
+  - "tests/**"
 
 markers:
   slow:

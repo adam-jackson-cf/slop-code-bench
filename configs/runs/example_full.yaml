@@ -42,4 +42,4 @@ continue_after_test_failure: false
 # - ${thinking}: Thinking preset
 # - ${env.name}: Environment name
 # - ${now:FORMAT}: Timestamp with strftime format
-output_path: outputs/${model.name}/${agent.type}_${prompt}_${thinking}_${now:%Y%m%dT%H%M}
+output_path: experiments/${model.name}/${agent.type}_${prompt}_${thinking}_${now:%Y%m%dT%H%M}

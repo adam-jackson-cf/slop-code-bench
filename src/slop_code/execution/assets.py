@@ -144,7 +144,7 @@ def resolve_static_assets(
     logger.debug(
         "Resolving static assets",
         base_path=base_path,
-        assets=list(assets.keys()) if assets else [],
+        assets=list(assets) if assets else [],
         ordering=ordering,
         verbose=True,
     )
@@ -152,18 +152,23 @@ def resolve_static_assets(
     resolved: dict[str, ResolvedStaticAsset] = {}
 
     # If assets is a flat dict (old style), resolve directly
-    if assets and not ordering:
-        if isinstance(next(iter(assets.values())), StaticAssetConfig):
-            logger.debug(
-                "Resolving flat asset configuration",
-                num_assets=len(assets),
-                verbose=True,
-            )
-            for name, asset_cfg in assets.items():  # type: ignore[union-attr]
-                resolved[name] = asset_cfg.resolve(
-                    base_path=base_path, name=name
+    if (
+        assets
+        and not ordering
+        and isinstance(next(iter(assets.values())), StaticAssetConfig)
+    ):
+        logger.debug(
+            "Resolving flat asset configuration",
+            num_assets=len(assets),
+            verbose=True,
+        )
+        for name, asset_cfg in assets.items():
+            if not isinstance(asset_cfg, StaticAssetConfig):
+                raise TypeError(
+                    "Static asset configuration mixes groups and assets"
                 )
-            return resolved
+            resolved[name] = asset_cfg.resolve(base_path=base_path, name=name)
+        return resolved
 
     # Otherwise, resolve according to ordering
     if ordering:
@@ -173,7 +178,7 @@ def resolve_static_assets(
             verbose=True,
         )
         for key in ordering:
-            asset_group = assets.get(key, {})  # type: ignore[union-attr]
+            asset_group = assets.get(key, {})
             if not asset_group:
                 logger.debug(
                     "Skipping empty asset group",
@@ -181,6 +186,8 @@ def resolve_static_assets(
                     verbose=True,
                 )
                 continue
+            if not isinstance(asset_group, dict):
+                raise TypeError("Ordered static assets must be grouped")
             logger.debug(
                 "Resolving asset group",
                 group=key,
@@ -195,7 +202,7 @@ def resolve_static_assets(
     logger.debug(
         "Resolved static assets",
         base_path=base_path,
-        assets=list(resolved.keys()),
+        assets=list(resolved),
         num_resolved=len(resolved),
         verbose=True,
     )

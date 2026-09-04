@@ -127,15 +127,15 @@ class AgentConfigBase(BaseModel):
         Raises:
             ValueError: If docker_template is set but version is None or empty string
         """
-        if self.docker_template is not None:
-            if self.version is None or (
-                isinstance(self.version, str) and not self.version.strip()
-            ):
-                raise ValueError(
-                    f"Agent '{self.type}' has a docker_template but missing or empty 'version'. "
-                    f"Agents with docker templates require a non-empty version string to install "
-                    f"the correct CLI tool version. Please set 'version' in the config YAML."
-                )
+        if self.docker_template is not None and (
+            self.version is None
+            or (isinstance(self.version, str) and not self.version.strip())
+        ):
+            raise ValueError(
+                f"Agent '{self.type}' has a docker_template but missing or empty 'version'. "
+                f"Agents with docker templates require a non-empty version string to install "
+                f"the correct CLI tool version. Please set 'version' in the config YAML."
+            )
         return self
 
     def get_image(self, env_name: str) -> str:
@@ -150,9 +150,9 @@ class AgentConfigBase(BaseModel):
         if self.docker_template is None:
             return None
 
-        template = self.docker_template.read_text()
-        template = Template(template).render(base_image=base_image)
-        return template
+        return Template(self.docker_template.read_text()).render(
+            base_image=base_image
+        )
 
 
 class CheckpointInferenceResult(BaseModel):
@@ -203,6 +203,7 @@ class Agent(ABC):
         problem_name: str,
         cost_limits: AgentCostLimits,
         pricing: APIPricing | None,
+        *,
         verbose: bool,
     ) -> None:
         """Initialize the agent wrapper.
@@ -230,6 +231,7 @@ class Agent(ABC):
         model: ModelDefinition,
         credential: ProviderCredential,
         problem_name: str,
+        *,
         verbose: bool,
         image: str | None,
         thinking_preset: ThinkingPreset | None = None,
@@ -261,10 +263,10 @@ class Agent(ABC):
             model,
             credential,
             problem_name,
-            verbose,
-            image,
-            thinking_preset,
-            thinking_max_tokens,
+            verbose=verbose,
+            image=image,
+            thinking_preset=thinking_preset,
+            thinking_max_tokens=thinking_max_tokens,
         )
 
     @classmethod
@@ -275,6 +277,7 @@ class Agent(ABC):
         model: ModelDefinition,
         credential: ProviderCredential,
         problem_name: str,
+        *,
         verbose: bool,
         image: str | None,
         thinking_preset: ThinkingPreset | None = None,
@@ -450,7 +453,7 @@ class Agent(ABC):
             error_message=error,
         )
 
-    def finish_checkpoint(self, reset_context: bool = True) -> None:
+    def finish_checkpoint(self, *, reset_context: bool = True) -> None:
         """Reset agent state and usage tracking for a new checkpoint.
 
         Args:

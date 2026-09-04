@@ -1,6 +1,7 @@
 """Tests for run_agent command helper functions."""
 
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -10,6 +11,9 @@ import yaml
 
 from slop_code.entrypoints.commands.run_agent import _build_cli_flags
 from slop_code.entrypoints.commands.run_agent import _create_task_config
+from slop_code.entrypoints.commands.run_agent import (
+    _filter_problems_for_execution,
+)
 from slop_code.entrypoints.commands.run_agent import _discover_problems
 from slop_code.entrypoints.commands.run_agent import _get_nested
 from slop_code.entrypoints.commands.run_agent import _handle_early_completion
@@ -17,11 +21,16 @@ from slop_code.entrypoints.commands.run_agent import _handle_resume_validation
 from slop_code.entrypoints.commands.run_agent import (
     _load_and_validate_run_config,
 )
+from slop_code.entrypoints.commands.run_agent import _load_score_problem_configs
 from slop_code.entrypoints.commands.run_agent import _prepare_run_artifacts
 from slop_code.entrypoints.commands.run_agent import _resolve_output_directory
 from slop_code.entrypoints.commands.run_agent import _resolve_problem_names
 from slop_code.entrypoints.commands.run_agent import _validate_problem_paths
 from slop_code.entrypoints.commands.run_agent import _validate_resume_config
+from slop_code.entrypoints.commands.run_agent import (
+    _validate_unique_problem_names,
+)
+from slop_code.evaluation import ProblemConfig
 from slop_code.problem_catalog import CatalogManifest
 
 
@@ -30,34 +39,38 @@ class TestGetNested:
 
     def test_simple_key(self):
         """Test getting a simple top-level key."""
-        data = {"name": "value"}
+        data: dict[str, object] = {"name": "value"}
         assert _get_nested(data, "name") == "value"
 
     def test_nested_key(self):
         """Test getting a nested key with dot notation."""
-        data = {"model": {"provider": "anthropic", "name": "opus-4"}}
+        data: dict[str, object] = {
+            "model": {"provider": "anthropic", "name": "opus-4"},
+        }
         assert _get_nested(data, "model.provider") == "anthropic"
         assert _get_nested(data, "model.name") == "opus-4"
 
     def test_deeply_nested_key(self):
         """Test getting a deeply nested key."""
-        data = {"level1": {"level2": {"level3": "deep_value"}}}
+        data: dict[str, object] = {
+            "level1": {"level2": {"level3": "deep_value"}}
+        }
         assert _get_nested(data, "level1.level2.level3") == "deep_value"
 
     def test_missing_key(self):
         """Test that missing keys return None."""
-        data = {"name": "value"}
+        data: dict[str, object] = {"name": "value"}
         assert _get_nested(data, "missing") is None
         assert _get_nested(data, "missing.nested") is None
 
     def test_missing_nested_key(self):
         """Test that missing nested keys return None."""
-        data = {"model": {"provider": "anthropic"}}
+        data: dict[str, object] = {"model": {"provider": "anthropic"}}
         assert _get_nested(data, "model.name") is None
 
     def test_non_dict_intermediate(self):
         """Test that non-dict intermediate values return None."""
-        data = {"model": "string_value"}
+        data: dict[str, object] = {"model": "string_value"}
         assert _get_nested(data, "model.provider") is None
 
     def test_empty_dict(self):
@@ -93,7 +106,7 @@ class TestBuildCliFlags:
         # Use a model that exists in the catalog
         result = _build_cli_flags(None, None, None, "anthropic/sonnet-4.5")
         assert "model" in result
-        model = result["model"]
+        model = cast("dict[str, object]", result["model"])
         assert model["provider"] == "anthropic"
         assert model["name"] == "sonnet-4.5"
 
@@ -106,7 +119,7 @@ class TestBuildCliFlags:
         assert result["environment"] == "env.yaml"
         assert result["prompt"] == "prompt.jinja"
         assert "model" in result
-        model = result["model"]
+        model = cast("dict[str, object]", result["model"])
         assert model["provider"] == "anthropic"
         assert model["name"] == "sonnet-4.5"
 
@@ -133,7 +146,7 @@ class TestLoadAndValidateRunConfig:
 
     def test_cli_flags_override(self):
         """Test CLI flags override defaults."""
-        cli_flags = {
+        cli_flags: dict[str, object] = {
             "model": {"provider": "openai", "name": "gpt-4"},
         }
         result = _load_and_validate_run_config(None, cli_flags, None)
@@ -183,6 +196,31 @@ class TestResolveProblemNames:
         result = _resolve_problem_names([], ["prob1", "prob2", "prob3"])
         assert result == ["prob1", "prob2", "prob3"]
 
+    @pytest.mark.parametrize(
+        ("cli_problem_names", "config_problems"),
+        [
+            (["prob1", "prob1"], ["config_prob"]),
+            ([], ["prob1", "prob1"]),
+        ],
+    )
+    def test_rejects_duplicate_canonical_problem_names(
+        self, cli_problem_names, config_problems, capsys
+    ):
+        resolved = _resolve_problem_names(cli_problem_names, config_problems)
+
+        with pytest.raises(typer.Exit) as exc_info:
+            _validate_unique_problem_names(resolved)
+
+        assert exc_info.value.exit_code == 1
+        assert "Duplicate problem name(s): prob1" in capsys.readouterr().out
+
+    def test_keeps_unique_configured_problem_order(self):
+        resolved = _resolve_problem_names([], ["prob2", "prob1", "prob3"])
+
+        _validate_unique_problem_names(resolved)
+
+        assert resolved == ["prob2", "prob1", "prob3"]
+
 
 class TestResolveOutputDirectory:
     """Tests for _resolve_output_directory helper function."""
@@ -200,12 +238,12 @@ class TestResolveOutputDirectory:
         )
         assert "DEBUG_" in str(result)
 
-    def test_debug_prefix_with_nested_path(self):
+    def test_debug_prefix_with_nested_path(self, tmp_path):
         """Test DEBUG_ prefix with nested path."""
         result, existed = _resolve_output_directory(
-            "outputs/run_123", debug=True
+            str(tmp_path / "experiments" / "run_123"), debug=True
         )
-        assert "outputs/DEBUG_run_123" in str(result)
+        assert str(tmp_path / "experiments" / "DEBUG_run_123") == str(result)
 
     def test_debug_prefix_with_simple_path(self):
         """Test DEBUG_ prefix with simple path."""
@@ -233,6 +271,45 @@ class TestResolveOutputDirectory:
         new_path = tmp_path / "new_dir"
         result, existed = _resolve_output_directory(str(new_path), debug=False)
         assert result.exists()
+
+    def test_directory_not_created_when_create_false(self, tmp_path):
+        """Test that a preview can resolve a path without creating it."""
+        new_path = tmp_path / "new_dir"
+        result, existed = _resolve_output_directory(
+            str(new_path), debug=False, create=False
+        )
+        assert result == new_path
+        assert existed is False
+        assert not result.exists()
+
+
+def test_problem_filter_can_preview_without_clearing(tmp_path):
+    """A non-mutating filter reports reruns without deleting their outputs."""
+    run_dir = tmp_path / "run"
+    problem_dir = run_dir / "sample"
+    problem_dir.mkdir(parents=True)
+    artifact = problem_dir / "artifact.txt"
+    artifact.write_text("preserve")
+
+    with patch(
+        "slop_code.entrypoints.commands.run_agent._check_problem_needs_rerun",
+        return_value=(True, "invalid checkpoint"),
+    ):
+        to_run, skipped, reasons = _filter_problems_for_execution(
+            run_dir,
+            ["sample"],
+            tmp_path / "problems",
+            "prompt",
+            MagicMock(),
+            overwrite=False,
+            resume=False,
+            clear_outputs=False,
+        )
+
+    assert to_run == ["sample"]
+    assert skipped == []
+    assert reasons == {"sample": "invalid checkpoint"}
+    assert artifact.read_text() == "preserve"
 
 
 class TestValidateResumeConfig:
@@ -439,10 +516,17 @@ class TestHandleEarlyCompletion:
         )
         assert result is False
 
+    @patch("slop_code.entrypoints.commands.run_agent.finalize_benchmark_score")
+    @patch(
+        "slop_code.entrypoints.commands.run_agent._load_score_problem_configs",
+        return_value=(),
+    )
     @patch(
         "slop_code.entrypoints.commands.run_agent._create_checkpoint_results_and_summary"
     )
-    def test_calls_summary_when_evaluate_true(self, mock_summary, tmp_path):
+    def test_calls_summary_when_evaluate_true(
+        self, mock_summary, _mock_configs, _mock_finalizer, tmp_path
+    ):
         """Test summary is generated when evaluate=True and nothing to do."""
         console = MagicMock()
         result = _handle_early_completion(
@@ -454,7 +538,9 @@ class TestHandleEarlyCompletion:
             requested=["prob1"],
         )
         assert result is True
-        mock_summary.assert_called_once()
+        assert mock_summary.call_count == 2
+        assert mock_summary.call_args_list[0].kwargs["render_summary"] is False
+        assert "render_summary" not in mock_summary.call_args_list[1].kwargs
 
     @patch(
         "slop_code.entrypoints.commands.run_agent._create_checkpoint_results_and_summary"
@@ -721,3 +807,91 @@ class TestValidateProblemPaths:
         """Test validation passes with empty list."""
         # Should not raise
         _validate_problem_paths([], tmp_path)
+
+
+class TestScoreFinalization:
+    """Score finalization follows the durable completion boundary."""
+
+    def test_early_completion_renders_after_finalizing(self, tmp_path):
+        events: list[str] = []
+        with (
+            patch(
+                "slop_code.entrypoints.commands.run_agent._create_checkpoint_results_and_summary",
+                side_effect=lambda **_: events.append("summary"),
+            ),
+            patch(
+                "slop_code.entrypoints.commands.run_agent._load_score_problem_configs",
+                side_effect=lambda *_: events.append("configs")
+                or (MagicMock(),),
+            ),
+            patch(
+                "slop_code.entrypoints.commands.run_agent.finalize_benchmark_score",
+                side_effect=lambda *_: events.append("finalize") or MagicMock(),
+            ),
+        ):
+            assert _handle_early_completion(
+                problem_names=[],
+                run_dir=tmp_path,
+                problems_base_path=tmp_path,
+                console=MagicMock(),
+                evaluate=True,
+                requested=["problem"],
+            )
+        assert events == ["summary", "configs", "finalize", "summary"]
+
+    def test_early_completion_preserves_finalization_failure(self, tmp_path):
+        with (
+            patch(
+                "slop_code.entrypoints.commands.run_agent._create_checkpoint_results_and_summary"
+            ),
+            patch(
+                "slop_code.entrypoints.commands.run_agent._load_score_problem_configs",
+                return_value=(MagicMock(),),
+            ),
+            patch(
+                "slop_code.entrypoints.commands.run_agent.finalize_benchmark_score",
+                side_effect=RuntimeError("finalization failed"),
+            ),
+            pytest.raises(RuntimeError, match="finalization failed"),
+        ):
+            _handle_early_completion(
+                problem_names=[],
+                run_dir=tmp_path,
+                problems_base_path=tmp_path,
+                console=MagicMock(),
+                evaluate=True,
+                requested=["problem"],
+            )
+
+    def test_early_completion_without_evaluation_does_not_finalize(
+        self, tmp_path
+    ):
+        with (
+            patch(
+                "slop_code.entrypoints.commands.run_agent._create_checkpoint_results_and_summary"
+            ) as summary,
+            patch(
+                "slop_code.entrypoints.commands.run_agent.finalize_benchmark_score"
+            ) as finalize,
+        ):
+            assert _handle_early_completion(
+                problem_names=[],
+                run_dir=tmp_path,
+                problems_base_path=tmp_path,
+                console=MagicMock(),
+                evaluate=False,
+                requested=["problem"],
+            )
+        summary.assert_not_called()
+        finalize.assert_not_called()
+
+    def test_duplicate_exact_problem_names_are_rejected(self, tmp_path):
+        problem = MagicMock(name="duplicate")
+        problem.name = "duplicate"
+        with (
+            patch.object(ProblemConfig, "from_yaml", return_value=problem),
+            pytest.raises(
+                ValueError, match="configured problem names must be unique"
+            ),
+        ):
+            _load_score_problem_configs(tmp_path, ["one", "two"])

@@ -205,8 +205,12 @@ def _detect_resume_from_artifacts(
     """
     completed: list[str] = []
     statuses: list[CheckpointStatus] = []
-    can_validate_prompts = all(
-        [problem_config, prompt_template, environment, entry_file, checkpoints]
+    can_validate_prompts = (
+        problem_config is not None
+        and prompt_template is not None
+        and environment is not None
+        and entry_file is not None
+        and checkpoints is not None
     )
     first_invalid_reason: InvalidationReason | None = None
 
@@ -287,15 +291,23 @@ def _detect_resume_from_artifacts(
             continue
 
         # Check prompt matches if validation is enabled
-        if can_validate_prompts and _check_prompt_mismatch(
-            problem_config,
-            checkpoint_dir,
-            name,
-            checkpoint_names,
-            prompt_template,  # type: ignore[arg-type]
-            environment,  # type: ignore[arg-type]
-            entry_file,  # type: ignore[arg-type]
-            checkpoints,  # type: ignore[arg-type]
+        if (
+            can_validate_prompts
+            and problem_config is not None
+            and prompt_template is not None
+            and environment is not None
+            and entry_file is not None
+            and checkpoints is not None
+            and _check_prompt_mismatch(
+                problem_config,
+                checkpoint_dir,
+                name,
+                checkpoint_names,
+                prompt_template,
+                environment,
+                entry_file,
+                checkpoints,
+            )
         ):
             first_invalid_reason = InvalidationReason.SPEC_CHANGED
             statuses.append(
@@ -419,8 +431,12 @@ def detect_resume_point(
 
     summary = run_info.get("summary", {})
     checkpoint_states = summary.get("checkpoints", {})
-    can_validate_prompts = all(
-        [problem_config, prompt_template, environment, entry_file, checkpoints]
+    can_validate_prompts = (
+        problem_config is not None
+        and prompt_template is not None
+        and environment is not None
+        and entry_file is not None
+        and checkpoints is not None
     )
 
     # Find completed checkpoints and first incomplete one
@@ -462,15 +478,23 @@ def detect_resume_point(
 
         if state == CheckpointState.RAN and snapshot_dir.exists():
             # Check prompt matches if validation is enabled
-            if can_validate_prompts and _check_prompt_mismatch(
-                problem_config,
-                checkpoint_dir,
-                name,
-                checkpoint_names,
-                prompt_template,  # type: ignore[arg-type]
-                environment,  # type: ignore[arg-type]
-                entry_file,  # type: ignore[arg-type]
-                checkpoints,  # type: ignore[arg-type]
+            if (
+                can_validate_prompts
+                and problem_config is not None
+                and prompt_template is not None
+                and environment is not None
+                and entry_file is not None
+                and checkpoints is not None
+                and _check_prompt_mismatch(
+                    problem_config,
+                    checkpoint_dir,
+                    name,
+                    checkpoint_names,
+                    prompt_template,
+                    environment,
+                    entry_file,
+                    checkpoints,
+                )
             ):
                 # Prompt mismatch - invalidate this and all subsequent
                 logger.debug(
@@ -620,6 +644,7 @@ def _aggregate_prior_usage(
         cost=total_cost,
         steps=total_steps,
         net_tokens=total_net_tokens,
+        current_tokens=TokenUsage(),
     )
 
 

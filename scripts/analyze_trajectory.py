@@ -12,9 +12,9 @@ from __future__ import annotations
 import json
 import re
 import tarfile
-from abc import ABC, abstractmethod
-from collections import Counter
-from dataclasses import dataclass, field
+from abc import ABC
+from abc import abstractmethod
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any
@@ -22,7 +22,9 @@ from typing import Annotated, Any
 import tiktoken
 import typer
 import yaml
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel
+from pydantic import Field
+from pydantic import computed_field
 from rich.console import Console
 from rich.table import Table
 
@@ -277,11 +279,10 @@ def detect_bug_fix_cycles(events: list[ToolEvent]) -> BugFixMetrics:
 
     for i, event in enumerate(events):
         # Track test/lint runs
-        if event.name == "Bash":
-            if event.is_test_command:
-                metrics.total_test_runs += 1
-                if event.exit_code != 0 or event.has_error_output:
-                    metrics.failed_test_runs += 1
+        if event.name == "Bash" and event.is_test_command:
+            metrics.total_test_runs += 1
+            if event.exit_code != 0 or event.has_error_output:
+                metrics.failed_test_runs += 1
 
     for i in range(len(events) - 2):
         e1, e2, e3 = events[i], events[i + 1], events[i + 2]
@@ -459,7 +460,7 @@ class TrajectoryParser(ABC):
     @staticmethod
     def detect_agent_type(jsonl_path: Path) -> AgentType:
         """Auto-detect agent type from JSONL content."""
-        with open(jsonl_path) as f:
+        with jsonl_path.open() as f:
             first_line = f.readline()
             if not first_line:
                 raise ValueError("Empty JSONL file")
@@ -593,7 +594,7 @@ class ClaudeCodeParser(TrajectoryParser):
             str, ToolEvent
         ] = {}  # tool_use_id -> ToolEvent
 
-        with open(jsonl_path) as f:
+        with jsonl_path.open() as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -672,7 +673,7 @@ class ClaudeCodeParser(TrajectoryParser):
                 )
 
         # Track turns
-        if message.get("stop_reason") in ("end_turn", "tool_use"):
+        if message.get("stop_reason") in {"end_turn", "tool_use"}:
             metrics.turn_count += 1
 
     def _process_thinking(
@@ -741,9 +742,7 @@ class ClaudeCodeParser(TrajectoryParser):
         if tool_name == "Task":
             # Task delegation - classify based on subagent type
             subagent = tool_input.get("subagent_type", "")
-            if subagent in ("Explore", "explore"):
-                return ActivityType.EXPLORATION
-            if subagent in ("Plan", "plan"):
+            if subagent in {"Explore", "explore", "Plan", "plan"}:
                 return ActivityType.EXPLORATION
 
         if tool_name == "TodoWrite":
@@ -781,21 +780,23 @@ class ClaudeCodeParser(TrajectoryParser):
                     )
 
                 # Update event with result details
-                if event and tool_name == "Bash" and tool_use_result:
-                    if isinstance(tool_use_result, dict):
-                        stderr = tool_use_result.get("stderr", "")
-                        stdout = tool_use_result.get("stdout", "")
-                        if has_error_indicators(stderr) or has_error_indicators(
-                            stdout
-                        ):
-                            event.has_error_output = True
-                        # Try to extract exit code from interpretation
-                        interp = tool_use_result.get(
-                            "returnCodeInterpretation", ""
-                        )
-                        if "exit code" in interp.lower():
-                            # Try to parse exit code from message
-                            pass
+                if (
+                    event
+                    and tool_name == "Bash"
+                    and tool_use_result
+                    and isinstance(tool_use_result, dict)
+                ):
+                    stderr = tool_use_result.get("stderr", "")
+                    stdout = tool_use_result.get("stdout", "")
+                    if has_error_indicators(stderr) or has_error_indicators(
+                        stdout
+                    ):
+                        event.has_error_output = True
+                    # Try to extract exit code from interpretation
+                    interp = tool_use_result.get("returnCodeInterpretation", "")
+                    if "exit code" in interp.lower():
+                        # Try to parse exit code from message
+                        pass
 
 
 class CodexParser(TrajectoryParser):
@@ -813,7 +814,7 @@ class CodexParser(TrajectoryParser):
         tool_sequence: list[str] = []
         tool_events: list[ToolEvent] = []
 
-        with open(jsonl_path) as f:
+        with jsonl_path.open() as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -974,13 +975,13 @@ class CodexParser(TrajectoryParser):
         tool = parts[0]
 
         # Normalize common patterns
-        if tool in ("python", "python3"):
+        if tool in {"python", "python3"}:
             return "python"
         if tool == "uv" and len(parts) > 1:
             if parts[1] == "run" and len(parts) > 2:
                 return parts[2]  # uv run pytest -> pytest
             return parts[1]  # uv pip -> pip
-        if tool in ("pip", "pip3"):
+        if tool in {"pip", "pip3"}:
             return "pip"
         if tool == "git":
             return "git"
@@ -988,11 +989,11 @@ class CodexParser(TrajectoryParser):
             return "pytest"
 
         # Map read-only commands to Read for sequence analysis
-        if tool in ("cat", "head", "tail", "less", "more"):
+        if tool in {"cat", "head", "tail", "less", "more"}:
             return "Read"
-        if tool in ("ls", "find", "tree"):
+        if tool in {"ls", "find", "tree"}:
             return "Glob"
-        if tool in ("grep", "rg", "ag"):
+        if tool in {"grep", "rg", "ag"}:
             return "Grep"
 
         return tool
@@ -1212,7 +1213,7 @@ def get_run_name(run_dir: Path) -> str:
     config_path = run_dir / "config.yaml"
     if config_path.exists():
         try:
-            with open(config_path) as f:
+            with config_path.open() as f:
                 config = yaml.safe_load(f)
 
             model = config.get("model", {}).get("name", "?")
@@ -1220,7 +1221,7 @@ def get_run_name(run_dir: Path) -> str:
             thinking = config.get("thinking", "none")
 
             return f"{model}/{prompt}/{thinking}"
-        except Exception:
+        except (AttributeError, OSError, TypeError, yaml.YAMLError):
             pass
     return run_dir.name
 
@@ -1280,7 +1281,7 @@ def extract_from_tar(tar_path: Path) -> Path | None:
                 if member.name.endswith("stdout.jsonl"):
                     tar.extract(member, tar_path.parent)
                     return tar_path.parent / member.name
-    except Exception as e:
+    except (OSError, tarfile.TarError) as e:
         err_console.print(
             f"[yellow]Warning: Failed to extract {tar_path}: {e}[/yellow]"
         )
@@ -1294,10 +1295,10 @@ def load_evaluation_result(checkpoint_dir: Path) -> bool | None:
         return None
 
     try:
-        with open(eval_path) as f:
+        with eval_path.open() as f:
             data = json.load(f)
-        return data.get("passed_policy", None)
-    except Exception:
+        return data.get("passed_policy")
+    except (AttributeError, json.JSONDecodeError, OSError):
         return None
 
 
@@ -1389,7 +1390,7 @@ def render_comparison_table(runs: dict[str, dict[str, Any]]) -> Table:
     table = Table(title="Run Comparison", expand=True)
 
     table.add_column("Metric", style="cyan", width=25)
-    for run_name in runs.keys():
+    for run_name in runs:
         # Truncate long names
         short_name = run_name[:20] + "..." if len(run_name) > 23 else run_name
         table.add_column(short_name, justify="right", width=18)
@@ -1563,6 +1564,7 @@ def main(
     run_dirs: Annotated[
         list[Path], typer.Argument(help="Run directories to analyze")
     ],
+    *,
     agent: Annotated[
         str | None, typer.Option(help="Force agent type: claude_code or codex")
     ] = None,
@@ -1668,7 +1670,7 @@ def main(
                     if verbose:
                         console.print(render_checkpoint_table(metrics))
 
-                except Exception as e:
+                except (AttributeError, OSError, TypeError, ValueError) as e:
                     err_console.print(
                         f"[red]Error parsing {problem_name}/{checkpoint_name}: {e}[/red]"
                     )

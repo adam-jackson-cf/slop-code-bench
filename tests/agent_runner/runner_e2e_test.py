@@ -7,8 +7,11 @@ import pytest
 from slop_code.agent_runner import runner
 from slop_code.agent_runner.agent import Agent
 from slop_code.agent_runner.agent import AgentConfigBase
+from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
 from slop_code.agent_runner.models import AgentRunSpec
+from slop_code.common.llms import ModelDefinition
+from slop_code.common.llms import ThinkingPreset
 from slop_code.common.llms import TokenUsage
 from slop_code.evaluation import PassPolicy
 from slop_code.evaluation import ProblemConfig
@@ -17,7 +20,6 @@ from slop_code.execution import Session
 from slop_code.execution.models import CommandConfig
 from slop_code.execution.models import EnvironmentConfig
 from slop_code.execution.models import SetupConfig
-from slop_code.execution.session import Session
 
 
 class DummyAgent(Agent):
@@ -30,9 +32,16 @@ class DummyAgent(Agent):
         agent_name: str,
         problem_name: str,
         cost_limits: AgentCostLimits,
+        *,
         verbose: bool,
     ):
-        super().__init__(agent_name, problem_name, cost_limits, None, verbose)
+        super().__init__(
+            agent_name,
+            problem_name,
+            cost_limits,
+            None,
+            verbose=verbose,
+        )
         self.checkpoint_solutions = checkpoint_solutions
         self.working_dir: Path | None = None
         self.num_steps = num_steps
@@ -79,9 +88,14 @@ class DummyAgent(Agent):
     def _from_config(
         cls,
         config: AgentConfigBase,
+        model: ModelDefinition,
+        credential: ProviderCredential,
         problem_name: str,
+        *,
         verbose: bool,
         image: str | None,
+        thinking_preset: ThinkingPreset | None = None,
+        thinking_max_tokens: int | None = None,
     ) -> Agent:
         raise NotImplementedError("DummyAgent is for testing only")
 
@@ -262,6 +276,4 @@ def test_checkpoint_snapshots_exclude_tar_archives(
         expected_files = solutions[checkpoint_index].keys()
         for relative_path in expected_files:
             snapshot_file = snapshot_dir / relative_path
-            assert snapshot_file.exists(), (
-                f"Expected snapshot to contain {relative_path} for {checkpoint_name}"
-            )
+            assert snapshot_file.exists(), f"Expected snapshot to contain {relative_path} for {checkpoint_name}"

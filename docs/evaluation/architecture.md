@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2025-12-22
+last_updated: 2026-08-29
 ---
 
 # Evaluation System Architecture
@@ -9,11 +9,16 @@ This guide provides a detailed overview of the pytest-based evaluation system ar
 
 ## System Overview
 
-The evaluation system uses `PytestRunner` to execute standard pytest tests against agent submissions. Tests run in isolated environments via `uvx`, ensuring no interference with the solution's dependencies.
+The evaluation system uses `PytestRunner` to execute standard pytest tests
+against agent submissions. Tests run with an immutable, content-addressed
+evaluator environment built by `uv sync --frozen`; the submission's environment
+is separate from the trusted test runner.
 
 ```
 Problem
 ├── config.yaml              # Problem + checkpoint configuration
+├── pyproject.toml           # Evaluator dependencies
+├── uv.lock                  # Exact evaluator dependency lock
 └── tests/
     ├── conftest.py          # Required fixtures
     ├── test_checkpoint_1.py # Tests for checkpoint 1
@@ -32,22 +37,22 @@ Problem
 └────────┬────────┘
          │
          ▼
-┌─────────────────┐
-│  PytestRunner   │
-│                 │
-│ 1. Copy tests   │
-│ 2. Gen pytest.ini│
-│ 3. Build command│
-│ 4. Execute uvx  │
-│ 5. Parse reports│
-│ 6. Categorize   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ CorrectnessResults │
-│ + TestResult[]  │
-└─────────────────┘
+┌──────────────────────┐
+│     PytestRunner     │
+│                      │
+│ 1. Copy tests        │
+│ 2. Gen pytest.ini    │
+│ 3. Verify/build env  │
+│ 4. Execute pytest    │
+│ 5. Parse reports     │
+│ 6. Categorize        │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│ CorrectnessResults   │
+│ + TestResult[]       │
+└──────────────────────┘
 ```
 
 ### Detailed Execution Steps
@@ -57,15 +62,19 @@ Problem
    - Only copy tests for checkpoints 0..N based on `include_prior_tests` setting
    - Generate `pytest.ini` with marker registration
 
-2. **Command Construction**
-   - Build `uvx` command with test dependencies
-   - Pass `--entrypoint` and `--checkpoint` options to pytest
-   - Configure CTRF and pytest-json-report output paths
+2. **Evaluator Environment**
+   - Hash `pyproject.toml`, `uv.lock`, declared `test_dependencies`, the
+     coverage plugin, and interpreter identity
+   - Reuse a fully verified environment with that identity, or build it with
+     `uv sync --frozen --no-install-project`
+   - Verify the environment inventory, hashes, file modes, and `READY` marker
 
-3. **Isolated Execution**
-   - Execute via Docker runtime
-   - `uvx` installs test dependencies in ephemeral environment
-   - Solution's virtualenv/dependencies are not affected
+3. **Command Construction and Execution**
+   - Run pytest through the locked evaluator interpreter
+   - Pass `--entrypoint` and `--checkpoint` options to pytest
+   - Limit conftest discovery to `.evaluation_tests`
+   - Configure CTRF and pytest-json-report output paths
+   - Keep the submission's dependencies separate from evaluator dependencies
 
 4. **Report Parsing**
    - Parse CTRF JSON report (pytest-json-ctrf plugin)
@@ -82,6 +91,11 @@ Problem
    - Create `TestResult` for each test
    - Build `CorrectnessResults` with aggregated statistics
 
+When canonical measurement is requested, the same evaluator runs branch
+coverage with the internal audit plugin. The resulting ledger records pytest
+phase outcomes, coverage contexts, and process-creation events for regression
+attribution.
+
 ## Core Components
 
 ### PytestRunner (`pytest_runner.py`)
@@ -93,7 +107,8 @@ runner = PytestRunner(
     problem=problem_config,
     checkpoint=checkpoint_config,
     environment=env_spec,
-    submission_path=Path("outputs/submission/checkpoint_1"),
+    submission_path=Path("experiments/submission/checkpoint_1"),
+    evaluator_environment_parent=Path("experiments/run/measurement_analysis"),
 )
 results = runner.run()
 ```
@@ -101,7 +116,7 @@ results = runner.run()
 **Key Methods:**
 - `_copy_tests_from_problem()`: Selectively copy test files
 - `_generate_pytest_ini()`: Create pytest.ini with markers
-- `_build_pytest_command()`: Construct uvx + pytest command
+- `_locked_evaluator_python()`: Build or verify the immutable evaluator environment
 - `_parse_ctrf_report()`: Parse CTRF JSON output
 - `_determine_group_type()`: Categorize tests by markers/checkpoint
 - `run()`: Main orchestration method
@@ -172,45 +187,42 @@ class CorrectnessResults(BaseModel):
 The runner builds a command like:
 
 ```bash
-uvx \
-  --with=pytest \
-  --with=pytest-json-ctrf \
-  --with=pytest-json-report \
-  --with=pytest-timeout \
-  --with=jsonschema \
-  --with=deepdiff \
-  pytest \
+measurement_analysis/evaluator_environments/<environment_id>/.venv/bin/python \
+  -m pytest \
+  .evaluation_tests \
   --timeout=30 \
   --entrypoint='python main.py' \
   --checkpoint='checkpoint_1' \
+  --confcutdir=.evaluation_tests \
   --ctrf=.scbench/ctrf-report.json \
   --json-report \
   --json-report-file=.scbench/pytest-report.json \
-  -vv \
-  .evaluation_tests
+  -vv
 ```
+
+Canonical coverage runs insert `coverage run --branch -m` before `pytest` and
+load the internal `coverage_plugin`.
 
 **Key Options:**
 - `--entrypoint`: Command to run submission (passed to test fixtures)
 - `--checkpoint`: Current checkpoint name
 - `--timeout`: Session-level timeout from checkpoint config
+- `--confcutdir`: Prevent agent-authored parent `conftest.py` files from loading
 - `--ctrf`: CTRF JSON output path
 - `--json-report`: Enable detailed failure reports
 
 ## Test Dependencies
 
-Tests run with these packages installed via uvx:
+Every problem declares evaluator packages in `pyproject.toml` and commits the
+matching `uv.lock`. Entries in `config.yaml` `test_dependencies` must also
+appear in `[project].dependencies`; they document which locked packages are
+problem-specific. The runner never resolves floating dependencies at execution
+time.
 
-| Package | Purpose |
-|---------|---------|
-| `pytest` | Test framework |
-| `pytest-json-ctrf` | CTRF JSON report generation |
-| `pytest-json-report` | Detailed failure messages |
-| `pytest-timeout` | Session-level timeout |
-| `jsonschema` | JSON schema validation |
-| `deepdiff` | Deep comparison utilities |
-
-Additional dependencies can be specified per-problem via `test_dependencies` in config.
+The standard evaluator set includes pytest, pytest-json-ctrf,
+pytest-json-report, pytest-timeout, coverage, and Ruff. Add libraries used by
+tests, such as `jsonschema` or `deepdiff`, to the problem project and regenerate
+`uv.lock`.
 
 ## Exit Codes
 
@@ -223,16 +235,18 @@ Additional dependencies can be specified per-problem via `test_dependencies` in 
 | 4 | Usage error | Yes |
 | 5 | No tests collected | Yes |
 
-Infrastructure failures set `results.infrastructure_failure = True` and cause all pass policies to fail.
+Infrastructure failures set `results.infrastructure_failure = True` and cause
+all assessment policies to fail.
 
 ## Design Patterns
 
-### uvx Isolation
+### Locked Evaluator Isolation
 
-Tests run via `uvx` to ensure complete isolation:
-- Solution's dependencies don't interfere with test environment
-- Works with any solution package manager (pip, uv, poetry)
-- Test dependencies installed fresh each run
+Evaluator environments are immutable and keyed by exact inputs:
+- `uv.lock` fixes dependency resolution
+- Every installed file and mode is inventoried and verified before reuse
+- A completed environment is published only after its `READY` marker is durable
+- Solution dependencies do not alter the trusted evaluator
 
 ### Marker-Based Categorization
 

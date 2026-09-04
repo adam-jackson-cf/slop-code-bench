@@ -1,74 +1,87 @@
-"""Exhaustive tests for Python lint metrics.
-
-Tests all functions in slop_code.metrics.languages.python.lint_metrics including:
-- Public API: calculate_lint_metrics
-"""
+"""Behavioral tests for Python lint metrics."""
 
 from __future__ import annotations
 
 import json
-import subprocess
-from unittest.mock import MagicMock
+from pathlib import Path
 
 import pytest
 
 from slop_code.metrics.languages.python import calculate_lint_metrics
+from slop_code.metrics.languages.python import lint_metrics
 
-# =============================================================================
-# Calculate Lint Metrics Tests
-# =============================================================================
+
+@pytest.fixture
+def lint_execution(monkeypatch):
+    """Replace only the internal trusted-process execution boundary."""
+    calls: list[list[str]] = []
+
+    def configure(
+        stdout: str = "",
+        *,
+        exit_status: int = 1,
+        stderr: str = "",
+        error: OSError | None = None,
+    ) -> list[list[str]]:
+        def execute(command: list[str]) -> tuple[int, str, str]:
+            calls.append(command)
+            if error is not None:
+                raise error
+            return exit_status, stdout, stderr
+
+        monkeypatch.setattr(lint_metrics, "_run_with_captured_output", execute)
+        return calls
+
+    monkeypatch.setattr(
+        lint_metrics, "_resolve_uv_executable", lambda: Path("/trusted/uv")
+    )
+    return configure
 
 
 class TestCalculateLintMetrics:
-    """Tests for calculate_lint_metrics function."""
+    """Tests for parsing Ruff statistics and execution failures."""
 
-    def test_calculate_lint_metrics_with_errors(self, tmp_path, monkeypatch):
-        """Test parsing ruff JSON output with lint errors."""
+    def test_calculate_lint_metrics_with_errors(self, tmp_path, lint_execution):
         test_file = tmp_path / "test.py"
         test_file.write_text("def func():\n    x=1\n")
-
-        # Mock ruff output
-        ruff_output = json.dumps(
-            [
-                {"code": "E501", "count": 3, "fixable": True},
-                {"code": "E302", "count": 2, "fixable": False},
-                {"code": "W503", "count": 1, "fixable": True},
-            ]
+        calls = lint_execution(
+            json.dumps(
+                [
+                    {"code": "E501", "count": 3, "fixable": True},
+                    {"code": "E302", "count": 2, "fixable": False},
+                    {"code": "W503", "count": 1, "fixable": True},
+                ]
+            )
         )
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
 
         metrics = calculate_lint_metrics(test_file)
 
-        assert metrics.errors == 6  # 3 + 2 + 1
-        assert metrics.fixable == 4  # 3 + 1
-        assert metrics.counts["E501"] == 3
-        assert metrics.counts["E302"] == 2
-        assert metrics.counts["W503"] == 1
+        assert metrics.errors == 6
+        assert metrics.fixable == 4
+        assert metrics.counts == {"E501": 3, "E302": 2, "W503": 1}
+        assert calls == [
+            [
+                "/trusted/uv",
+                "run",
+                "ruff",
+                "check",
+                "--statistics",
+                "--output-format",
+                "json",
+                "--isolated",
+                "--preview",
+                *lint_metrics.RUFF_SELECT_FLAGS,
+                str(test_file.resolve()),
+            ]
+        ]
 
-        # Verify subprocess was called with correct args
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0][0]
-        assert call_args[0:3] == ["uv", "run", "ruff"]
-        assert str(test_file.absolute()) in call_args
-
-    def test_calculate_lint_metrics_no_errors(self, tmp_path, monkeypatch):
-        """Test with clean code (no lint errors)."""
+    @pytest.mark.parametrize("stdout", ["", "[]"])
+    def test_calculate_lint_metrics_without_errors(
+        self, tmp_path, lint_execution, stdout
+    ):
         test_file = tmp_path / "clean.py"
         test_file.write_text("def func():\n    pass\n")
-
-        # Empty ruff output (no errors)
-        mock_result = MagicMock()
-        mock_result.stdout = "[]"
-        mock_result.returncode = 0
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
+        lint_execution(stdout, exit_status=0)
 
         metrics = calculate_lint_metrics(test_file)
 
@@ -76,360 +89,189 @@ class TestCalculateLintMetrics:
         assert metrics.fixable == 0
         assert metrics.counts == {}
 
-    def test_calculate_lint_metrics_malformed_json(self, tmp_path, monkeypatch):
-        """Test handling malformed JSON output with multiple lines."""
+    def test_calculate_lint_metrics_malformed_json(
+        self, tmp_path, lint_execution
+    ):
         test_file = tmp_path / "test.py"
         test_file.write_text("code")
-
-        # Multi-line malformed output that will eventually be exhausted
-        mock_result = MagicMock()
-        mock_result.stdout = "invalid json line 1\ninvalid json line 2\n"
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
+        lint_execution("invalid json line 1\ninvalid json line 2\n")
 
         metrics = calculate_lint_metrics(test_file)
 
-        # Should return zero metrics on parse failure
         assert metrics.errors == 0
         assert metrics.fixable == 0
         assert metrics.counts == {}
 
-    def test_calculate_lint_metrics_with_prefix(self, tmp_path, monkeypatch):
-        """Test parsing JSON that has a prefix before the actual JSON."""
+    def test_calculate_lint_metrics_with_prefix(self, tmp_path, lint_execution):
         test_file = tmp_path / "test.py"
         test_file.write_text("code")
-
-        # Simulate output with a warning prefix
-        ruff_output = 'Warning: something\n[{"code": "E501", "count": 1, "fixable": true}]'
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
+        lint_execution(
+            'Warning: something\n[{"code": "E501", "count": 1, "fixable": true}]'
+        )
 
         metrics = calculate_lint_metrics(test_file)
 
-        # Should skip the first line and parse the JSON
         assert metrics.errors == 1
         assert metrics.fixable == 1
-        assert metrics.counts["E501"] == 1
+        assert metrics.counts == {"E501": 1}
 
-    def test_calculate_lint_metrics_subprocess_error(
-        self, tmp_path, monkeypatch
+    def test_calculate_lint_metrics_execution_error(
+        self, tmp_path, lint_execution
     ):
-        """Test handling subprocess errors gracefully."""
         test_file = tmp_path / "test.py"
         test_file.write_text("code")
-
-        # Mock subprocess to raise CalledProcessError
-        mock_run = MagicMock(
-            side_effect=subprocess.CalledProcessError(1, "ruff")
-        )
-        monkeypatch.setattr("subprocess.run", mock_run)
+        lint_execution(error=OSError("cannot execute ruff"))
 
         metrics = calculate_lint_metrics(test_file)
 
-        # Should return zero metrics on error
         assert metrics.errors == 0
         assert metrics.fixable == 0
         assert metrics.counts == {}
-
-
-# =============================================================================
-# Error Code Tests
-# =============================================================================
 
 
 class TestErrorCodes:
-    """Tests for specific error code handling."""
+    """Tests for aggregation of Ruff diagnostic categories."""
 
-    def test_single_error_code(self, tmp_path, monkeypatch):
-        """Test with single error code."""
-        test_file = tmp_path / "test.py"
-        test_file.write_text("x=1")
-
-        ruff_output = json.dumps(
-            [
-                {"code": "E501", "count": 5, "fixable": True},
-            ]
-        )
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
-
-        metrics = calculate_lint_metrics(test_file)
-
-        assert metrics.errors == 5
-        assert metrics.fixable == 5
-        assert len(metrics.counts) == 1
-        assert metrics.counts["E501"] == 5
-
-    def test_multiple_error_codes(self, tmp_path, monkeypatch):
-        """Test with multiple error codes."""
-        test_file = tmp_path / "test.py"
-        test_file.write_text("code")
-
-        ruff_output = json.dumps(
-            [
-                {"code": "E501", "count": 2, "fixable": True},
-                {"code": "E302", "count": 3, "fixable": True},
-                {"code": "W503", "count": 1, "fixable": False},
-                {"code": "F401", "count": 4, "fixable": True},
-            ]
-        )
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
-
-        metrics = calculate_lint_metrics(test_file)
-
-        assert metrics.errors == 10  # 2 + 3 + 1 + 4
-        assert metrics.fixable == 9  # 2 + 3 + 4
-        assert len(metrics.counts) == 4
-
-    def test_no_fixable_errors(self, tmp_path, monkeypatch):
-        """Test with only non-fixable errors."""
+    @pytest.mark.parametrize(
+        ("stats", "expected_errors", "expected_fixable", "expected_counts"),
+        [
+            (
+                [{"code": "E501", "count": 5, "fixable": True}],
+                5,
+                5,
+                {"E501": 5},
+            ),
+            (
+                [
+                    {"code": "E501", "count": 2, "fixable": True},
+                    {"code": "E302", "count": 3, "fixable": True},
+                    {"code": "W503", "count": 1, "fixable": False},
+                    {"code": "F401", "count": 4, "fixable": True},
+                ],
+                10,
+                9,
+                {"E501": 2, "E302": 3, "W503": 1, "F401": 4},
+            ),
+            (
+                [
+                    {"code": "E999", "count": 1, "fixable": False},
+                    {"code": "E501", "count": 2, "fixable": False},
+                ],
+                3,
+                0,
+                {"E999": 1, "E501": 2},
+            ),
+        ],
+    )
+    def test_error_code_aggregation(
+        self,
+        tmp_path,
+        lint_execution,
+        stats,
+        expected_errors,
+        expected_fixable,
+        expected_counts,
+    ):
         test_file = tmp_path / "test.py"
         test_file.write_text("code")
-
-        ruff_output = json.dumps(
-            [
-                {"code": "E999", "count": 1, "fixable": False},
-                {"code": "E501", "count": 2, "fixable": False},
-            ]
-        )
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
+        lint_execution(json.dumps(stats))
 
         metrics = calculate_lint_metrics(test_file)
 
-        assert metrics.errors == 3
-        assert metrics.fixable == 0
-
-
-# =============================================================================
-# Edge Cases
-# =============================================================================
+        assert metrics.errors == expected_errors
+        assert metrics.fixable == expected_fixable
+        assert metrics.counts == expected_counts
 
 
 class TestLintMetricsEdgeCases:
-    """Edge case tests for lint metrics."""
+    """Tests for parser boundaries and required Ruff fields."""
 
-    def test_empty_stdout(self, tmp_path, monkeypatch):
-        """Test with empty stdout — ruff returns nothing for clean files."""
-        test_file = tmp_path / "test.py"
-        test_file.write_text("pass")
-
-        mock_result = MagicMock()
-        mock_result.stdout = ""
-        mock_result.returncode = 0
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
-
-        metrics = calculate_lint_metrics(test_file)
-
-        assert metrics.errors == 0
-        assert metrics.fixable == 0
-        assert metrics.counts == {}
-
-    def test_empty_array_output(self, tmp_path, monkeypatch):
-        """Test with empty array output."""
-        test_file = tmp_path / "test.py"
-        test_file.write_text("pass")
-
-        mock_result = MagicMock()
-        mock_result.stdout = "[]"
-        mock_result.returncode = 0
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
-
-        metrics = calculate_lint_metrics(test_file)
-
-        assert metrics.errors == 0
-        assert metrics.counts == {}
-
-    def test_whitespace_in_output(self, tmp_path, monkeypatch):
-        """Test handling whitespace in output."""
+    def test_whitespace_in_output(self, tmp_path, lint_execution):
         test_file = tmp_path / "test.py"
         test_file.write_text("code")
-
-        ruff_output = (
+        lint_execution(
             '  \n  [{"code": "E501", "count": 1, "fixable": true}]  \n'
         )
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
-
-        metrics = calculate_lint_metrics(test_file)
-
-        # Should handle whitespace and parse correctly
-        assert metrics.errors == 1
-
-    def test_missing_count_field(self, tmp_path, monkeypatch):
-        """Test handling missing count field.
-
-        Note: Current implementation doesn't handle missing fields gracefully
-        and will raise KeyError.
-        """
-        test_file = tmp_path / "test.py"
-        test_file.write_text("code")
-
-        # Missing count field
-        ruff_output = json.dumps(
-            [
-                {"code": "E501", "fixable": True},
-            ]
-        )
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
-
-        # Current implementation raises KeyError on missing fields
-        with pytest.raises(KeyError):
-            calculate_lint_metrics(test_file)
-
-    def test_missing_fixable_field(self, tmp_path, monkeypatch):
-        """Test handling missing fixable field.
-
-        Note: Current implementation doesn't handle missing fields gracefully
-        and will raise KeyError.
-        """
-        test_file = tmp_path / "test.py"
-        test_file.write_text("code")
-
-        # Missing fixable field
-        ruff_output = json.dumps(
-            [
-                {"code": "E501", "count": 1},
-            ]
-        )
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
-
-        # Current implementation raises KeyError on missing fields
-        with pytest.raises(KeyError):
-            calculate_lint_metrics(test_file)
-
-    def test_extra_fields_ignored(self, tmp_path, monkeypatch):
-        """Test that extra fields in output are ignored."""
-        test_file = tmp_path / "test.py"
-        test_file.write_text("code")
-
-        ruff_output = json.dumps(
-            [
-                {
-                    "code": "E501",
-                    "count": 1,
-                    "fixable": True,
-                    "extra_field": "ignored",
-                    "another": 123,
-                },
-            ]
-        )
-
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
-
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
 
         metrics = calculate_lint_metrics(test_file)
 
         assert metrics.errors == 1
         assert metrics.fixable == 1
+        assert metrics.counts == {"E501": 1}
 
-    def test_zero_count(self, tmp_path, monkeypatch):
-        """Test handling of zero count."""
+    @pytest.mark.parametrize(
+        "stat",
+        [
+            {"code": "E501", "fixable": True},
+            {"code": "E501", "count": 1},
+        ],
+    )
+    def test_missing_required_fields_raise_key_error(
+        self, tmp_path, lint_execution, stat
+    ):
         test_file = tmp_path / "test.py"
         test_file.write_text("code")
+        lint_execution(json.dumps([stat]))
 
-        ruff_output = json.dumps(
-            [
-                {"code": "E501", "count": 0, "fixable": True},
-            ]
+        with pytest.raises(KeyError):
+            calculate_lint_metrics(test_file)
+
+    def test_extra_fields_are_ignored(self, tmp_path, lint_execution):
+        test_file = tmp_path / "test.py"
+        test_file.write_text("code")
+        lint_execution(
+            json.dumps(
+                [
+                    {
+                        "code": "E501",
+                        "count": 1,
+                        "fixable": True,
+                        "extra_field": "ignored",
+                        "another": 123,
+                    }
+                ]
+            )
         )
 
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 0
+        metrics = calculate_lint_metrics(test_file)
 
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
+        assert metrics.errors == 1
+        assert metrics.fixable == 1
+        assert metrics.counts == {"E501": 1}
+
+    def test_zero_count(self, tmp_path, lint_execution):
+        test_file = tmp_path / "test.py"
+        test_file.write_text("code")
+        lint_execution(
+            json.dumps([{"code": "E501", "count": 0, "fixable": True}])
+        )
 
         metrics = calculate_lint_metrics(test_file)
 
         assert metrics.errors == 0
-
-
-# =============================================================================
-# Model Tests
-# =============================================================================
+        assert metrics.fixable == 0
+        assert metrics.counts == {"E501": 0}
 
 
 class TestLintMetricsModel:
-    """Tests for LintMetrics model."""
+    """Tests for LintMetrics serialization."""
 
-    def test_lint_metrics_serialization(self, tmp_path, monkeypatch):
-        """Test that LintMetrics can be serialized."""
+    def test_lint_metrics_serialization(self, tmp_path, lint_execution):
         test_file = tmp_path / "test.py"
         test_file.write_text("code")
-
-        ruff_output = json.dumps(
-            [
-                {"code": "E501", "count": 2, "fixable": True},
-                {"code": "W503", "count": 1, "fixable": False},
-            ]
+        lint_execution(
+            json.dumps(
+                [
+                    {"code": "E501", "count": 2, "fixable": True},
+                    {"code": "W503", "count": 1, "fixable": False},
+                ]
+            )
         )
 
-        mock_result = MagicMock()
-        mock_result.stdout = ruff_output
-        mock_result.returncode = 1
+        data = calculate_lint_metrics(test_file).model_dump()
 
-        mock_run = MagicMock(return_value=mock_result)
-        monkeypatch.setattr("subprocess.run", mock_run)
-
-        metrics = calculate_lint_metrics(test_file)
-
-        # Test Pydantic serialization
-        data = metrics.model_dump()
-
-        assert "errors" in data
-        assert "fixable" in data
-        assert "counts" in data
-        assert data["errors"] == 3
-        assert data["fixable"] == 2
-        assert data["counts"]["E501"] == 2
-        assert data["counts"]["W503"] == 1
+        assert data == {
+            "errors": 3,
+            "fixable": 2,
+            "counts": {"E501": 2, "W503": 1},
+        }

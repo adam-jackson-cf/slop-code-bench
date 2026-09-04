@@ -7,7 +7,6 @@ Mass formula: mass = max(0, metric - baseline) * max(1, size)^alpha
 """
 
 import json
-import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -28,17 +27,17 @@ def get_run_name(run_dir: Path) -> str:
     config_path = run_dir / "config.yaml"
     if config_path.exists():
         try:
-            with open(config_path) as f:
+            with config_path.open() as f:
                 config = yaml.safe_load(f)
 
             model = config.get("model", {}).get("name", "?")
             prompt = Path(config.get("prompt_path", "?")).stem
             thinking = config.get("thinking", "none")
-
-            return f"{model} / {prompt} / {thinking}"
-        except Exception:
-            pass
+        except (OSError, yaml.YAMLError, AttributeError, TypeError):
+            return run_dir.name
+        return f"{model} / {prompt} / {thinking}"
     return run_dir.name
+
 
 METRICS = [
     "complexity",
@@ -66,15 +65,18 @@ def calc_mass(
     metric: np.ndarray, size: np.ndarray, baseline: float, alpha: float
 ) -> np.ndarray:
     """Vectorized mass calculation."""
-    return np.maximum(0, metric - baseline) * np.power(np.maximum(1, size), alpha)
+    return np.maximum(0, metric - baseline) * np.power(
+        np.maximum(1, size), alpha
+    )
 
 
 def load_symbols(jsonl_path: Path) -> pd.DataFrame:
     """Load symbols from JSONL file."""
-    df = pd.read_json(jsonl_path, lines=True)
-    # Filter to functions and methods only
-    df = df[df["type"].isin(["function", "method"])].copy()
-    return df
+    return (
+        pd.read_json(jsonl_path, lines=True)
+        .loc[lambda df: df["type"].isin(["function", "method"])]
+        .copy()
+    )
 
 
 def discover_checkpoints(run_dir: Path) -> dict[str, dict[int, Path]]:
@@ -83,7 +85,9 @@ def discover_checkpoints(run_dir: Path) -> dict[str, dict[int, Path]]:
     Returns: {problem_name: {checkpoint_num: symbols_path}}
     """
     problems = {}
-    for symbols_file in run_dir.glob("*/checkpoint_*/quality_analysis/symbols.jsonl"):
+    for symbols_file in run_dir.glob(
+        "*/checkpoint_*/quality_analysis/symbols.jsonl"
+    ):
         parts = symbols_file.parts
         # Find checkpoint_N in path
         for i, part in enumerate(parts):
@@ -138,7 +142,9 @@ def match_symbols(
             .to_dict()
         )
 
-        for idx, row in unmatched_after[unmatched_after[hash_col].notna()].iterrows():
+        for idx, row in unmatched_after[
+            unmatched_after[hash_col].notna()
+        ].iterrows():
             h = row[hash_col]
             if h in before_hashes:
                 before_key = before_hashes[h]
@@ -148,7 +154,9 @@ def match_symbols(
                 unmatched_before = unmatched_before[
                     unmatched_before["_key"] != before_key
                 ]
-                unmatched_after = unmatched_after[unmatched_after["_key"] != after_key]
+                unmatched_after = unmatched_after[
+                    unmatched_after["_key"] != after_key
+                ]
                 del before_hashes[h]
 
     # Build matched dataframe
@@ -172,7 +180,9 @@ def match_symbols(
             if col != "_key":
                 row_dict[f"{col}_after"] = after_row[col]
 
-        matched = pd.concat([matched, pd.DataFrame([row_dict])], ignore_index=True)
+        matched = pd.concat(
+            [matched, pd.DataFrame([row_dict])], ignore_index=True
+        )
 
     # Unmatched symbols
     final_only_before = set(unmatched_before["_key"])
@@ -199,7 +209,11 @@ def compute_distribution(masses: np.ndarray) -> dict:
     total = masses.sum()
 
     result = {"total_symbol_count": len(masses)}
-    for pct, name in [(0.50, "top_50_pct"), (0.75, "top_75_pct"), (0.90, "top_90_pct")]:
+    for pct, name in [
+        (0.50, "top_50_pct"),
+        (0.75, "top_75_pct"),
+        (0.90, "top_90_pct"),
+    ]:
         threshold = total * pct
         count = int(np.searchsorted(cumsum, threshold, side="right")) + 1
         result[f"{name}_symbol_count"] = min(count, len(masses))
@@ -210,7 +224,9 @@ def compute_distribution(masses: np.ndarray) -> dict:
 def compute_high_complexity(df: pd.DataFrame, mass_col: str) -> dict:
     """Compute mass in functions with complexity > 10."""
     total_mass = df[mass_col].sum() if len(df) > 0 else 0
-    high_cx = df[df["complexity"] > 10] if "complexity" in df.columns else df.iloc[:0]
+    high_cx = (
+        df[df["complexity"] > 10] if "complexity" in df.columns else df.iloc[:0]
+    )
     mass_high = high_cx[mass_col].sum() if len(high_cx) > 0 else 0
 
     return {
@@ -290,7 +306,9 @@ def analyze_transition(
             modified_count = 0
             if len(matched) > 0:
                 modified_count = int(
-                    (np.abs(mass_matched_after - mass_matched_before) > 1e-9).sum()
+                    (
+                        np.abs(mass_matched_after - mass_matched_before) > 1e-9
+                    ).sum()
                 )
 
             result["metrics"][metric][size_key] = {
@@ -317,8 +335,12 @@ def analyze_transition(
                 alpha,
             ),
             calc_mass(
-                added["complexity"].fillna(0).values if len(added) > 0 else np.array([]),
-                added["statements"].fillna(0).values if len(added) > 0 else np.array([]),
+                added["complexity"].fillna(0).values
+                if len(added) > 0
+                else np.array([]),
+                added["statements"].fillna(0).values
+                if len(added) > 0
+                else np.array([]),
                 baseline,
                 alpha,
             ),
@@ -335,7 +357,9 @@ def analyze_transition(
         baseline,
         alpha,
     )
-    result["high_complexity"] = compute_high_complexity(df_after_with_mass, "_mass")
+    result["high_complexity"] = compute_high_complexity(
+        df_after_with_mass, "_mass"
+    )
 
     return result
 
@@ -347,7 +371,7 @@ def analyze_problem(checkpoints: dict[int, Path], alpha: float) -> dict:
     for num, path in sorted(checkpoints.items()):
         try:
             checkpoint_data[num] = load_symbols(path)
-        except Exception as e:
+        except (KeyError, OSError, ValueError) as e:
             typer.echo(f"Warning: Failed to load {path}: {e}", err=True)
             continue
 
@@ -375,12 +399,17 @@ def analyze_problem(checkpoints: dict[int, Path], alpha: float) -> dict:
 def aggregate_transitions(problems: dict) -> dict:
     """Compute mean statistics across all transitions in all problems."""
     # Collect all transition data
-    all_metrics_data = {metric: {f"by_{size}": [] for size in SIZE_METRICS} for metric in METRICS}
+    all_metrics_data = {
+        metric: {f"by_{size}": [] for size in SIZE_METRICS}
+        for metric in METRICS
+    }
     all_distribution = []
     all_high_complexity = []
 
     for problem_name, problem_data in problems.items():
-        for trans_key, trans_data in problem_data.get("transitions", {}).items():
+        for trans_key, trans_data in problem_data.get(
+            "transitions", {}
+        ).items():
             # Collect metric data
             for metric in METRICS:
                 if metric in trans_data.get("metrics", {}):
@@ -416,32 +445,70 @@ def aggregate_transitions(problems: dict) -> dict:
             data_list = all_metrics_data[metric][size_key]
             if data_list:
                 result["metrics"][metric][size_key] = {
-                    "mean_mass_before": float(np.mean([d["total_mass_before"] for d in data_list])),
-                    "mean_mass_after": float(np.mean([d["total_mass_after"] for d in data_list])),
-                    "mean_delta": float(np.mean([d["delta"] for d in data_list])),
+                    "mean_mass_before": float(
+                        np.mean([d["total_mass_before"] for d in data_list])
+                    ),
+                    "mean_mass_after": float(
+                        np.mean([d["total_mass_after"] for d in data_list])
+                    ),
+                    "mean_delta": float(
+                        np.mean([d["delta"] for d in data_list])
+                    ),
                     "std_delta": float(np.std([d["delta"] for d in data_list])),
                     "total_delta": float(sum(d["delta"] for d in data_list)),
-                    "mean_symbols_added": float(np.mean([d["symbols_added"] for d in data_list])),
-                    "mean_symbols_removed": float(np.mean([d["symbols_removed"] for d in data_list])),
-                    "mean_symbols_modified": float(np.mean([d["symbols_modified"] for d in data_list])),
+                    "mean_symbols_added": float(
+                        np.mean([d["symbols_added"] for d in data_list])
+                    ),
+                    "mean_symbols_removed": float(
+                        np.mean([d["symbols_removed"] for d in data_list])
+                    ),
+                    "mean_symbols_modified": float(
+                        np.mean([d["symbols_modified"] for d in data_list])
+                    ),
                 }
 
     # Aggregate distribution
     if all_distribution:
         result["distribution"] = {
-            "mean_top_50_pct_symbol_count": float(np.mean([d["top_50_pct_symbol_count"] for d in all_distribution])),
-            "mean_top_75_pct_symbol_count": float(np.mean([d["top_75_pct_symbol_count"] for d in all_distribution])),
-            "mean_top_90_pct_symbol_count": float(np.mean([d["top_90_pct_symbol_count"] for d in all_distribution])),
-            "mean_total_symbol_count": float(np.mean([d["total_symbol_count"] for d in all_distribution])),
+            "mean_top_50_pct_symbol_count": float(
+                np.mean(
+                    [d["top_50_pct_symbol_count"] for d in all_distribution]
+                )
+            ),
+            "mean_top_75_pct_symbol_count": float(
+                np.mean(
+                    [d["top_75_pct_symbol_count"] for d in all_distribution]
+                )
+            ),
+            "mean_top_90_pct_symbol_count": float(
+                np.mean(
+                    [d["top_90_pct_symbol_count"] for d in all_distribution]
+                )
+            ),
+            "mean_total_symbol_count": float(
+                np.mean([d["total_symbol_count"] for d in all_distribution])
+            ),
         }
 
     # Aggregate high complexity
     if all_high_complexity:
         result["high_complexity"] = {
-            "mean_mass_in_complexity_gt_10": float(np.mean([d["mass_in_complexity_gt_10"] for d in all_high_complexity])),
-            "mean_total_mass": float(np.mean([d["total_mass"] for d in all_high_complexity])),
-            "mean_pct_in_high_complexity": float(np.mean([d["pct_in_high_complexity"] for d in all_high_complexity])),
-            "mean_symbol_count_gt_10": float(np.mean([d["symbol_count_gt_10"] for d in all_high_complexity])),
+            "mean_mass_in_complexity_gt_10": float(
+                np.mean(
+                    [d["mass_in_complexity_gt_10"] for d in all_high_complexity]
+                )
+            ),
+            "mean_total_mass": float(
+                np.mean([d["total_mass"] for d in all_high_complexity])
+            ),
+            "mean_pct_in_high_complexity": float(
+                np.mean(
+                    [d["pct_in_high_complexity"] for d in all_high_complexity]
+                )
+            ),
+            "mean_symbol_count_gt_10": float(
+                np.mean([d["symbol_count_gt_10"] for d in all_high_complexity])
+            ),
         }
 
     return result
@@ -452,24 +519,26 @@ def compare_runs(runs_data: dict[str, dict]) -> dict:
     comparison = {"runs": {}}
 
     for run_name, run_data in runs_data.items():
-        comparison["runs"][run_name] = aggregate_transitions(run_data["problems"])
+        comparison["runs"][run_name] = aggregate_transitions(
+            run_data["problems"]
+        )
 
     # If multiple runs, compute deltas between them
     run_names = list(runs_data.keys())
     if len(run_names) >= 2:
         comparison["pairwise_comparisons"] = {}
         for i, run_a in enumerate(run_names):
-            for run_b in run_names[i + 1:]:
+            for run_b in run_names[i + 1 :]:
                 agg_a = comparison["runs"][run_a]
                 agg_b = comparison["runs"][run_b]
 
                 pair_key = f"{run_a} vs {run_b}"
-                comparison["pairwise_comparisons"][pair_key] = {
-                    "metrics": {}
-                }
+                comparison["pairwise_comparisons"][pair_key] = {"metrics": {}}
 
                 for metric in METRICS:
-                    comparison["pairwise_comparisons"][pair_key]["metrics"][metric] = {}
+                    comparison["pairwise_comparisons"][pair_key]["metrics"][
+                        metric
+                    ] = {}
                     for size_key in [f"by_{s}" for s in SIZE_METRICS]:
                         if (
                             metric in agg_a.get("metrics", {})
@@ -477,22 +546,40 @@ def compare_runs(runs_data: dict[str, dict]) -> dict:
                             and metric in agg_b.get("metrics", {})
                             and size_key in agg_b["metrics"].get(metric, {})
                         ):
-                            delta_a = agg_a["metrics"][metric][size_key]["mean_delta"]
-                            delta_b = agg_b["metrics"][metric][size_key]["mean_delta"]
-                            comparison["pairwise_comparisons"][pair_key]["metrics"][metric][size_key] = {
+                            delta_a = agg_a["metrics"][metric][size_key][
+                                "mean_delta"
+                            ]
+                            delta_b = agg_b["metrics"][metric][size_key][
+                                "mean_delta"
+                            ]
+                            comparison["pairwise_comparisons"][pair_key][
+                                "metrics"
+                            ][metric][size_key] = {
                                 f"{run_a}_mean_delta": delta_a,
                                 f"{run_b}_mean_delta": delta_b,
                                 "difference": delta_b - delta_a,
                             }
 
                 # Compare high complexity
-                if agg_a.get("high_complexity") and agg_b.get("high_complexity"):
-                    comparison["pairwise_comparisons"][pair_key]["high_complexity"] = {
-                        f"{run_a}_mean_pct": agg_a["high_complexity"]["mean_pct_in_high_complexity"],
-                        f"{run_b}_mean_pct": agg_b["high_complexity"]["mean_pct_in_high_complexity"],
+                if agg_a.get("high_complexity") and agg_b.get(
+                    "high_complexity"
+                ):
+                    comparison["pairwise_comparisons"][pair_key][
+                        "high_complexity"
+                    ] = {
+                        f"{run_a}_mean_pct": agg_a["high_complexity"][
+                            "mean_pct_in_high_complexity"
+                        ],
+                        f"{run_b}_mean_pct": agg_b["high_complexity"][
+                            "mean_pct_in_high_complexity"
+                        ],
                         "difference": (
-                            agg_b["high_complexity"]["mean_pct_in_high_complexity"]
-                            - agg_a["high_complexity"]["mean_pct_in_high_complexity"]
+                            agg_b["high_complexity"][
+                                "mean_pct_in_high_complexity"
+                            ]
+                            - agg_a["high_complexity"][
+                                "mean_pct_in_high_complexity"
+                            ]
                         ),
                     }
 
@@ -553,9 +640,13 @@ def flatten_aggregate(run: str, data: dict) -> dict:
     return row
 
 
-def render_comparison_table(rows: list[dict], size_metric: str = "statements") -> Table:
+def render_comparison_table(
+    rows: list[dict], size_metric: str = "statements"
+) -> Table:
     """Render comparison table with metrics as rows, runs as columns."""
-    table = Table(title=f"Mass Delta Comparison (size={size_metric})", expand=True)
+    table = Table(
+        title=f"Mass Delta Comparison (size={size_metric})", expand=True
+    )
 
     # First column is metric name
     table.add_column("Metric", style="white")
@@ -572,9 +663,15 @@ def render_comparison_table(rows: list[dict], size_metric: str = "statements") -
     for row in rows:
         total = row.get("dist_mean_total_symbol_count", 1)
         if total > 0:
-            row["_top50_pct"] = 100 * row.get("dist_mean_top_50_pct_symbol_count", 0) / total
-            row["_top75_pct"] = 100 * row.get("dist_mean_top_75_pct_symbol_count", 0) / total
-            row["_top90_pct"] = 100 * row.get("dist_mean_top_90_pct_symbol_count", 0) / total
+            row["_top50_pct"] = (
+                100 * row.get("dist_mean_top_50_pct_symbol_count", 0) / total
+            )
+            row["_top75_pct"] = (
+                100 * row.get("dist_mean_top_75_pct_symbol_count", 0) / total
+            )
+            row["_top90_pct"] = (
+                100 * row.get("dist_mean_top_90_pct_symbol_count", 0) / total
+            )
 
     s = f"by_{size_metric}"
 
@@ -633,7 +730,8 @@ def main(
         str, typer.Option(help="Size metric: statements or lines")
     ] = "statements",
     output: Annotated[
-        Path | None, typer.Option(help="Output JSON file (shows table if not specified)")
+        Path | None,
+        typer.Option(help="Output JSON file (shows table if not specified)"),
     ] = None,
 ):
     """Analyze and compare code mass changes between checkpoints across runs."""
@@ -641,14 +739,18 @@ def main(
 
     for run_dir in run_dirs:
         if not run_dir.exists():
-            err_console.print(f"[yellow]Warning: {run_dir} does not exist[/yellow]")
+            err_console.print(
+                f"[yellow]Warning: {run_dir} does not exist[/yellow]"
+            )
             continue
 
         run_name = get_run_name(run_dir)
         problems = discover_checkpoints(run_dir)
 
         if not problems:
-            err_console.print(f"[yellow]Warning: No problems found in {run_dir}[/yellow]")
+            err_console.print(
+                f"[yellow]Warning: No problems found in {run_dir}[/yellow]"
+            )
             continue
 
         runs_data[run_name] = {"problems": {}}
@@ -659,7 +761,9 @@ def main(
             runs_data[run_name]["problems"][problem] = problem_result
 
     if not runs_data:
-        err_console.print("[red]No runs found in the specified directories[/red]")
+        err_console.print(
+            "[red]No runs found in the specified directories[/red]"
+        )
         raise typer.Exit(1)
 
     # Aggregate per run

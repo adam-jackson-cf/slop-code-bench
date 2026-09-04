@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -22,11 +23,14 @@ from slop_code.evaluation.pytest_runner import EXIT_USAGEERROR
 from slop_code.evaluation.pytest_runner import INFRA_FAILURE_CODES
 from slop_code.evaluation.pytest_runner import VALID_EXIT_CODES
 from slop_code.evaluation.pytest_runner import PytestRunner
+from slop_code.evaluation.pytest_runner import _as_dict
 from slop_code.evaluation.pytest_runner import run_checkpoint_pytest
 from slop_code.evaluation.report import CorrectnessResults
 from slop_code.evaluation.report import GroupType
 from slop_code.evaluation.report import TestResult as EvalTestResult
 from slop_code.execution import EnvironmentSpec
+
+SESSION_PLATFORM_IDENTITY = PytestRunner._session_platform_identity
 
 
 @pytest.fixture
@@ -42,6 +46,10 @@ def mock_problem_config():
     problem.markers = {}
     problem.static_assets = {}
     problem.test_dependencies = []
+    problem.model_dump.return_value = {
+        "name": "test_problem",
+        "version": 1,
+    }
 
     # Mock iterate_checkpoint_items to return checkpoints in order
     problem.iterate_checkpoint_items.return_value = [
@@ -85,7 +93,60 @@ def pytest_runner(
         checkpoint=mock_checkpoint_config,
         environment=mock_environment,
         submission_path=Path("submission"),
+        evaluator_environment_parent=Path("measurement_analysis"),
     )
+
+
+@pytest.fixture(autouse=True)
+def locked_evaluator_python(monkeypatch):
+    """Keep orchestration tests independent of evaluator environment creation."""
+    evaluator = Mock(return_value=Path("/locked/python"))
+    monkeypatch.setattr(
+        PytestRunner,
+        "_locked_evaluator_python",
+        evaluator,
+    )
+    monkeypatch.setattr(
+        PytestRunner,
+        "_session_platform_identity",
+        Mock(
+            return_value={
+                "machine": "aarch64",
+                "platform": "Linux-6.8",
+                "python_implementation": "CPython",
+                "python_version": "3.13.0",
+                "system": "Linux",
+            }
+        ),
+    )
+    return evaluator
+
+
+class TestAsDict:
+    """Tests for JSON report object validation."""
+
+    def test_accepts_nested_json_object(self):
+        """JSON objects with nested JSON values are retained unchanged."""
+        report = {
+            "created": 1.5,
+            "tests": [{"nodeid": "test_example", "passed": True}],
+            "metadata": {"warnings": None},
+        }
+
+        assert _as_dict(report) is report
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            {1: "not-a-string-key"},
+            {"invalid": object()},
+            {"nested": [object()]},
+            {"nested": {"invalid": ("not", "json")}},
+        ],
+    )
+    def test_rejects_non_json_object_values(self, value):
+        """Objects with invalid keys or nested values cannot be JSON reports."""
+        assert _as_dict(value) is None
 
 
 class TestConstants:
@@ -127,12 +188,16 @@ class TestPytestRunner:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=Path("test"),
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         assert runner.problem == mock_problem_config
         assert runner.checkpoint == mock_checkpoint_config
         assert runner.environment == mock_environment
         assert runner.submission_path == Path("test")
+        assert runner.evaluator_environment_parent == Path(
+            "measurement_analysis"
+        ).resolve()
 
     def test_get_entrypoint_command(self, pytest_runner, mock_environment):
         """_get_entrypoint_command returns formatted command."""
@@ -264,24 +329,23 @@ class TestPytestRunner:
         assert "regression:" in content
 
     def test_build_pytest_command(self, pytest_runner):
-        """_build_pytest_command builds correct command using uvx."""
-        cmd = pytest_runner._build_pytest_command(timeout=30)
+        """_build_pytest_command invokes pytest with the locked evaluator Python."""
+        evaluator_python = Path("/opt/scbench/evaluator/bin/python")
+        cmd = pytest_runner._build_pytest_command(evaluator_python, timeout=30)
 
-        # Verify uvx is used instead of uv run
-        assert cmd.startswith("uvx ")
-        assert "--with=pytest" in cmd
-        assert "--with=pytest-json-ctrf" in cmd
-        assert "--with=pytest-json-report" in cmd
-        assert "--with=pytest-timeout" in cmd
-        assert "--with=jsonschema" in cmd
-        assert "--with=deepdiff" in cmd
-        # Verify pytest is the command being run
-        assert " pytest " in cmd
+        assert cmd.startswith("/opt/scbench/evaluator/bin/python -m pytest ")
         assert "--timeout=30" in cmd
-        # Test files are discovered via pytest.ini testpaths, not passed explicitly
+        # The evaluator test directory is passed explicitly for startup conftest
+        # discovery; individual checkpoint files are not passed.
         assert "test_checkpoint" not in cmd
         assert "--entrypoint=" in cmd
         assert "--checkpoint=" in cmd
+        command_parts = shlex.split(cmd)
+        assert command_parts.index(WORKSPACE_TEST_DIR) < next(
+            index
+            for index, part in enumerate(command_parts)
+            if part.startswith("--entrypoint=")
+        )
         assert "checkpoint_2" in cmd
         # Static assets are now passed via env vars, not CLI
         assert "--static-assets" not in cmd
@@ -299,79 +363,130 @@ class TestPytestRunner:
         assert "--json-report-omit=warnings" in cmd
         # keywords should NOT be omitted (contains markers/tags)
         assert "--json-report-omit=keywords" not in cmd
+        assert "coverage_plugin" not in command_parts
         assert "-v" in cmd
+
+    def test_platform_identity_comes_from_docker_evaluator_runtime(
+        self, pytest_runner
+    ):
+        """Docker provenance is queried through the mounted evaluator runtime."""
+        runtime = Mock()
+        runtime.execute.return_value = Mock(
+            exit_code=0,
+            stdout=json.dumps(
+                {
+                    "machine": "x86_64",
+                    "platform": "Linux-6.8",
+                    "python_implementation": "CPython",
+                    "python_version": "3.12.0",
+                    "system": "Linux",
+                }
+            ),
+        )
+        session = Mock()
+        session.spec.type = "docker"
+        session.spec.docker.workdir = "/workspace"
+        session.exec.return_value = runtime
+
+        identity = SESSION_PLATFORM_IDENTITY(
+            pytest_runner, session, Path("/locked/python")
+        )
+
+        assert identity["system"] == "Linux"
+        assert session.exec.call_args.kwargs["command"].startswith(
+            "/locked/python -c "
+        )
+        assert session.exec.call_args.kwargs["mounts"] == {
+            str(Path("measurement_analysis").resolve()): {
+                "bind": "/workspace/.scbench-evaluator-cache",
+                "mode": "rw",
+            }
+        }
+
+    def test_measurement_command_runs_coverage_with_branch_data(
+        self, pytest_runner
+    ):
+        """Measurement execution records branch coverage around pytest."""
+        pytest_runner.measurement_coverage = True
+
+        command = pytest_runner._build_pytest_command(Path("/locked/python"))
+
+        assert command.startswith(
+            "/locked/python -m coverage run --branch -m pytest "
+        )
+        assert "-p coverage_plugin" in command
 
     def test_build_pytest_command_no_timeout(self, pytest_runner):
         """_build_pytest_command omits timeout flag when not provided."""
-        cmd = pytest_runner._build_pytest_command()
+        cmd = pytest_runner._build_pytest_command(Path("/locked/python"))
 
         assert "--timeout" not in cmd
 
     def test_build_pytest_command_with_extra_args(self, pytest_runner):
         """_build_pytest_command includes extra pytest args."""
         cmd = pytest_runner._build_pytest_command(
+            Path("/locked/python"),
             extra_args=["-k", "test_specific"],
             timeout=60,
         )
 
-        assert cmd.startswith("uvx ")
+        assert cmd.startswith("/locked/python -m pytest ")
         assert "--timeout=60" in cmd
         assert "-k" in cmd
         assert "test_specific" in cmd
 
-    def test_build_pytest_command_includes_problem_deps(
+    def test_build_pytest_command_uses_locked_evaluator_dependencies(
         self, mock_problem_config, mock_checkpoint_config, mock_environment
     ):
-        """_build_pytest_command includes problem test_dependencies."""
+        """Problem test dependencies are resolved into the locked evaluator."""
         mock_problem_config.test_dependencies = ["httpx", "pytest-asyncio"]
         runner = PytestRunner(
             problem=mock_problem_config,
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=Path("test"),
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
-        cmd = runner._build_pytest_command()
+        cmd = runner._build_pytest_command(Path("/locked/python"))
 
-        assert "--with=httpx" in cmd
-        assert "--with=pytest-asyncio" in cmd
-        # Base deps still included
-        assert "--with=pytest" in cmd
-        assert "--with=pytest-json-ctrf" in cmd
+        assert cmd.startswith("/locked/python -m pytest ")
+        assert "--with=" not in cmd
 
     def test_build_pytest_command_no_problem_deps(
         self, mock_problem_config, mock_checkpoint_config, mock_environment
     ):
-        """Empty test_dependencies should not add extra --with flags."""
+        """No dependency-install flags are added to a locked invocation."""
         mock_problem_config.test_dependencies = []
         runner = PytestRunner(
             problem=mock_problem_config,
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=Path("test"),
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
-        cmd = runner._build_pytest_command()
+        cmd = runner._build_pytest_command(Path("/locked/python"))
 
-        # Only base deps
-        assert cmd.count("--with=") == len(PytestRunner.TEST_DEPENDENCIES)
+        assert "--with=" not in cmd
 
     def test_build_pytest_command_default_deps(
         self, mock_problem_config, mock_checkpoint_config, mock_environment
     ):
-        """Missing test_dependencies field should default to empty list."""
+        """A missing dependency declaration does not alter the locked command."""
         mock_problem_config.test_dependencies = None
         runner = PytestRunner(
             problem=mock_problem_config,
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=Path("test"),
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
-        cmd = runner._build_pytest_command()
+        cmd = runner._build_pytest_command(Path("/locked/python"))
 
-        # Should work without error, only base deps
-        assert "--with=pytest" in cmd
+        assert cmd.startswith("/locked/python -m pytest ")
+        assert "--with=" not in cmd
 
     def test_parse_ctrf_report_valid(self, pytest_runner, tmp_path):
         """_parse_ctrf_report parses valid CTRF JSON."""
@@ -1009,6 +1124,7 @@ class TestRunCheckpointPytest:
                 problem=mock_problem_config,
                 checkpoint=mock_checkpoint_config,
                 env_spec=mock_environment,
+                evaluator_environment_parent=Path("measurement_analysis"),
             )
 
             mock_run.assert_called_once()
@@ -1084,6 +1200,7 @@ class TestRunCheckpointPytest:
                 problem=mock_problem_config,
                 checkpoint=mock_checkpoint_config,
                 env_spec=mock_environment,
+                evaluator_environment_parent=Path("measurement_analysis"),
             )
 
         assert result.test_collection_hash == "hash-123"
@@ -1105,6 +1222,7 @@ class TestPytestRunnerRunMethod:
         mock_checkpoint_config,
         mock_environment,
         tmp_path,
+        locked_evaluator_python,
     ):
         """run() orchestrates all steps correctly with passing tests."""
         from unittest.mock import MagicMock
@@ -1115,7 +1233,7 @@ class TestPytestRunnerRunMethod:
         submission_path.mkdir()
         tests_dir = submission_path / WORKSPACE_TEST_DIR
         tests_dir.mkdir()
-        # Create a test file (no pyproject.toml needed with uvx)
+        # The locked evaluator is patched by the module fixture.
         (tests_dir / "test_checkpoint_1.py").write_text("# test file")
 
         # Mock CTRF report data
@@ -1148,7 +1266,7 @@ class TestPytestRunnerRunMethod:
             }
         }
 
-        # Create mock execution result for pytest (only one call now with uvx)
+        # Create mock execution result for pytest.
         mock_pytest_result = Mock()
         mock_pytest_result.exit_code = 0
         mock_pytest_result.stdout = "collected 3 items\n\nall tests passed"
@@ -1159,11 +1277,11 @@ class TestPytestRunnerRunMethod:
         mock_runtime = MagicMock()
         mock_runtime.execute.return_value = mock_pytest_result
 
-        # Create mock session
+        # Create mock session.
         mock_session = MagicMock()
         mock_session.exec.return_value = mock_runtime
 
-        # Create mock workspace
+        # Create mock workspace.
         mock_workspace = MagicMock()
         mock_workspace.working_dir = submission_path
 
@@ -1172,6 +1290,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         # Patch the dependencies - use Session.from_environment_spec factory
@@ -1210,6 +1329,25 @@ class TestPytestRunnerRunMethod:
         assert results.pass_counts[GroupType.CORE] == 1
         assert results.pass_counts[GroupType.FUNCTIONALITY] == 1
         assert results.pass_counts[GroupType.REGRESSION] == 1
+        assert results.platform_identity == {
+            "machine": "aarch64",
+            "platform": "Linux-6.8",
+            "python_implementation": "CPython",
+            "python_version": "3.13.0",
+            "system": "Linux",
+        }
+        assert results.coverage_ledger == {
+            "measurement_coverage": False,
+            "plugin_id": None,
+            "ledger": [],
+            "coverage": [],
+            "process_events": [],
+            "invalid_coverage_paths": 0,
+        }
+
+        executed_command = mock_session.exec.call_args.kwargs["command"]
+        assert executed_command.startswith("/locked/python -m pytest ")
+        locked_evaluator_python.assert_called_once_with(mock_session)
 
     def test_run_materializes_static_assets_and_passes_env_vars(
         self,
@@ -1264,6 +1402,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         with (
@@ -1321,10 +1460,10 @@ class TestPytestRunnerRunMethod:
         submission_path.mkdir()
         tests_dir = submission_path / WORKSPACE_TEST_DIR
         tests_dir.mkdir()
-        # Create a test file (no pyproject.toml needed with uvx)
+        # The locked evaluator is patched by the module fixture.
         (tests_dir / "test_checkpoint_1.py").write_text("# test file")
 
-        # Mock execution result - pytest has infra failure (only one call with uvx)
+        # Mock execution result: pytest has an infrastructure failure.
         mock_pytest_result = Mock()
         mock_pytest_result.exit_code = 5  # EXIT_NOTESTSCOLLECTED
         mock_pytest_result.stdout = "ERROR: no tests collected"
@@ -1345,6 +1484,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         mock_session.workspace = mock_workspace
@@ -1390,7 +1530,7 @@ class TestPytestRunnerRunMethod:
         submission_path.mkdir()
         tests_dir = submission_path / WORKSPACE_TEST_DIR
         tests_dir.mkdir()
-        # Create a test file (no pyproject.toml needed with uvx)
+        # The locked evaluator is patched by the module fixture.
         (tests_dir / "test_checkpoint_1.py").write_text("# test file")
 
         # CTRF with mix of passed and failed
@@ -1416,7 +1556,7 @@ class TestPytestRunnerRunMethod:
             }
         }
 
-        # Mock execution result - pytest has test failures (only one call with uvx)
+        # Mock execution result: pytest has test failures.
         # Exit code 1 = tests ran but some failed
         mock_pytest_result = Mock()
         mock_pytest_result.exit_code = 1
@@ -1438,6 +1578,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         mock_session.workspace = mock_workspace
@@ -1511,6 +1652,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
         mock_session.workspace = mock_workspace
 
@@ -1592,6 +1734,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
         mock_session.workspace = mock_workspace
 
@@ -1682,6 +1825,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
         mock_session.workspace = mock_workspace
 
@@ -1742,6 +1886,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
         mock_session.workspace = mock_workspace
 
@@ -1847,6 +1992,7 @@ class TestPytestRunnerRunMethod:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         mock_session.workspace = mock_workspace
@@ -1941,6 +2087,7 @@ class TestCopyTestsFromProblem:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=workspace_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         # Call the method directly
@@ -1984,6 +2131,7 @@ class TestCopyTestsFromProblem:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=workspace_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         # Call the method directly
@@ -2016,6 +2164,7 @@ class TestCopyTestsFromProblem:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=workspace_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         # Should raise RuntimeError
@@ -2056,6 +2205,7 @@ class TestCopyTestsFromProblem:
             checkpoint=checkpoint,
             environment=mock_environment,
             submission_path=workspace_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         runner._copy_tests_from_problem(workspace_path)
@@ -2102,6 +2252,7 @@ class TestCopyTestsFromProblem:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=workspace_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         runner._copy_tests_from_problem(workspace_path)
@@ -2140,6 +2291,7 @@ class TestCopyTestsFromProblem:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=workspace_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         runner._copy_tests_from_problem(workspace_path)
@@ -2169,7 +2321,7 @@ class TestSessionCreation:
         submission_path.mkdir()
         tests_dir = submission_path / WORKSPACE_TEST_DIR
         tests_dir.mkdir()
-        # Create a test file (no pyproject.toml needed with uvx)
+        # The locked evaluator is patched by the module fixture.
         (tests_dir / "test_checkpoint_1.py").write_text("# test file")
 
         mock_workspace = MagicMock()
@@ -2193,6 +2345,7 @@ class TestSessionCreation:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         with (
@@ -2255,6 +2408,7 @@ class TestTestMaterialization:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,  # This is different from workspace
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         # Copy tests to WORKSPACE, not submission
@@ -2305,6 +2459,7 @@ class TestTestMaterialization:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         # Copy tests to workspace
@@ -2369,6 +2524,7 @@ class TestSnapshotLocationRegression:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         with (
@@ -2395,21 +2551,21 @@ class TestSnapshotLocationRegression:
         snapshot_patterns = ["*.tar.gz", "*.tar.bz2", "*.tar.xz", "*.tar"]
         for pattern in snapshot_patterns:
             archives = list(submission_path.glob(pattern))
-            assert len(archives) == 0, (
-                f"Found snapshot archive in submission_path: {archives}"
-            )
+            assert (
+                len(archives) == 0
+            ), f"Found snapshot archive in submission_path: {archives}"
 
             # Also check recursively
             recursive_archives = list(submission_path.rglob(pattern))
-            assert len(recursive_archives) == 0, (
-                f"Found snapshot archive (recursive) in submission_path: {recursive_archives}"
-            )
+            assert (
+                len(recursive_archives) == 0
+            ), f"Found snapshot archive (recursive) in submission_path: {recursive_archives}"
 
         # Verify submission_path only has original file
         files_in_submission = list(submission_path.iterdir())
-        assert files_in_submission == [submission_path / "main.py"], (
-            f"Unexpected files in submission_path: {files_in_submission}"
-        )
+        assert files_in_submission == [
+            submission_path / "main.py"
+        ], f"Unexpected files in submission_path: {files_in_submission}"
 
     def test_run_uses_workspace_working_dir_not_submission_path(
         self,
@@ -2431,7 +2587,7 @@ class TestSnapshotLocationRegression:
         workspace_path.mkdir()
         workspace_tests = workspace_path / WORKSPACE_TEST_DIR
         workspace_tests.mkdir()
-        # Create a test file (no pyproject.toml needed with uvx)
+        # The locked evaluator is patched by the module fixture.
         (workspace_tests / "test_checkpoint_1.py").write_text("# test file")
 
         mock_workspace = MagicMock()
@@ -2455,6 +2611,7 @@ class TestSnapshotLocationRegression:
             checkpoint=mock_checkpoint_config,
             environment=mock_environment,
             submission_path=submission_path,
+            evaluator_environment_parent=Path("measurement_analysis"),
         )
 
         with (

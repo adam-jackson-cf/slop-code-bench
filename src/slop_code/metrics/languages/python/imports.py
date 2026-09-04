@@ -16,6 +16,14 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _decode_node_text(node: Node) -> str:
+    """Decode text from a parsed node."""
+    text = node.text
+    if text is None:
+        raise ValueError("Tree-sitter node text is unavailable")
+    return text.decode("utf-8")
+
+
 def _parse_import_statement(node: Node) -> ImportInfo | None:
     """Parse 'import X' or 'import X.Y' or 'import X as Y' statements.
 
@@ -28,7 +36,7 @@ def _parse_import_statement(node: Node) -> ImportInfo | None:
     for child in node.children:
         if child.type == "dotted_name":
             return ImportInfo(
-                module_path=child.text.decode("utf-8"),
+                module_path=_decode_node_text(child),
                 is_relative=False,
                 relative_level=0,
                 imported_names=[],
@@ -38,7 +46,7 @@ def _parse_import_statement(node: Node) -> ImportInfo | None:
             for subchild in child.children:
                 if subchild.type == "dotted_name":
                     return ImportInfo(
-                        module_path=subchild.text.decode("utf-8"),
+                        module_path=_decode_node_text(subchild),
                         is_relative=False,
                         relative_level=0,
                         imported_names=[],
@@ -64,7 +72,7 @@ def _parse_relative_import(node: Node) -> tuple[int, str | None]:
             # Count the dots in the prefix
             level = len([c for c in child.children if c.type == "."])
         elif child.type == "dotted_name":
-            module_path = child.text.decode("utf-8")
+            module_path = _decode_node_text(child)
 
     return level, module_path
 
@@ -94,13 +102,13 @@ def _parse_import_from_statement(node: Node) -> ImportInfo | None:
             relative_level, module_path = _parse_relative_import(child)
         elif child.type == "dotted_name":
             if not found_import_keyword:
-                module_path = child.text.decode("utf-8")
+                module_path = _decode_node_text(child)
             else:
-                imported_names.append(child.text.decode("utf-8"))
+                imported_names.append(_decode_node_text(child))
         elif child.type == "aliased_import":
             for subchild in child.children:
                 if subchild.type == "dotted_name":
-                    imported_names.append(subchild.text.decode("utf-8"))
+                    imported_names.append(_decode_node_text(subchild))
                     break
         elif child.type == "wildcard_import":
             imported_names.append("*")

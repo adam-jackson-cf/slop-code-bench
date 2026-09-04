@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import shutil
-import subprocess
+import signal
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -15,33 +17,52 @@ from slop_code.execution.models import CommandConfig
 from slop_code.execution.models import SetupConfig
 
 
+def _run_docker_command(arguments: tuple[str, ...], timeout: float) -> bool:
+    """Run a trusted Docker CLI command and report whether it succeeds."""
+    docker_executable = shutil.which("docker")
+    if docker_executable is None:
+        return False
+
+    process_id = os.posix_spawn(
+        docker_executable,
+        (docker_executable, *arguments),
+        os.environ,
+        file_actions=[
+            (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
+            (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0),
+        ],
+    )
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        completed_process_id, status = os.waitpid(process_id, os.WNOHANG)
+        if completed_process_id:
+            return os.waitstatus_to_exitcode(status) == 0
+        time.sleep(0.01)
+
+    completed_process_id, status = os.waitpid(process_id, os.WNOHANG)
+    if completed_process_id:
+        return os.waitstatus_to_exitcode(status) == 0
+
+    os.kill(process_id, signal.SIGKILL)
+    os.waitpid(process_id, 0)
+    return False
+
+
 def _docker_available() -> bool:
     """Check if Docker is available on the system."""
-    if not shutil.which("docker"):
-        return False
     try:
-        result = subprocess.run(
-            ["docker", "info"],
-            capture_output=True,
-            timeout=5,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, OSError):
+        return _run_docker_command(("info",), timeout=5)
+    except OSError:
         return False
 
 
 def _test_image_available() -> bool:
     """Check if the test Docker image is available."""
-    if not _docker_available():
-        return False
     try:
-        result = subprocess.run(
-            ["docker", "image", "inspect", "slop-code:python3.12"],
-            capture_output=True,
-            timeout=10,
+        return _run_docker_command(
+            ("image", "inspect", "slop-code:python3.12"), timeout=10
         )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, OSError):
+    except OSError:
         return False
 
 

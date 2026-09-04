@@ -20,7 +20,7 @@ SCBench uses pytest as its evaluation framework because:
 │                                                              │
 │  1. Copy tests from problem/tests/ to workspace              │
 │  2. Generate pytest.ini with markers                         │
-│  3. Execute via uvx for isolation                            │
+│  3. Verify/build the locked evaluator environment            │
 │  4. Parse CTRF + pytest-json-report                          │
 │  5. Categorize results by GroupType                          │
 │                                                              │
@@ -31,7 +31,7 @@ SCBench uses pytest as its evaluation framework because:
 │                    Test Execution                            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  pytest tests/                                               │
+│  <locked-python> -m pytest .evaluation_tests/                 │
 │    --entrypoint="python main.py"                             │
 │    --checkpoint=checkpoint_1                                 │
 │    --ctrf=.scbench/ctrf-report.json                         │
@@ -109,8 +109,9 @@ This naming is used to:
    - Register custom markers from `config.yaml`
 
 4. **Test Execution**
-   - Run via `uvx` for environment isolation
+   - Run through the locked evaluator interpreter
    - Pass `--entrypoint` and `--checkpoint` options
+   - Restrict conftest discovery to copied trusted tests
    - Generate CTRF and pytest-json reports
 
 5. **Result Parsing**
@@ -122,9 +123,11 @@ This naming is used to:
 
 Tests run in an isolated environment:
 
-- **uvx**: Ensures clean Python environment
-- **Session scope**: Fixtures shared within session
-- **Workspace**: Agent submission in isolated directory
+- **Locked evaluator**: `pyproject.toml` and `uv.lock` fix every dependency
+- **Immutable reuse**: Content-addressed environments are inventoried and verified
+- **Trusted tests**: `--confcutdir` prevents agent-authored parent conftest loading
+- **Session scope**: Fixtures are shared within the session
+- **Workspace**: The agent submission runs in an isolated directory
 
 ## Report Formats
 

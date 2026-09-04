@@ -72,9 +72,9 @@ class TestWorkspace:
             workspace.prepare()
             working_dir = workspace.working_dir
             for f in resolved_static_assets.values():
-                assert not (working_dir / f.save_path).exists(), (
-                    f"File {f.save_path} exists"
-                )
+                assert not (
+                    working_dir / f.save_path
+                ).exists(), f"File {f.save_path} exists"
 
         finally:
             workspace.cleanup()
@@ -91,14 +91,13 @@ class TestWorkspace:
             workspace.materialize_assets()
             working_dir = workspace.working_dir
             for f in resolved_static_assets.values():
-                assert (working_dir / f.save_path).exists(), (
-                    f"File {f.save_path} does not exist"
-                )
                 assert (
                     working_dir / f.save_path
-                ).read_text() == f.absolute_path.read_text(), (
-                    f"File {f.save_path} has incorrect content"
-                )
+                ).exists(), f"File {f.save_path} does not exist"
+                assert (
+                    (working_dir / f.save_path).read_text()
+                    == f.absolute_path.read_text()
+                ), f"File {f.save_path} has incorrect content"
         finally:
             workspace.cleanup()
 
@@ -119,17 +118,16 @@ class TestWorkspace:
                     actual_path = f.save_path / sub_file.relative_to(
                         f.absolute_path
                     )
-                    assert (working_dir / actual_path).exists(), (
-                        f"File {actual_path} does not exist"
-                    )
+                    assert (
+                        working_dir / actual_path
+                    ).exists(), f"File {actual_path} does not exist"
 
                     if sub_file.is_dir():
                         continue
                     assert (
-                        working_dir / actual_path
-                    ).read_text() == sub_file.read_text(), (
-                        f"File {actual_path} has incorrect content"
-                    )
+                        (working_dir / actual_path).read_text()
+                        == sub_file.read_text()
+                    ), f"File {actual_path} has incorrect content"
 
         finally:
             workspace.cleanup()
@@ -177,9 +175,9 @@ class TestWorkspace:
         workspace, initial_files = modified_workspace
         try:
             workspace.reset()
-            assert not (workspace.working_dir / "new_file.txt").exists(), (
-                "New file exists"
-            )
+            assert not (
+                workspace.working_dir / "new_file.txt"
+            ).exists(), "New file exists"
             for f, expected in initial_files.items():
                 assert (workspace.working_dir / f).exists(), f"File {f} exists"
                 if f.is_file():

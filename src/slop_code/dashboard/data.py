@@ -9,10 +9,11 @@ import colorsys
 import json
 import re
 from collections import defaultdict
+from collections.abc import Hashable
 from dataclasses import dataclass
 from itertools import cycle
 from pathlib import Path
-from typing import Any
+from typing import Any, SupportsComplex, SupportsFloat, SupportsInt
 
 import pandas as pd
 import plotly.colors
@@ -20,6 +21,9 @@ import yaml
 
 from slop_code.common import CHECKPOINT_RESULTS_FILENAME
 from slop_code.common import SUMMARY_FILENAME
+from slop_code.metrics.scoring import ScoreEvidenceError
+from slop_code.metrics.scoring import load_verified_current_generation
+from slop_code.metrics.scoring import ranking_key
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -37,6 +41,8 @@ MODEL_TO_READABLE: dict[str, str] = {
 }
 
 DEFAULT_COLOR_PALETTE = plotly.colors.qualitative.Vivid
+
+DashboardTableValue = str | SupportsFloat | SupportsInt | SupportsComplex
 
 
 # ---------------------------------------------------------------------------
@@ -104,29 +110,33 @@ def _extract_full_timestamp_from_run_name(run_name: str) -> str:
     return ""
 
 
-def _hsl_to_hex(h: int, s: int, l: int) -> str:
+def _hsl_to_hex(hue: int, saturation: int, lightness: int) -> str:
     """Convert HSL values to hex color string."""
-    s = s / 100
-    l = l / 100
-    c = (1 - abs(2 * l - 1)) * s
-    x = c * (1 - abs((h / 60) % 2 - 1))
-    m = l - c / 2
+    saturation_fraction = saturation / 100
+    lightness_fraction = lightness / 100
+    chroma = (1 - abs(2 * lightness_fraction - 1)) * saturation_fraction
+    secondary = chroma * (1 - abs((hue / 60) % 2 - 1))
+    match_value = lightness_fraction - chroma / 2
 
-    if h < 60:
-        r, g, b = c, x, 0
-    elif h < 120:
-        r, g, b = x, c, 0
-    elif h < 180:
-        r, g, b = 0, c, x
-    elif h < 240:
-        r, g, b = 0, x, c
-    elif h < 300:
-        r, g, b = x, 0, c
+    if hue < 60:
+        red, green, blue = chroma, secondary, 0
+    elif hue < 120:
+        red, green, blue = secondary, chroma, 0
+    elif hue < 180:
+        red, green, blue = 0, chroma, secondary
+    elif hue < 240:
+        red, green, blue = 0, secondary, chroma
+    elif hue < 300:
+        red, green, blue = secondary, 0, chroma
     else:
-        r, g, b = c, 0, x
+        red, green, blue = chroma, 0, secondary
 
-    r, g, b = int((r + m) * 255), int((g + m) * 255), int((b + m) * 255)
-    return f"#{r:02x}{g:02x}{b:02x}"
+    red, green, blue = (
+        int((red + match_value) * 255),
+        int((green + match_value) * 255),
+        int((blue + match_value) * 255),
+    )
+    return f"#{red:02x}{green:02x}{blue:02x}"
 
 
 def _parse_to_hsl_tuple(color: str) -> tuple[int, int, int]:
@@ -135,22 +145,26 @@ def _parse_to_hsl_tuple(color: str) -> tuple[int, int, int]:
     if color.startswith("rgb"):
         parts = re.findall(r"\d+", color)
         if len(parts) >= 3:
-            r, g, b = map(int, parts[:3])
-            h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
-            return int(h * 360), int(s * 100), int(l * 100)
+            red, green, blue = map(int, parts[:3])
+            hue, lightness, saturation = colorsys.rgb_to_hls(
+                red / 255, green / 255, blue / 255
+            )
+            return int(hue * 360), int(saturation * 100), int(lightness * 100)
 
     # Handle Hex
     hex_color = color.lstrip("#")
     if len(hex_color) == 3:
         hex_color = "".join(c * 2 for c in hex_color)
     try:
-        r, g, b = (
+        red, green, blue = (
             int(hex_color[0:2], 16),
             int(hex_color[2:4], 16),
             int(hex_color[4:6], 16),
         )
-        h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
-        return int(h * 360), int(s * 100), int(l * 100)
+        hue, lightness, saturation = colorsys.rgb_to_hls(
+            red / 255, green / 255, blue / 255
+        )
+        return int(hue * 360), int(saturation * 100), int(lightness * 100)
     except ValueError:
         return 0, 0, 50
 
@@ -161,16 +175,17 @@ def _generate_variant_colors(base_color: str, count: int) -> list[str]:
         return []
     if count == 1:
         # Ensure output is always hex
-        h, s, l = _parse_to_hsl_tuple(base_color)
-        return [_hsl_to_hex(h, s, l)]
+        hue, saturation, lightness = _parse_to_hsl_tuple(base_color)
+        return [_hsl_to_hex(hue, saturation, lightness)]
 
-    h, s, _ = _parse_to_hsl_tuple(base_color)
+    hue, saturation, _ = _parse_to_hsl_tuple(base_color)
     # Generate lightness values from light (75) to dark (35)
     light_start, light_end = 75, 35
     step = (light_start - light_end) / (count - 1)
 
     return [
-        _hsl_to_hex(h, s, int(light_start - i * step)) for i in range(count)
+        _hsl_to_hex(hue, saturation, int(light_start - i * step))
+        for i in range(count)
     ]
 
 
@@ -260,7 +275,7 @@ def get_display_annotation(row: pd.Series | dict[str, Any]) -> str:
 
 
 def get_short_annotation(
-    row: pd.Series | dict[str, Any], use_html: bool = False
+    row: pd.Series | dict[str, Any], *, use_html: bool = False
 ) -> str:
     """Get short annotation with just prompt and thinking (no model name)."""
     prompt_template = str(row.get("prompt_template", ""))
@@ -358,6 +373,7 @@ def analyze_model_variations(
 def get_dynamic_variant_annotation(
     row: pd.Series | dict[str, Any],
     variation_info: ModelVariationInfo | None,
+    *,
     use_html: bool = False,
 ) -> str:
     """Get variant annotation based on what actually varies for this model."""
@@ -484,6 +500,28 @@ def load_config_metadata(run_dir: Path) -> dict[str, Any]:
     }
 
 
+def load_verified_score_summary(run_dir: Path) -> dict[str, Any]:
+    """Project the verified canonical score into the dashboard scoring namespace."""
+    benchmark, report_additions = load_verified_current_generation(run_dir)
+    return {
+        "benchmark_score": benchmark.benchmark_score,
+        "correctness": benchmark.correctness,
+        "inertia": benchmark.inertia,
+        "cost_per_configured_checkpoint": benchmark.cost_per_configured_checkpoint,
+        "ranking_key": ranking_key(benchmark),
+        "problems": {
+            problem.problem_id: {
+                "score": problem.score,
+                "components": problem.components.model_dump(mode="json"),
+            }
+            for problem in benchmark.problems
+        },
+        "report_additions": [
+            addition.model_dump(mode="json") for addition in report_additions
+        ],
+    }
+
+
 def load_run(run_dir: Path) -> tuple[pd.DataFrame, dict[str, Any] | None]:
     """Load checkpoint data and run summary for a directory."""
     results_path = run_dir / CHECKPOINT_RESULTS_FILENAME
@@ -497,8 +535,8 @@ def load_run(run_dir: Path) -> tuple[pd.DataFrame, dict[str, Any] | None]:
             "run_name": run_dir.name,
             "run_path": str(run_dir),
         }
-    except Exception as e:
-        print(f"Error loading config for {run_dir}: {e}")
+    except (KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+        print(f"Error loading config for {run_dir}: {exc}")
         return pd.DataFrame(), None
 
     checkpoints = []
@@ -512,15 +550,27 @@ def load_run(run_dir: Path) -> tuple[pd.DataFrame, dict[str, Any] | None]:
                 checkpoints.append(
                     {**metadata, **process_checkpoint_row(raw_row)}
                 )
-    except Exception as e:
-        print(f"Error loading checkpoints for {run_dir}: {e}")
+    except (
+        AttributeError,
+        json.JSONDecodeError,
+        OSError,
+        TypeError,
+        UnicodeError,
+    ) as exc:
+        print(f"Error loading checkpoints for {run_dir}: {exc}")
         return pd.DataFrame(), None
 
+    try:
+        scoring = load_verified_score_summary(run_dir)
+    except (OSError, ScoreEvidenceError, ValueError) as exc:
+        print(f"Rejected canonical score generation for {run_dir}: {exc}")
+        return pd.DataFrame(), None
     summary_data = load_result_summary(run_dir)
-    summary_row = None
-    if summary_data:
-        summary_row = {**metadata, **flatten_summary(summary_data)}
-
+    summary_row = {
+        **metadata,
+        **flatten_summary({**(summary_data or {}), "scoring": scoring}),
+        "benchmark_score": scoring["benchmark_score"],
+    }
     return pd.DataFrame(checkpoints), summary_row
 
 
@@ -545,8 +595,8 @@ def build_base_color_map(
         group = model_groups.get(name, name)
         base_color = group_colors.get(group, "#333333")
         # Ensure consistency by converting to hex
-        h, s, l = _parse_to_hsl_tuple(base_color)
-        color_map[name] = _hsl_to_hex(h, s, l)
+        hue, saturation, lightness = _parse_to_hsl_tuple(base_color)
+        color_map[name] = _hsl_to_hex(hue, saturation, lightness)
     return color_map
 
 
@@ -586,6 +636,7 @@ def build_generic_color_map(display_names: list[str]) -> dict[str, str]:
 
 def build_chart_context(
     runs: list[Path],
+    *,
     use_generic_colors: bool = False,
     group_runs: bool = False,
     common_problems_only: bool = False,
@@ -774,7 +825,7 @@ def build_chart_context(
             )
         )
 
-    unique_groups = sorted(list(set(model_groups.values())))
+    unique_groups = sorted(set(model_groups.values()))
     palette = cycle(DEFAULT_COLOR_PALETTE)
     group_colors = {group: next(palette) for group in unique_groups}
 
@@ -812,9 +863,12 @@ def _safe_delta_pct(prev_val: float | None, curr_val: float | None) -> float:
 
 def compute_problem_deltas(df: pd.DataFrame) -> pd.DataFrame:
     results = []
-    for (display_name, problem), group in df.groupby(
-        ["display_name", "problem"]
-    ):
+    for group_key, group in df.groupby(["display_name", "problem"]):
+        if not isinstance(group_key, tuple) or len(group_key) != 2:
+            continue
+        display_name: Hashable
+        problem: Hashable
+        display_name, problem = group_key
         sort_col = "idx" if "idx" in group.columns else "checkpoint"
         sorted_group = group.sort_values(sort_col)
 
@@ -921,7 +975,9 @@ def compute_model_wins(df: pd.DataFrame) -> dict[str, int]:
     return dict(wins)
 
 
-def get_summary_table_data(context: ChartContext) -> list[dict[str, Any]]:
+def get_summary_table_data(
+    context: ChartContext,
+) -> list[dict[str | int | float, DashboardTableValue]]:
     """Prepare data for the summary table."""
     df = context.run_summaries
     if df.empty:
@@ -932,29 +988,22 @@ def get_summary_table_data(context: ChartContext) -> list[dict[str, Any]]:
     if (
         not context.checkpoints.empty
         and "output" in context.checkpoints.columns
+        and "run_path" in context.checkpoints.columns
     ):
-        if "run_path" in context.checkpoints.columns:
-            token_counts = (
-                context.checkpoints.groupby("run_path")["output"]
-                .sum()
-                .to_dict()
-            )
+        token_counts = (
+            context.checkpoints.groupby("run_path")["output"].sum().to_dict()
+        )
 
     # Compute wins
     wins_map = compute_model_wins(context.checkpoints)
 
-    table_data = []
-    # Sort by display_name for consistency
-    df_sorted = df.sort_values(
-        by=[
-            "model_name",
-            "_thinking_sort_key",
-            "prompt_template",
-            "run_date",
-        ]
+    table_data: list[dict[str | int | float, DashboardTableValue]] = []
+    df_sorted = sorted(
+        df.to_dict("records"),
+        key=lambda row: row["scoring.ranking_key"],
     )
 
-    for _, row in df_sorted.iterrows():
+    for row in df_sorted:
         run_path = row.get("run_path")
         display_name = get_display_annotation(row)
 
@@ -962,10 +1011,7 @@ def get_summary_table_data(context: ChartContext) -> list[dict[str, Any]]:
         partial = row.get("pct_problems_partial", 0)
         cost = row.get("costs.total", 0)
         duration = row.get("duration", 0)
-        if duration:
-            duration = duration / 60
-        else:
-            duration = 0
+        duration = duration / 60 if duration else 0
 
         tokens = token_counts.get(run_path, 0)
         win_count = wins_map.get(display_name, 0)
@@ -973,6 +1019,7 @@ def get_summary_table_data(context: ChartContext) -> list[dict[str, Any]]:
         table_data.append(
             {
                 "Model": display_name,
+                "Benchmark Score": round(row["benchmark_score"], 6),
                 "Solved (%)": round(solved, 1),
                 "Partial (%)": round(partial, 1),
                 "Wins": win_count,

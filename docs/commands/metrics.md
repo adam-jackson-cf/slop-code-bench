@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-17
+last_updated: 2026-08-29
 ---
 
 # metrics
@@ -26,10 +26,10 @@ Calculate and save static code quality metrics for all problems in a run.
 
 ```bash
 # Process a single run
-slop-code metrics static outputs/my_run
+slop-code metrics static experiments/my_run
 
 # Process a collection of runs
-slop-code metrics static outputs/all_runs --type collection --workers 4
+slop-code metrics static experiments/all_runs --type collection --workers 4
 ```
 
 ### Usage
@@ -71,10 +71,10 @@ Results saved to:
 
 ```bash
 # Single run
-slop-code metrics static outputs/my_run
+slop-code metrics static experiments/my_run
 
 # Collection with parallel processing
-slop-code metrics static outputs/runs --type collection --workers 8
+slop-code metrics static experiments/runs --type collection --workers 8
 
 # Scan arbitrary directory as snapshot
 slop-code metrics static ./some_code --just-static py
@@ -89,7 +89,7 @@ Run LLM judge evaluation on a run directory.
 ### Quick Start
 
 ```bash
-slop-code metrics judge outputs/my_run \
+slop-code metrics judge experiments/my_run \
   --rubric configs/rubrics/slop.jsonl \
   --model claude-sonnet-4-20250514
 ```
@@ -138,24 +138,24 @@ slop-code metrics judge [OPTIONS] RUN_DIR
 
 ```bash
 # Basic judge evaluation
-slop-code metrics judge outputs/my_run \
+slop-code metrics judge experiments/my_run \
   -r configs/rubrics/slop.jsonl \
   -m claude-sonnet-4-20250514
 
 # With Anthropic directly
-slop-code metrics judge outputs/my_run \
+slop-code metrics judge experiments/my_run \
   -r configs/rubrics/slop.jsonl \
   -m claude-sonnet-4-20250514 \
   --provider ANTHROPIC
 
 # With extended thinking
-slop-code metrics judge outputs/my_run \
+slop-code metrics judge experiments/my_run \
   -r configs/rubrics/slop.jsonl \
   -m claude-sonnet-4-20250514 \
   --thinking-tokens 10000
 
 # Filter to specific problems
-slop-code metrics judge outputs/my_run \
+slop-code metrics judge experiments/my_run \
   -r configs/rubrics/slop.jsonl \
   -m claude-sonnet-4-20250514 \
   -p file_backup -p trajectory_api
@@ -170,7 +170,7 @@ Carry forward rubric grades from previous checkpoints.
 ### Quick Start
 
 ```bash
-slop-code metrics carry-forward outputs/my_run
+slop-code metrics carry-forward experiments/my_run
 ```
 
 ### Usage
@@ -210,10 +210,10 @@ Displays summary table showing:
 
 ```bash
 # Process all problems
-slop-code metrics carry-forward outputs/my_run
+slop-code metrics carry-forward experiments/my_run
 
 # Process specific problem
-slop-code metrics carry-forward outputs/my_run -p file_backup
+slop-code metrics carry-forward experiments/my_run -p file_backup
 ```
 
 ---
@@ -225,7 +225,7 @@ Compute variance metrics across multiple runs.
 ### Quick Start
 
 ```bash
-slop-code metrics variance base outputs/runs -o outputs/variance
+slop-code metrics variance base experiments/runs -o experiments/variance
 ```
 
 ### Usage
@@ -245,7 +245,7 @@ slop-code metrics variance [OPTIONS] PRESET RUNS_DIR
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `-o, --output-dir` | path | `outputs/variance` | Directory for output files |
+| `-o, --output-dir` | path | `experiments/variance` | Directory for output files |
 | `--ci-width-threshold` | float | 0.25 | Minimum 95% CI width to display |
 | `--top-n` | int | 12 | Max confidence interval rows to display |
 
@@ -274,16 +274,16 @@ slop-code metrics variance [OPTIONS] PRESET RUNS_DIR
 
 ```bash
 # Base metrics variance
-slop-code metrics variance base outputs/runs
+slop-code metrics variance base experiments/runs
 
 # Quality metrics with custom output
-slop-code metrics variance quality outputs/runs -o outputs/quality_variance
+slop-code metrics variance quality experiments/runs -o experiments/quality_variance
 
 # Show more results
-slop-code metrics variance base outputs/runs --top-n 20 --ci-width-threshold 0.1
+slop-code metrics variance base experiments/runs --top-n 20 --ci-width-threshold 0.1
 ```
 
 ## See Also
 
 - [eval](eval.md) - Run evaluation on agent results
-- [utils backfill-reports](utils.md#backfill-reports) - Regenerate reports
+- [utils backfill-reports](utils.md#backfill-reports) - Publish historical canonical score state

@@ -23,8 +23,10 @@ for review.
 - [ ] Checkpoints have sequential `order` starting at 1
 - [ ] All checkpoints have `state: Core Tests` (or `Draft` for WIP)
 - [ ] `include_prior_tests` defaults to `true` — only set `false` with clear justification
-- [ ] `test_dependencies` lists packages needed by the test suite (not by the solution)
+- [ ] Every `test_dependencies` entry is needed by tests and exactly matches `pyproject.toml`
 - [ ] `static_assets` entries (if any) have paths that exist on disk
+- [ ] `pyproject.toml` declares the complete evaluator dependency set
+- [ ] `uv.lock` is current and committed
 
 ---
 

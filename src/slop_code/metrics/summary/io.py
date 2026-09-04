@@ -7,6 +7,7 @@ and saving computed summaries to JSON.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -57,18 +58,17 @@ def save_summary_json(
     summary: RunSummary,
     run_dir: Path,
     filename: str = SUMMARY_FILENAME,
+    completion_projection: Mapping[str, object] | None = None,
+    score_projection: Mapping[str, object] | None = None,
 ) -> Path:
-    """Save full summary statistics to JSON file.
-
-    Args:
-        summary: Computed summary statistics.
-        run_dir: Directory to save results to.
-        filename: Output filename.
-
-    Returns:
-        Path to saved file.
-    """
+    """Save full statistics plus human-facing completion and scoring projections."""
     output_path = run_dir / filename
-    output_path.write_text(json.dumps(summary.model_dump(), indent=2))
+    payload = summary.model_dump()
+    if completion_projection is not None:
+        payload["completion"] = dict(completion_projection)
+    if score_projection is not None:
+        payload["benchmark_score"] = score_projection["benchmark_score"]
+        payload["scoring"] = dict(score_projection)
+    output_path.write_text(json.dumps(payload, indent=2, default=str))
     logger.info("Saved run summary", path=str(output_path))
     return output_path

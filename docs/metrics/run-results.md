@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-26
+last_updated: 2026-08-29
 ---
 
 # Run-Level Results
@@ -9,11 +9,14 @@ This guide explains how checkpoint metrics aggregate into run-level summaries, e
 
 ## Introduction
 
-After an agent completes a run (all problems and checkpoints), two summary files are generated at the run root:
+After an agent completes a run, descriptive checkpoint and run summaries are
+generated at the run root:
 
-1. **checkpoint_results.jsonl**: All checkpoint metrics in one flattened JSONL file (one line per checkpoint)
-2. **result.json**: Aggregated statistics across all checkpoints and problems
+1. **checkpoint_results.jsonl**: Flattened descriptive metrics, one line per checkpoint
+2. **result.json**: Descriptive aggregation across checkpoints and problems
 
+Canonical scores are separate verified generations under
+`measurement_analysis/`; neither summary file is score authority.
 **Hierarchy:**
 ```
 Run Level (result.json)
@@ -39,7 +42,7 @@ One JSON object per line, one line per checkpoint across all problems.
   "problem": "circuit_eval",
   "version": 1,
   "checkpoint": "checkpoint_1",
-  "path": "outputs/run_001/circuit_eval/checkpoint_1",
+  "path": "experiments/run_001/circuit_eval/checkpoint_1",
   "idx": 1,
   "state": "ran",
   "is_first": true,
@@ -210,7 +213,7 @@ Complete aggregated statistics across all checkpoints and problems.
 }
 ```
 
-- `pct_checkpoints_solved`: % of checkpoints passing their PassPolicy
+- `pct_checkpoints_solved`: % of checkpoints passing the configured `assessment_policy`
 - `pct_problems_solved`: % of problems with all checkpoints solved
 - `pct_problems_partial`: % of problems with some (but not all) checkpoints solved
 
@@ -297,7 +300,7 @@ Meaning: On average, 3.2 functions with CC > 10, ranging from 0 to 7, typically 
 - `cc`: Complexity statistics
 - `ratios`: Quality per unit code
 - `delta`: Average changes between checkpoints
-- `composite_scores`: High-level quality indicators
+- `composite_scores`: Descriptive `scb-check` checkpoint aggregates
 
 ## Aggregation Logic
 
@@ -326,38 +329,35 @@ Aggregated across all problems:
 - `pct_problems_partial`: (partially_solved_problems / total_problems) * 100
 - Total cost: Sum across entire run
 
-### Composite Scores
+### Canonical Scores
 
-**Verbosity Score**: Measures code bloat and over-abstraction.
+The descriptive `composite_scores` section is not a benchmark scoring formula.
+Canonical problem and benchmark scores are computed from verified production
+evidence and published under `measurement_analysis/`. Canonical component
+values are favorable `[0, 1]` values where higher is better.
 
-**Formula:**
-```
-verbosity_per_checkpoint = verbosity_flagged_pct
-```
-
-Mean across all checkpoints = verbosity score
-
-**Erosion Score**: Measures structural degradation
-
-**Formula:**
-```
-erosion_per_checkpoint = mass.high_cc_pct
-```
-
-Mean across all checkpoints = erosion score
-
-Higher scores indicate worse code health.
+See the [Metrics Reference](../metrics-reference.md#canonical-checkpoint-scoring)
+for formulas, component weights, eligibility, publication, and consumer
+verification.
 
 ## Directory Structure
 
 Run output organization:
 
 ```
-outputs/{model}/{agent-prompt-params-timestamp}/
+experiments/{model}/{agent-prompt-params-timestamp}/
 ├── config.yaml                        # Run configuration
 ├── environment.yaml                   # Environment spec
-├── checkpoint_results.jsonl           # All checkpoint metrics
-├── result.json                        # Aggregated run summary
+├── checkpoint_results.jsonl           # Descriptive checkpoint metrics
+├── result.json                        # Descriptive run summary
+├── measurement_analysis/
+│   ├── current.json                   # Verified generation pointer
+│   ├── evaluator_environments/        # Immutable locked evaluators
+│   └── generations/
+│       └── <generation_id>/
+│           ├── manifest.json
+│           ├── benchmark_score.json   # Eligible generations only
+│           └── READY
 ├── {problem_name_1}/
 │   ├── checkpoint_1/
 │   │   ├── evaluation.json
@@ -369,9 +369,9 @@ outputs/{model}/{agent-prompt-params-timestamp}/
     └── ...
 ```
 
-**Key files:**
+**Key descriptive files:**
 - `checkpoint_results.jsonl`: Query individual checkpoints efficiently
-- `result.json`: High-level run comparison, summaries, trends
+- `result.json`: Inspect run summaries and trends; do not use it as canonical score authority
 
 ## Reading Run Results Programmatically
 

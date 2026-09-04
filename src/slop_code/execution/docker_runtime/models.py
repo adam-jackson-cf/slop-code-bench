@@ -68,7 +68,7 @@ class DockerEnvironmentSpec(EnvironmentSpec):
         docker: Docker-specific configuration (image, workdir, mounts, etc.)
     """
 
-    type: Literal["docker"] = "docker"  # type: ignore[assignment]
+    type: Literal["docker"] = "docker"
     docker: DockerConfig
 
     def get_eval_user(self) -> str:
@@ -87,17 +87,11 @@ class DockerEnvironmentSpec(EnvironmentSpec):
         return "0:0"
 
     def get_effective_address(self, address: str) -> str:
-        """Get the address to pass to commands inside the container.
+        """Return the requested service bind address.
 
-        When using ``bridge`` networking and the caller requests a loopback
-        address, we bind to all interfaces (``0.0.0.0``) so that the service is
-        reachable via port mapping from the host.
+        A service must never be widened from a loopback address to every
+        interface merely because its container uses bridge networking.
         """
-        if self.effective_network_mode() == "bridge" and address in (
-            "127.0.0.1",
-            "localhost",
-        ):
-            return "0.0.0.0"
         return address
 
     def effective_network_mode(self) -> str:

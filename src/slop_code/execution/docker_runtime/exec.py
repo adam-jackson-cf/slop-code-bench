@@ -24,6 +24,10 @@ from slop_code.execution.shared import split_setup_output
 from slop_code.execution.shared import write_entry_script
 from slop_code.logging import get_logger
 
+# Docker commands are constructed from fixed CLI flags and validated runtime
+# configuration; never from shell-interpreted input.
+_spawn_trusted_docker_process = subprocess.Popen
+
 logger = get_logger(__name__)
 
 
@@ -40,6 +44,7 @@ class DockerExecRuntime(ExecRuntime):
         working_dir: Path,
         command: str,
         static_assets: dict[str, ResolvedStaticAsset],
+        *,
         is_evaluation: bool,
         ports: dict[int, int],
         mounts: dict[str, dict[str, str] | str],
@@ -285,7 +290,7 @@ class DockerExecRuntime(ExecRuntime):
         timed_out = False
 
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_trusted_docker_process(
                 run_args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

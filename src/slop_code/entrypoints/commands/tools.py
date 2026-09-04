@@ -76,6 +76,7 @@ def run_case(
             help="Extra args to pass to pytest (repeatable).",
         ),
     ] = None,
+    *,
     json_output: Annotated[
         bool,
         typer.Option(
@@ -133,6 +134,9 @@ def run_case(
         problem=problem,
         checkpoint=checkpoint,
         env_spec=environment,
+        evaluator_environment_parent=(
+            snapshot_dir.parent / "measurement_analysis"
+        ),
         pytest_args=extra_pytest_args,
     )
 

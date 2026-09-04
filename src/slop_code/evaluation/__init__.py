@@ -15,9 +15,6 @@ from slop_code.evaluation.report import GroupType
 from slop_code.evaluation.report import PassPolicy
 from slop_code.evaluation.report import TestResult
 
-# Backwards compatibility alias
-run_checkpoint = run_checkpoint_pytest
-
 __all__ = [
     "CheckpointConfig",
     "collect_checkpoint_tc",
@@ -32,6 +29,5 @@ __all__ = [
     "ProblemConfig",
     "TestResult",
     "get_available_problems",
-    "run_checkpoint",
     "run_checkpoint_pytest",
 ]

@@ -13,6 +13,14 @@ This guide covers common test failure patterns and debugging strategies for pyte
 5. **Timeout failures** - Tests exceed time limits
 6. **Stateful test failures** - State-dependent tests fail
 
+Run commands from the problem root after synchronizing its committed lock:
+
+```bash
+uv sync --frozen --no-install-project
+```
+
+The examples below use the resulting `.venv` interpreter.
+
 ## Failure Type 1: Test Collection Errors
 
 **Symptoms:** Error message like "ERROR collecting tests" or "fixture 'X' not found"
@@ -29,16 +37,16 @@ This guide covers common test failure patterns and debugging strategies for pyte
 
 ```bash
 # Step 1: See what pytest collects
-pytest tests/ --collect-only -q
+.venv/bin/python -m pytest tests/ --collect-only -q
 
 # Step 2: Get full traceback of collection error
-pytest tests/ --collect-only -vv
+.venv/bin/python -m pytest tests/ --collect-only -vv
 
 # Step 3: Check Python import path
-python -c "import sys; print(sys.path)"
+.venv/bin/python -c "import sys; print(sys.path)"
 
 # Step 4: Try importing test file directly
-python -c "from tests.test_checkpoint_1 import *"
+.venv/bin/python -c "from tests.test_checkpoint_1 import *"
 ```
 
 ### Example: Fixture Not Found
@@ -146,13 +154,13 @@ def api_server(entrypoint_argv):
 **Run with output visible:**
 ```bash
 # Show print statements
-pytest tests/ -s
+.venv/bin/python -m pytest tests/ -s
 
 # Show setup/teardown
-pytest tests/ -setup-show
+.venv/bin/python -m pytest tests/ --setup-show
 
 # Show full traceback
-pytest tests/ -vv
+.venv/bin/python -m pytest tests/ -vv
 ```
 
 ### Debugging: Port Already in Use
@@ -252,7 +260,7 @@ def test_calculation(entrypoint_argv):
 
 **Run single test with output:**
 ```bash
-pytest tests/test_checkpoint_1.py::test_calculation -xvs
+.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_calculation -xvs
 ```
 
 ### Debugging: Floating Point Comparison
@@ -277,13 +285,13 @@ assert abs(actual_float - 0.1) < 0.0001
 
 ```bash
 # Run only the failing case
-pytest tests/test_checkpoint_1.py::test_core[case_5] -xvs
+.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_core[case_5] -xvs
 
 # Run with case ID
-pytest tests/test_checkpoint_1.py::test_core -k "case_5" -xvs
+.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_core -k "case_5" -xvs
 
 # See what cases were collected
-pytest tests/test_checkpoint_1.py::test_core --collect-only
+.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_core --collect-only
 ```
 
 ### Debugging: Case Not Found
@@ -291,7 +299,7 @@ pytest tests/test_checkpoint_1.py::test_core --collect-only
 ```bash
 # If case doesn't exist in parametrize:
 # First, verify it's being discovered
-pytest tests/test_checkpoint_1.py --collect-only -q | grep test_core
+.venv/bin/python -m pytest tests/test_checkpoint_1.py --collect-only -q | grep test_core
 
 # Add debug to discover function
 def discover_cases(group_dir):
@@ -352,13 +360,13 @@ def test_core_case(entrypoint_argv, case_dir, tmp_path):
 
 ```bash
 # Increase timeout to get actual error
-pytest tests/ --timeout=300 -xvs
+.venv/bin/python -m pytest tests/ --timeout=300 -xvs
 
 # Find slow tests
-pytest tests/ --durations=10  # Show 10 slowest tests
+.venv/bin/python -m pytest tests/ --durations=10  # Show 10 slowest tests
 
 # Run specific test with no timeout
-pytest tests/test_checkpoint_1.py::test_slow -xvs --timeout=0
+.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_slow -xvs --timeout=0
 ```
 
 ### Common Timeout Causes
@@ -407,32 +415,33 @@ Test locally without Docker for faster iteration:
 ```bash
 # Run tests locally (outside Docker)
 cd problems/my_problem
+uv sync --frozen --no-install-project
 
 # Basic run
-pytest tests/ \
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1
 
 # Verbose with output
-pytest tests/ \
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -xvs
 
 # Single test
-pytest tests/test_checkpoint_1.py::test_basic \
+.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_basic \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -xvs
 
 # With print output visible
-pytest tests/ \
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -s
 
 # Stop on first failure
-pytest tests/ \
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -x

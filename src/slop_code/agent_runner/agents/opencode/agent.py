@@ -64,10 +64,9 @@ class OpenCodeAgentConfig(AgentConfigBase):
 
 
 class OpenCodeAgent(Agent):
-    def __init__(  # noqa: FBT001
+    def __init__(
         self,
         problem_name: str,
-        verbose: bool,  # noqa: FBT001
         # From base config
         cost_limits: AgentCostLimits,
         pricing: APIPricing | None,
@@ -79,11 +78,16 @@ class OpenCodeAgent(Agent):
         env: dict[str, str],
         thinking: ThinkingPreset | None,
         *,
+        verbose: bool,
         use_catalog_pricing: bool = False,
         image: str = "sc-opencode:latest",
     ) -> None:
         super().__init__(
-            "OpenCode", problem_name, cost_limits, pricing, verbose
+            "OpenCode",
+            problem_name,
+            cost_limits,
+            pricing,
+            verbose=verbose,
         )
 
         # Store all config values as instance attributes
@@ -107,13 +111,14 @@ class OpenCodeAgent(Agent):
         self._retry_next_run = False
 
     @classmethod
-    def _from_config(  # noqa: FBT001
+    def _from_config(
         cls,
         config: AgentConfigBase,
         model: ModelDefinition,
         credential: ProviderCredential,
         problem_name: str,
-        verbose: bool,  # noqa: FBT001
+        *,
+        verbose: bool,
         image: str | None,
         thinking_preset: ThinkingPreset | None = None,
         thinking_max_tokens: int | None = None,
@@ -296,8 +301,8 @@ class OpenCodeAgent(Agent):
             }
         self.open_code_config = _deep_merge(defaults, self.open_code_config)
 
-    def _get_volumes(self) -> dict[str, dict[str, str]]:
-        volumes = {}
+    def _get_volumes(self) -> dict[str, dict[str, str] | str]:
+        volumes: dict[str, dict[str, str] | str] = {}
         opencode_config_path = self._make_opencode_config()
         volumes[str(opencode_config_path.absolute())] = {
             "bind": f"{HOME_PATH}/.config/opencode/opencode.json",

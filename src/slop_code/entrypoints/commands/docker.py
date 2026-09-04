@@ -38,10 +38,12 @@ def make_dockerfile(
         )
 
     if dockerfile == "base":
-        dockerfile = docker_runtime.make_base_image(environment_config)
+        generated_dockerfile = docker_runtime.make_base_image(
+            environment_config
+        )
     else:
         raise typer.BadParameter("Invalid dockerfile type")
-    print(dockerfile)
+    print(generated_dockerfile)
 
 
 @app.command(
@@ -53,6 +55,7 @@ def build_base_image(
     environment_config_path: Annotated[
         Path, typer.Argument(exists=True, dir_okay=False)
     ],
+    *,
     force_build: bool = False,
 ) -> None:
     client = docker.from_env()
@@ -82,6 +85,7 @@ def build_submission_image(
         Path, typer.Argument(exists=True, dir_okay=False)
     ],
     problem_name: Annotated[str, typer.Argument()],
+    *,
     force_build: bool = False,
     build_base: bool = False,
 ) -> None:
@@ -95,10 +99,9 @@ def build_submission_image(
     static_assets = resolve_static_assets(problem.path, problem.static_assets)
     docker_runtime.build_submission_image(
         client,
-        environment_config_path.stem,
         submission_path,
-        environment_spec=environment_config,
-        static_assets=static_assets,
+        environment_config,
+        static_assets,
         force_build=force_build,
         build_base=build_base,
         use_name=name,
@@ -118,6 +121,7 @@ def build_agent_image(
     environment_config_path: Annotated[
         Path, typer.Argument(exists=True, dir_okay=False)
     ],
+    *,
     force_build: bool = False,
     force_build_base: bool = False,
 ) -> None:
@@ -126,6 +130,10 @@ def build_agent_image(
     environment_config = config_loader.resolve_environment(
         environment_config_path
     )
+    if not isinstance(environment_config, docker_runtime.DockerEnvironmentSpec):
+        raise typer.BadParameter(
+            "Environment config must be a DockerEnvironmentSpec"
+        )
     common.build_agent_docker(
         agent_config=agent_config,
         environment=environment_config,

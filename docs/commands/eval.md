@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-17
+last_updated: 2026-08-29
 ---
 
 # eval
@@ -11,13 +11,13 @@ Evaluate a directory of agent inference results.
 
 ```bash
 # Evaluate all problems in a run directory
-slop-code eval outputs/my_run
+slop-code eval experiments/my_run
 
 # Evaluate specific problems
-slop-code eval outputs/my_run --problem file_backup --problem trajectory_api
+slop-code eval experiments/my_run --problem file_backup --problem trajectory_api
 
 # Evaluate with parallel workers
-slop-code eval outputs/my_run --num-workers 4
+slop-code eval experiments/my_run --num-workers 4
 ```
 
 ## Usage
@@ -30,7 +30,7 @@ slop-code eval [OPTIONS] RUN_DIR
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `RUN_DIR` | Yes | Path to the run directory (outputs/<model_name>/<run_name>) |
+| `RUN_DIR` | Yes | Path to the run directory (`experiments/<model_name>/<run_name>`) |
 
 ## Options
 
@@ -43,7 +43,7 @@ slop-code eval [OPTIONS] RUN_DIR
 | `-proc, --num-workers` | int | 1 | Number of parallel evaluation workers |
 | `--overwrite` | flag | false | Re-evaluate problems with existing results |
 
-### Pass Policy Values
+### Assessment Policy Values
 
 | Value | Description |
 |-------|-------------|
@@ -86,22 +86,22 @@ At the run level:
 
 **Basic evaluation:**
 ```bash
-slop-code eval outputs/claude_code_run_20251217
+slop-code eval experiments/claude_code_run_20251217
 ```
 
 **Evaluate with custom environment:**
 ```bash
-slop-code eval outputs/my_run -e configs/environments/docker-python3.12-uv.yaml
+slop-code eval experiments/my_run -e configs/environments/docker-python3.12-uv.yaml
 ```
 
 **Force re-evaluation of all problems:**
 ```bash
-slop-code eval outputs/my_run --overwrite
+slop-code eval experiments/my_run --overwrite
 ```
 
 **Parallel evaluation with progress:**
 ```bash
-slop-code eval outputs/my_run --num-workers 8 --live-progress
+slop-code eval experiments/my_run --num-workers 8 --live-progress
 ```
 
 ## See Also

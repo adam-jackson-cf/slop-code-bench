@@ -7,7 +7,7 @@ Select and prepare an unresolved Fault Category Record for a future experiment.
 ## Guidance
 
 - Follow the [Fault Category Record schema](fault-category-record-schema.md) for canonical statuses and integrity rules.
-- Consider records with `open`, `mitigated`, or `reopened` status.
+- Consider records with `open` or `reopened` status.
 - Rank candidates by cumulative impact, recurrence, and whether a controlled intervention is measurable.
 - Prefer one fault category with a clear causal hypothesis over changing several variables.
 - Record the experiment identifier, intervention, and unchanged resolution criterion before execution.

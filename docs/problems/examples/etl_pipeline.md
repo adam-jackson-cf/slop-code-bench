@@ -21,6 +21,8 @@ Complete walkthrough of the `etl_pipeline` problem, a stream-based data transfor
 ```
 problems/etl_pipeline/
 ├── config.yaml
+├── pyproject.toml
+├── uv.lock
 ├── checkpoint_1.md
 ├── checkpoint_2.md
 └── tests/
@@ -380,9 +382,10 @@ def test_error_1(): ...
 
 ```bash
 cd problems/etl_pipeline
+uv sync --frozen --no-install-project
 
 # Run tests
-pytest tests/ \
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solutions/reference/etl.py" \
   --checkpoint=checkpoint_1 \
   -v

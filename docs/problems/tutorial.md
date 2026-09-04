@@ -59,6 +59,29 @@ checkpoints:
     state: Core Tests
 ```
 
+Create `problems/json_normalizer/pyproject.toml`:
+
+```toml
+[project]
+name = "json-normalizer-evaluator"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "coverage==7.15.4",
+    "pytest==8.4.1",
+    "pytest-json-ctrf==0.3.5",
+    "pytest-json-report==1.5.0",
+    "pytest-timeout==2.4.0",
+    "ruff==0.8.6",
+]
+```
+
+Generate and commit the exact evaluator lock:
+
+```bash
+uv lock --project problems/json_normalizer
+```
+
 **Key fields:**
 - `name`: Must match directory name
 - `entry_file`: The file agents will create
@@ -283,6 +306,8 @@ Expected:
 ```
 problems/json_normalizer/
 ├── config.yaml
+├── pyproject.toml
+├── uv.lock
 ├── checkpoint_1.md
 └── tests/
     ├── conftest.py
@@ -331,8 +356,9 @@ EOF
 Run tests:
 
 ```bash
+uv sync --project problems/json_normalizer --frozen --no-install-project
 cd problems/json_normalizer/solution
-pytest ../tests/ \
+../.venv/bin/python -m pytest ../tests/ \
   --entrypoint="python normalizer.py" \
   --checkpoint=checkpoint_1 \
   -v
@@ -362,7 +388,7 @@ slop-code run \
   --problem json_normalizer
 
 # Evaluate results
-slop-code eval outputs/<run-directory>/
+slop-code eval experiments/<run-directory>/
 ```
 
 ## Success Checklist

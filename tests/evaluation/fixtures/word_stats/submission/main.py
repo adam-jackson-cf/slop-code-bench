@@ -3,11 +3,12 @@
 
 import argparse
 import sys
+from pathlib import Path
 
 
-def load_stopwords(path: str) -> set[str]:
+def load_stopwords(path: Path) -> set[str]:
     """Load stopwords from a file (one per line)."""
-    with open(path) as f:
+    with path.open() as f:
         return {line.strip().lower() for line in f if line.strip()}
 
 
@@ -47,7 +48,7 @@ def main():
     # Load stopwords if specified
     stopwords = None
     if args.filter_stopwords:
-        stopwords = load_stopwords(args.filter_stopwords)
+        stopwords = load_stopwords(path=Path(args.filter_stopwords))
 
     # Count words
     word_count = count_words(text, stopwords)

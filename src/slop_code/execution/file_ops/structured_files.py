@@ -6,7 +6,7 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from slop_code.execution.file_ops.models import Compression
 from slop_code.execution.file_ops.models import FileContent
@@ -34,7 +34,14 @@ class StructuredFileHandler(FileHandler):
                 **kwargs,
             ) as stream:
                 yield stream
-        except Exception as exc:
+        except (
+            OSError,
+            EOFError,
+            UnicodeError,
+            csv.Error,
+            TypeError,
+            ValueError,
+        ) as exc:
             if "w" in mode:
                 raise InputFileWriteError(
                     f"Failed to write {path}: {exc}"
@@ -76,10 +83,7 @@ class JSONLinesHandler(StructuredFileHandler):
             return items
 
     def _prepare_items(self, content: FileContent) -> list[Any]:
-        if isinstance(content, list):
-            items = content
-        else:
-            items = [content]
+        items = content if isinstance(content, list) else [content]
 
         return [json.dumps(item, ensure_ascii=False) for item in items]
 
@@ -103,7 +107,7 @@ class DelimitedHandlerBase(StructuredFileHandler):
             return list(reader)
 
     def write(self, path: Path, content: FileContent) -> None:
-        if not isinstance(content, (list, dict)):
+        if not isinstance(content, list | dict):
             raise InputFileWriteError(
                 f"DelimitedHandlerBase require list of dicts/lists or string-convertible "
                 f"content, got {type(content).__name__}"
@@ -111,20 +115,18 @@ class DelimitedHandlerBase(StructuredFileHandler):
         path.parent.mkdir(parents=True, exist_ok=True)
         with self.open(path, "wt", encoding="utf-8", newline="") as stream:
             if isinstance(content, list):
-                if content:
-                    if isinstance(content[0], dict):
-                        fieldnames = content[0].keys()
-                        writer = csv.DictWriter(
-                            stream,
-                            fieldnames=fieldnames,
-                            delimiter=self.delimiter,
-                        )
-                        writer.writeheader()
-                        writer.writerows(content)
-                    else:
-                        writer = csv.writer(stream, delimiter=self.delimiter)
-                        writer.writerows(content)
-                # else: empty list, write nothing
+                if content and isinstance(content[0], dict):
+                    fieldnames = content[0].keys()
+                    writer = csv.DictWriter(
+                        stream,
+                        fieldnames=fieldnames,
+                        delimiter=self.delimiter,
+                    )
+                    writer.writeheader()
+                    writer.writerows(content)
+                elif content:
+                    writer = csv.writer(stream, delimiter=self.delimiter)
+                    writer.writerows(content)
             else:
                 stream.write(str(content))
 
@@ -149,8 +151,8 @@ class SQLiteHandler(StructuredFileHandler):
             with sqlite3.connect(path) as conn:
                 conn.row_factory = sqlite3.Row
                 for table_name in self._list_tables(conn):
-                    query = (
-                        f"SELECT * FROM {self._quote_identifier(table_name)}"
+                    query = " ".join(
+                        ("SELECT * FROM", self._quote_identifier(table_name))
                     )
                     cursor = conn.execute(query)
                     tables[table_name] = [
@@ -186,11 +188,12 @@ class SQLiteHandler(StructuredFileHandler):
         if isinstance(content, list):
             raw_tables: Mapping[str, Any] = {"table": content}
         elif isinstance(content, Mapping):
-            maybe_tables = content.get("tables")
+            raw_content = cast(Mapping[str, Any], content)
+            maybe_tables = raw_content.get("tables")
             if isinstance(maybe_tables, Mapping):
                 raw_tables = maybe_tables
             else:
-                raw_tables = content
+                raw_tables = raw_content
         else:
             raise InputFileWriteError(
                 "SQLiteHandler requires list of rows or a mapping of table definitions"
@@ -281,7 +284,7 @@ class SQLiteHandler(StructuredFileHandler):
         ordered_columns: list[str] = []
         seen: set[str] = set()
         for row in rows:
-            for column in row.keys():
+            for column in row:
                 if column not in seen:
                     seen.add(column)
                     ordered_columns.append(column)
@@ -302,18 +305,24 @@ class SQLiteHandler(StructuredFileHandler):
             f"{self._quote_identifier(column)} {column_types[column]}"
             for column in columns
         )
+        quoted_table_name = self._quote_identifier(table_name)
+        conn.execute(" ".join(("DROP TABLE IF EXISTS", quoted_table_name)))
         conn.execute(
-            f"DROP TABLE IF EXISTS {self._quote_identifier(table_name)}"
-        )
-        conn.execute(
-            f"CREATE TABLE {self._quote_identifier(table_name)} ({columns_sql})"
+            " ".join(("CREATE TABLE", quoted_table_name, f"({columns_sql})"))
         )
         if rows:
             placeholders = ", ".join(["?"] * len(columns))
-            insert_sql = (
-                f"INSERT INTO {self._quote_identifier(table_name)} "
-                f"({', '.join(self._quote_identifier(column) for column in columns)}) "
-                f"VALUES ({placeholders})"
+            quoted_columns = ", ".join(
+                self._quote_identifier(column) for column in columns
+            )
+            insert_sql = " ".join(
+                (
+                    "INSERT INTO",
+                    quoted_table_name,
+                    f"({quoted_columns})",
+                    "VALUES",
+                    f"({placeholders})",
+                )
             )
             prepared_rows = [
                 [self._prepare_value(row.get(column)) for column in columns]
@@ -326,9 +335,9 @@ class SQLiteHandler(StructuredFileHandler):
             return int(value)
         if isinstance(value, bytearray):
             return bytes(value)
-        if isinstance(value, (int, float, str, bytes)) or value is None:
+        if isinstance(value, int | float | str | bytes) or value is None:
             return value
-        if isinstance(value, (list, dict)):
+        if isinstance(value, list | dict):
             return json.dumps(value, ensure_ascii=False)
         return str(value)
 
@@ -342,7 +351,7 @@ class SQLiteHandler(StructuredFileHandler):
                 return "INTEGER"
             if isinstance(value, float):
                 return "REAL"
-            if isinstance(value, (bytes, bytearray)):
+            if isinstance(value, bytes | bytearray):
                 return "BLOB"
             break
         return "TEXT"

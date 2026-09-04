@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2025-12-22
+last_updated: 2026-08-29
 ---
 
 # Evaluation System Documentation
@@ -9,7 +9,10 @@ The evaluation module provides a pytest-based framework for testing agent submis
 
 ## 30-Second Overview
 
-Tests are standard pytest files in `problems/{problem}/tests/`. The `PytestRunner` executes them via `uvx` (for isolation), parses results, and categorizes tests using pytest markers:
+Tests are standard pytest files in `problems/{problem}/tests/`. `PytestRunner`
+executes them with a content-addressed evaluator interpreter built from the
+problem's `pyproject.toml` and `uv.lock`, parses results, and categorizes tests
+using pytest markers:
 
 - **Unmarked tests** in current checkpoint = **CORE** (must pass)
 - `@pytest.mark.functionality` = **FUNCTIONALITY** (nice-to-have)
@@ -32,11 +35,11 @@ Tests are standard pytest files in `problems/{problem}/tests/`. The `PytestRunne
 |---------|-------------|
 | **Problem** | Top-level benchmark containing checkpoints and test files |
 | **Checkpoint** | A milestone with associated pytest tests |
-| **PytestRunner** | Orchestrates pytest execution via uvx |
+| **PytestRunner** | Orchestrates pytest execution in a locked evaluator environment |
 | **TestResult** | Individual test outcome with categorization |
 | **CorrectnessResults** | Aggregated results for a checkpoint |
 | **GroupType** | Test category: CORE, FUNCTIONALITY, REGRESSION, ERROR |
-| **PassPolicy** | Criteria for checkpoint success (e.g., "core-cases") |
+| **PassPolicy** | API enum used by `assessment_policy` to define checkpoint success |
 | **Marker** | Pytest decorator for test categorization |
 
 ## Test File Structure
@@ -44,6 +47,8 @@ Tests are standard pytest files in `problems/{problem}/tests/`. The `PytestRunne
 ```
 problems/{problem}/
 ├── config.yaml              # Problem configuration
+├── pyproject.toml           # Pinned evaluator dependencies
+├── uv.lock                  # Exact evaluator lock
 └── tests/
     ├── conftest.py          # Shared fixtures (entrypoint, checkpoint)
     ├── test_checkpoint_1.py # Tests for checkpoint 1
@@ -65,10 +70,13 @@ checkpoint = problem.checkpoints["checkpoint_1"]
 env = EnvironmentSpec.from_yaml(Path("configs/environments/docker-python3.12-uv.yaml"))
 
 results = run_checkpoint_pytest(
-    submission_path=Path("outputs/submission/checkpoint_1"),
+    submission_path=Path("experiments/submission/checkpoint_1"),
     problem=problem,
     checkpoint=checkpoint,
     env_spec=env,
+    evaluator_environment_parent=Path(
+        "experiments/run/measurement_analysis"
+    ),
 )
 
 print(f"Passed: {results.passes_policy('core-cases')}")

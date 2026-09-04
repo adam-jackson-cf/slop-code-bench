@@ -11,13 +11,13 @@ Evaluate a single problem directory containing multiple checkpoints.
 
 ```bash
 # Evaluate a problem directory
-slop-code eval-problem outputs/my_run/file_backup
+slop-code eval-problem experiments/my_run/file_backup
 
 # With custom environment config
-slop-code eval-problem outputs/my_run/file_backup -e configs/environments/docker-python3.12-uv.yaml
+slop-code eval-problem experiments/my_run/file_backup -e configs/environments/docker-python3.12-uv.yaml
 
 # With rubric grading
-slop-code eval-problem outputs/my_run/file_backup \
+slop-code eval-problem experiments/my_run/file_backup \
   --rubric configs/rubrics/slop.jsonl \
   --rubric-model anthropic/sonnet-4.5
 ```
@@ -80,17 +80,17 @@ SUBMISSION_PATH/
 
 **Basic evaluation:**
 ```bash
-slop-code eval-problem outputs/my_run/file_backup
+slop-code eval-problem experiments/my_run/file_backup
 ```
 
 **Specify problem name explicitly:**
 ```bash
-slop-code eval-problem outputs/renamed_dir -p file_backup
+slop-code eval-problem experiments/renamed_dir -p file_backup
 ```
 
 **With rubric grading:**
 ```bash
-slop-code eval-problem outputs/my_run/file_backup \
+slop-code eval-problem experiments/my_run/file_backup \
   --rubric configs/rubrics/code_quality.jsonl \
   --rubric-model claude-sonnet-4-20250514 \
   --rubric-provider ANTHROPIC
@@ -98,7 +98,7 @@ slop-code eval-problem outputs/my_run/file_backup \
 
 **Custom snapshot directory:**
 ```bash
-slop-code eval-problem outputs/my_run/file_backup --snapshot-dir code
+slop-code eval-problem experiments/my_run/file_backup --snapshot-dir code
 ```
 
 ## See Also

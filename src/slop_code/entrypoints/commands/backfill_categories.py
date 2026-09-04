@@ -180,12 +180,12 @@ def backfill_categories(
     Example:
         slop-code utils backfill-categories \\
             --rubric configs/rubrics/llm_judge.jsonl \\
-            outputs/run_name
+            experiments/run_name
 
         slop-code utils backfill-categories \\
             --rubric configs/rubrics/llm_judge.jsonl \\
             --type collection \\
-            outputs/
+            experiments/
     """
     logger = setup_logging(
         log_dir=None,

@@ -89,7 +89,7 @@ dev = [
     "pytest-json-ctrf>=0.1.0",
     "watchdog>=6.0.0",
     "isort",
-    "ruff>=0.12.7",
+    "ruff==0.8.6",
     "seaborn>=0.13.2",
     "pytest-xdist>=3.8.0",
     "flask>=3.1.2",
@@ -120,7 +120,26 @@ norecursedirs = [
 [tool.ruff]
 exclude = [".venv",".gitignore", ".dockerignore"]
 line-length = 80
-extend-exclude = ["tests/mining/fixtures/*",".vscode/*","scratch/attempts/*","debug_code/*", "repos/*", "data/*",".venv/*",".pytest_cache/*", ".cache/*",".local/*", "tests/mining/fixtures/*","scripts/attempts/*","problems/**/solution/**","problems/**/tests/data/**"]
+extend-exclude = [
+    "tests/mining/fixtures/**",
+    "tests/evaluation/fixtures/**",
+    "tests/agent_runner/resources/**",
+    "examples/**/submission/**",
+    "examples/**/submissions/**",
+    "examples/**/tests/**",
+    ".vscode/**",
+    "scratch/attempts/**",
+    "debug_code/**",
+    "repos/**",
+    "data/**",
+    ".venv/**",
+    ".pytest_cache/**",
+    ".cache/**",
+    ".local/**",
+    "scripts/attempts/**",
+    "problems/**/solution/**",
+    "problems/**/tests/data/**",
+]
 show-fixes = true
 
 [tool.ruff.lint.isort]
@@ -166,6 +185,20 @@ ignore=[
 # Ignore `D` rules everywhere except for the `src/` directory.
 "!src/**.py" = ["D"]
 "tests/**.py" = ["S101"]
+
+[tool.ty.src]
+exclude = [
+    "tests/mining/fixtures/**",
+    "tests/evaluation/fixtures/**",
+    "tests/agent_runner/resources/**",
+    "examples/**/submission/**",
+    "examples/**/submissions/**",
+    "examples/**/tests/**",
+    "scratch/attempts/**",
+    "scripts/attempts/**",
+    "problems/**/solution/**",
+    "problems/**/tests/data/**",
+]
 
 
 [tool.pyright]

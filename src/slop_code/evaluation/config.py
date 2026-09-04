@@ -25,21 +25,45 @@ import yaml
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import ValidationError
+from pydantic import field_validator
 from pydantic import model_validator
 
 from slop_code import problem_catalog
 from slop_code.evaluation.report import GroupType
-
-DEFAULT_GROUP_TYPE = GroupType.CORE
 from slop_code.evaluation.utils import nested_priority_merge
 from slop_code.execution import StaticAssetConfig
 from slop_code.logging import get_logger
+
+DEFAULT_GROUP_TYPE = GroupType.CORE
 
 logger = get_logger(__name__)
 
 
 class ConfigError(Exception):
     """Error raised when a configuration is invalid."""
+
+
+def validate_measurement_glob(value: str) -> str:
+    """Validate one anchored project-relative measurement glob."""
+    if not value or value.startswith("/") or "\\" in value:
+        raise ValueError(
+            "measurement glob must be a nonempty relative POSIX path"
+        )
+    for segment in value.split("/"):
+        if not segment or segment in {".", ".."}:
+            raise ValueError(
+                "measurement glob contains an invalid path segment"
+            )
+        if "[" in segment or "]" in segment:
+            raise ValueError(
+                "measurement glob does not support character classes"
+            )
+        if "**" in segment and segment != "**":
+            raise ValueError(
+                "measurement glob only permits ** as a complete segment"
+            )
+    return value
 
 
 class MarkerConfig(BaseModel):
@@ -564,11 +588,11 @@ def _process_checkpoint(
                         group=reg_name,
                     )
             merged_cfg["groups"].update(regression_groups)
-        except Exception as e:
+        except (ConfigError, TypeError, ValidationError) as exc:
             raise ConfigError(
                 f"Error expanding regressions for checkpoint "
-                f"{checkpoint_name}: {e}"
-            ) from e
+                f"{checkpoint_name}: {exc}"
+            ) from exc
 
     # Convert groups to GroupConfig instances
     merged_cfg["groups"] = {
@@ -724,6 +748,21 @@ class ProblemConfig(BaseConfig):
             "Entry file required for executing checkpoints when not overridden."
         ),
     )
+    measurement_generated_globs: list[str] = Field(
+        default_factory=list,
+        description="Anchored globs identifying generated source files for scoring.",
+    )
+    measurement_test_globs: list[str] = Field(
+        default_factory=list,
+        description="Anchored globs identifying test source files for scoring.",
+    )
+
+    @field_validator("measurement_generated_globs", "measurement_test_globs")
+    @classmethod
+    def validate_measurement_globs(cls, values: list[str]) -> list[str]:
+        """Require the bounded measurement glob grammar."""
+        return [validate_measurement_glob(value) for value in values]
+
     markers: dict[str, MarkerConfig] = Field(
         default_factory=dict,
         description=(
@@ -764,7 +803,9 @@ class ProblemConfig(BaseConfig):
 
         # Compute problem defaults for inheritance
         defaults_payload = {**raw_cfg, "checkpoints": {}}
-        problem_defaults = cls(**defaults_payload).get_base_config()
+        problem_defaults = cls.model_validate(
+            defaults_payload
+        ).get_base_config()
 
         # Process each checkpoint (simplified for pytest-based harness)
         normalized_checkpoints: dict[str, CheckpointConfig] = {}
@@ -807,8 +848,9 @@ class ProblemConfig(BaseConfig):
             ) from exc
 
     def iterate_checkpoints(self) -> Generator[CheckpointConfig, None, None]:
-        for _, checkpoint in self.iterate_checkpoint_items():
-            yield checkpoint
+        yield from (
+            checkpoint for _, checkpoint in self.iterate_checkpoint_items()
+        )
 
     def iterate_checkpoint_items(
         self,
@@ -816,8 +858,7 @@ class ProblemConfig(BaseConfig):
         ordered = sorted(
             self.checkpoints.items(), key=lambda item: (item[1].order, item[0])
         )
-        for name, checkpoint in ordered:
-            yield name, checkpoint
+        yield from ordered
 
     def get_checkpoint_spec(self, checkpoint_name: str) -> str:
         """Get the specification text for a checkpoint.
@@ -864,11 +905,18 @@ def get_available_problems(problems_path: Path) -> dict[str, ProblemConfig]:
     for problem_path in problem_catalog.discover_problem_dirs(problems_path):
         try:
             problem_config = ProblemConfig.from_yaml(problem_path)
-        except Exception as e:
+        except (
+            ConfigError,
+            KeyError,
+            OSError,
+            TypeError,
+            ValidationError,
+            yaml.YAMLError,
+        ) as exc:
             logger.warning(
                 "Error loading problem config",
                 problem_path=str(problem_path),
-                error=str(e),
+                error=str(exc),
             )
             continue
         problems[problem_config.name] = problem_config

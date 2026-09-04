@@ -1,11 +1,11 @@
 ---
 version: 2.0
-last_updated: 2025-12-22
+last_updated: 2026-08-29
 ---
 
 # Reporting Guide
 
-This guide covers the reporting system for pytest-based evaluation, including result models, pass policies, and export formats.
+This guide covers the reporting system for pytest-based evaluation, including result models, assessment policies, and export formats.
 
 ## Overview
 
@@ -13,7 +13,7 @@ The reporting system aggregates pytest results into structured reports:
 
 - **TestResult**: Individual test outcome with categorization
 - **CorrectnessResults**: Aggregated checkpoint results with pass/fail counts
-- **PassPolicy**: Configurable criteria for checkpoint success
+- **PassPolicy**: API enum used by `assessment_policy`
 - **Export formats**: JSON for storage and analysis
 
 ## Result Models
@@ -65,6 +65,14 @@ class CorrectnessResults(BaseModel):
     pytest_exit_code: int      # Pytest exit code (0=success, 1=failures)
     pytest_collected: int      # Number of tests collected
     infrastructure_failure: bool  # True if pytest itself failed
+    # Canonical measurement provenance (populated for measurement runs)
+    coverage_ledger: dict | None
+    evaluator_environment: dict | None
+    platform_identity: dict | None
+    problem_config: dict | None
+    test_corpus: dict | None
+    invocation: dict | None
+    environment_fingerprint: str | None
 ```
 
 ### GroupType
@@ -138,20 +146,22 @@ if results.infrastructure_failure:
     print(f"Collected: {results.pytest_collected} tests")
 ```
 
-## Pass Policies
+## Assessment Policies
 
-Pass policies determine whether a checkpoint succeeds based on test results.
+`assessment_policy` determines whether a checkpoint succeeds based on test
+results. The `PassPolicy` enum and `CorrectnessResults.passes_policy()` expose
+the same policy values to Python callers.
 
 ### Available Policies
 
 | Policy | Description |
 |--------|-------------|
-| `core-cases` | All CORE tests must pass (default) |
+| `core-cases` | All CORE tests must pass (`passes_policy()` method default) |
 | `all-non-error-cases` | All CORE, FUNCTIONALITY, and REGRESSION tests pass |
 | `any-case` | At least one test passes |
 | `all-cases` | All tests must pass |
 
-### Using Pass Policies
+### Using Assessment Policies
 
 ```python
 # Check specific policy
@@ -166,7 +176,10 @@ for policy in ["core-cases", "all-non-error-cases"]:
 
 ### Policy Behavior
 
-**`core-cases`** (default):
+Run configuration defaults to strict `assessment_policy: all-cases`.
+`passes_policy()` without an argument retains its API default of `core-cases`.
+
+**`core-cases`**:
 - Only tests with `GroupType.CORE` must pass
 - FUNCTIONALITY, REGRESSION, and ERROR tests can fail
 - Use for: Essential functionality validation
@@ -205,13 +218,13 @@ passed = PassPolicy.CORE_CASES.check(
 
 ```python
 # Save to directory
-results.save(Path("outputs/checkpoint_1"))
+results.save(Path("experiments/checkpoint_1"))
 
 # Creates:
-#   outputs/checkpoint_1/evaluation.json    # Main results
-#   outputs/checkpoint_1/evaluation/stdout.txt   # Pytest stdout
-#   outputs/checkpoint_1/evaluation/stderr.txt   # Pytest stderr
-#   outputs/checkpoint_1/evaluation/report.json  # Raw CTRF report
+#   experiments/checkpoint_1/evaluation.json    # Main results
+#   experiments/checkpoint_1/evaluation/stdout.txt   # Pytest stdout
+#   experiments/checkpoint_1/evaluation/stderr.txt   # Pytest stderr
+#   experiments/checkpoint_1/evaluation/report.json  # Slim pytest-json-report
 ```
 
 ### JSON Structure (evaluation.json)
@@ -224,24 +237,18 @@ results.save(Path("outputs/checkpoint_1"))
   "checkpoint_version": 1,
   "duration": 12.34,
   "entrypoint": "python main.py",
-  "tests": [
-    {
-      "id": "test_core_cases[basic]",
-      "checkpoint": "checkpoint_1",
-      "group_type": "Core",
-      "status": "passed",
-      "duration_ms": 123.45,
-      "file_path": "tests/test_checkpoint_1.py"
+  "tests": {
+    "checkpoint_1-Core": {
+      "passed": ["test_core_cases[basic]"],
+      "failed": [],
+      "skipped": []
     },
-    {
-      "id": "test_error_cases[invalid_input]",
-      "checkpoint": "checkpoint_1",
-      "group_type": "Error",
-      "status": "failed",
-      "duration_ms": 45.67,
-      "file_path": "tests/test_checkpoint_1.py"
+    "checkpoint_1-Error": {
+      "passed": [],
+      "failed": ["test_error_cases[invalid_input]"],
+      "skipped": []
     }
-  ],
+  },
   "pass_counts": {
     "Core": 5,
     "Functionality": 3,
@@ -254,7 +261,10 @@ results.save(Path("outputs/checkpoint_1"))
   },
   "pytest_exit_code": 1,
   "pytest_collected": 11,
-  "infrastructure_failure": false
+  "infrastructure_failure": false,
+  "coverage_ledger": null,
+  "evaluator_environment": null,
+  "environment_fingerprint": null
 }
 ```
 
@@ -265,7 +275,7 @@ import json
 from pathlib import Path
 
 # Load from JSON
-with open("outputs/checkpoint_1/evaluation.json") as f:
+with open("experiments/checkpoint_1/evaluation.json") as f:
     data = json.load(f)
 
 # Access fields
@@ -282,8 +292,8 @@ Stdout and stderr are saved separately (not in evaluation.json):
 
 ```python
 # Read pytest output
-stdout = Path("outputs/checkpoint_1/evaluation/stdout.txt").read_text()
-stderr = Path("outputs/checkpoint_1/evaluation/stderr.txt").read_text()
+stdout = Path("experiments/checkpoint_1/evaluation/stdout.txt").read_text()
+stderr = Path("experiments/checkpoint_1/evaluation/stderr.txt").read_text()
 
 # Look for collection info
 if "collected" in stdout:
@@ -307,7 +317,7 @@ The raw CTRF (Common Test Report Format) report is saved for detailed analysis:
 ```python
 import json
 
-with open("outputs/checkpoint_1/evaluation/report.json") as f:
+with open("experiments/checkpoint_1/evaluation/report.json") as f:
     ctrf = json.load(f)
 
 # Access raw test data

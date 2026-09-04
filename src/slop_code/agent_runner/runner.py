@@ -25,7 +25,7 @@ from slop_code.agent_runner.state import AgentStateEnum
 from slop_code.evaluation import CheckpointConfig
 from slop_code.evaluation import CorrectnessResults
 from slop_code.evaluation import ProblemConfig
-from slop_code.evaluation import run_checkpoint as evaluate_checkpoint
+from slop_code.evaluation import run_checkpoint_pytest as evaluate_checkpoint
 from slop_code.execution import EnvironmentSpec
 from slop_code.execution import Session
 from slop_code.execution import SnapshotDiff
@@ -34,6 +34,7 @@ from slop_code.logging import get_logger
 from slop_code.metrics import SnapshotQualityReport
 from slop_code.metrics import measure_snapshot_quality
 from slop_code.metrics.quality_io import save_quality_metrics
+from slop_code.metrics.scoring.oracle import capture_live_checkpoint_oracle
 
 logger = get_logger(__name__)
 
@@ -312,6 +313,10 @@ def evaluate_agent_snapshot(
         problem=problem,
         checkpoint=checkpoint,
         env_spec=environment,
+        evaluator_environment_parent=(
+            save_dir.parents[1] / "measurement_analysis"
+        ),
+        measurement_coverage=True,
     )
 
     report.save(save_dir)
@@ -337,6 +342,7 @@ def evaluate_agent_snapshot(
         formatted_entry, snapshot_dir
     )
     save_quality_metrics(save_dir, quality_metrics, file_metrics_list)
+    capture_live_checkpoint_oracle(save_dir, problem.name, checkpoint.name)
 
     quality_report = SnapshotQualityReport.from_snapshot_metrics(
         quality_metrics
@@ -915,7 +921,15 @@ class AgentRunner:
         artifacts_path = get_artifacts_path(
             checkpoint_save_dir, compress=self.run_spec.compress_artifacts
         )
-        # Record checkpoint result for progress tracking when resuming
+        # Capture only after the canonical evaluation data has loaded. A completed
+        # checkpoint can retain a truncated evaluation artifact after interruption;
+        # _load_checkpoint_summary tolerates that artifact as an unavailable result.
+        if evaluation_result is not None:
+            capture_live_checkpoint_oracle(
+                checkpoint_save_dir,
+                self.run_spec.problem.name,
+                checkpoint.name,
+            )
         self.metrics_tracker.record_checkpoint_result(
             checkpoint.name, evaluation_result
         )

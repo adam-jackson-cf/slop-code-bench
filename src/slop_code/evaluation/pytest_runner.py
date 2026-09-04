@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shlex
+import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Literal, TypeGuard, TypedDict
 
 from slop_code.common import WORKSPACE_TEST_DIR
+from slop_code.evaluation import coverage_plugin
 from slop_code.evaluation.config import CheckpointConfig
 from slop_code.evaluation.config import ProblemConfig
+from slop_code.evaluation.locked_environment import LockedEnvironmentError
+from slop_code.evaluation.locked_environment import (
+    ensure_locked_evaluator_environment,
+)
 from slop_code.evaluation.report import CorrectnessResults
 from slop_code.evaluation.report import GroupType
 from slop_code.evaluation.report import TestResult
@@ -45,8 +53,12 @@ INFRA_FAILURE_CODES = {
 MAX_LOG_OUTPUT = 4000
 PYTEST_REPORT_REL_PATH = ".scbench/pytest-report.json"
 CTRF_REPORT_REL_PATH = ".scbench/ctrf-report.json"
+EVALUATOR_CACHE_DIRNAME = ".scbench-evaluator-cache"
 
-type _JsonObject = dict[str, object]
+type _JsonValue = (
+    str | int | float | bool | None | list[_JsonValue] | _JsonObject
+)
+type _JsonObject = dict[str, _JsonValue]
 type _TestStatus = Literal["passed", "failed", "skipped", "error"]
 
 
@@ -88,8 +100,25 @@ STATUS_MAP: dict[str, _TestStatus] = {
 COLLECTION_LINE_PATTERN = re.compile(r"collected (\d+) items?")
 
 
+def _is_json_value(value: object) -> TypeGuard[_JsonValue]:
+    """Return whether a value can occur in a JSON document."""
+    if value is None or isinstance(value, str | int | float | bool):
+        return True
+    if isinstance(value, list):
+        return all(_is_json_value(item) for item in value)
+    return _is_json_object(value)
+
+
+def _is_json_object(value: object) -> TypeGuard[_JsonObject]:
+    """Return whether a value is a string-keyed JSON object."""
+    return isinstance(value, dict) and all(
+        isinstance(key, str) and _is_json_value(item)
+        for key, item in value.items()
+    )
+
+
 def _as_dict(value: object) -> _JsonObject | None:
-    if isinstance(value, dict):
+    if _is_json_object(value):
         return value
     return None
 
@@ -117,12 +146,18 @@ class PytestRunner:
         checkpoint: CheckpointConfig,
         environment: EnvironmentSpec,
         submission_path: Path,
+        evaluator_environment_parent: Path,
+        *,
+        measurement_coverage: bool = False,
     ):
         """Initialize the runner for one checkpoint execution."""
         self.problem = problem
         self.checkpoint = checkpoint
         self.environment = environment
         self.submission_path = submission_path
+        self.evaluator_environment_parent = evaluator_environment_parent.resolve()
+        self.measurement_coverage = measurement_coverage
+        self._evaluator_environment = None
 
     def _get_entrypoint_command(self) -> str:
         """Build the command used by tests to execute the submission."""
@@ -259,24 +294,124 @@ markers =
 
         logger.debug("Generated pytest.ini", path=str(pytest_ini_path))
 
-    # Test dependencies installed via uvx for isolated execution
-    TEST_DEPENDENCIES = [
-        "pytest",  # Test framework
-        "pytest-json-ctrf",  # CTRF JSON report plugin
-        "pytest-json-report",  # Detailed failure reports
-        "pytest-timeout",  # Session-level timeout support
-        "jsonschema",  # JSON schema validation (for test cases)
-        "deepdiff",  # Deep comparison utilities
-    ]
+    def _locked_evaluator_python(self, session: Session) -> Path:
+        """Build the evaluator in the session's execution environment."""
+        parent = self.evaluator_environment_parent
+        if session.spec.type != "docker":
+            environment = ensure_locked_evaluator_environment(
+                parent,
+                self.problem,
+                Path(coverage_plugin.__file__).read_bytes(),
+                Path(sys.executable).resolve().read_bytes(),
+            )
+            self._evaluator_environment = environment
+            return environment.python
 
-    def _build_with_flags(self) -> list[str]:
-        all_deps = list(self.TEST_DEPENDENCIES) + list(
-            self.problem.test_dependencies or []
+        container_parent = (
+            Path(getattr(session.spec, "docker").workdir)
+            / EVALUATOR_CACHE_DIRNAME
         )
-        return [f"--with={dep}" for dep in all_deps]
+        mounts: dict[str, dict[str, str] | str] = {
+            str(parent): {"bind": str(container_parent), "mode": "rw"}
+        }
 
-    def _build_pytest_base_parts(self) -> list[str]:
-        return ["uvx", *self._build_with_flags(), "pytest"]
+        def run_in_session(target: Path) -> None:
+            relative_target = target.relative_to(parent)
+            command = (
+                f"cd {shlex.quote(str(Path(EVALUATOR_CACHE_DIRNAME) / relative_target))}"
+                " && UV_PROJECT_ENVIRONMENT=.venv uv sync --frozen --no-install-project"
+            )
+            runtime = session.exec(command=command, mounts=mounts)
+            try:
+                result = runtime.execute({}, None, None)
+            finally:
+                runtime.cleanup()
+            if result.exit_code != EXIT_OK:
+                raise subprocess.CalledProcessError(
+                    result.exit_code, command, result.stdout, result.stderr
+                )
+
+        identity_runtime = session.exec(
+            command="python -c 'import hashlib,sys; print(sys.executable); print(hashlib.sha256(open(sys.executable, \"rb\").read()).hexdigest())'"
+        )
+        try:
+            identity = identity_runtime.execute({}, None, None)
+        finally:
+            identity_runtime.cleanup()
+        if identity.exit_code != EXIT_OK:
+            raise LockedEnvironmentError("runtime interpreter identity failed")
+        environment = ensure_locked_evaluator_environment(
+            parent,
+            self.problem,
+            Path(coverage_plugin.__file__).read_bytes(),
+            identity.stdout.encode(),
+            sync_environment=run_in_session,
+        )
+        self._evaluator_environment = environment
+        return (
+            container_parent
+            / environment.root.relative_to(parent)
+            / ".venv"
+            / "bin"
+            / "python"
+        )
+
+    def _locked_evaluator_mounts(
+        self, session: Session
+    ) -> dict[str, dict[str, str] | str] | None:
+        if session.spec.type != "docker":
+            return None
+        return {
+            str(self.evaluator_environment_parent): {
+                "bind": str(
+                    Path(getattr(session.spec, "docker").workdir)
+                    / EVALUATOR_CACHE_DIRNAME
+                ),
+                "mode": "rw",
+            }
+        }
+
+    def _session_platform_identity(
+        self, session: Session, evaluator_python: Path
+    ) -> dict[str, str]:
+        """Return platform details from the session evaluator runtime."""
+        script = (
+            "import json,platform; "
+            "print(json.dumps({"
+            "'machine': platform.machine(), "
+            "'platform': platform.platform(), "
+            "'python_implementation': platform.python_implementation(), "
+            "'python_version': platform.python_version(), "
+            "'system': platform.system()"
+            "}))"
+        )
+        runtime = session.exec(
+            command=f"{shlex.quote(str(evaluator_python))} -c {shlex.quote(script)}",
+            mounts=self._locked_evaluator_mounts(session),
+        )
+        try:
+            result = runtime.execute({}, None, None)
+        finally:
+            runtime.cleanup()
+        if result.exit_code != EXIT_OK:
+            raise RuntimeError("session platform identity failed")
+        identity = _as_dict(json.loads(result.stdout))
+        if identity is None or not all(
+            isinstance(value, str) for value in identity.values()
+        ):
+            raise RuntimeError("session platform identity was not string keyed")
+        return {
+            key: value
+            for key, value in identity.items()
+            if isinstance(value, str)
+        }
+
+    def _build_pytest_base_parts(self, evaluator_python: Path) -> list[str]:
+        parts = [shlex.quote(str(evaluator_python)), "-m"]
+        if self.measurement_coverage:
+            parts.extend(["coverage", "run", "--branch", "-m"])
+        parts.append("pytest")
+        return parts
 
     def _build_common_pytest_args(self) -> list[str]:
         return [
@@ -289,6 +424,7 @@ markers =
 
     def _build_pytest_command(
         self,
+        evaluator_python: Path,
         extra_args: list[str] | None = None,
         timeout: float | None = None,
     ) -> str:
@@ -298,9 +434,13 @@ markers =
             timeout_args = [f"--timeout={int(timeout)}"]
 
         cmd_parts = [
-            *self._build_pytest_base_parts(),
+            *self._build_pytest_base_parts(evaluator_python),
+            # Explicitly name the trusted evaluator test directory before its
+            # custom options so pytest loads its conftest during startup.
+            WORKSPACE_TEST_DIR,
             *timeout_args,
             *self._build_common_pytest_args(),
+            *(["-p", "coverage_plugin"] if self.measurement_coverage else []),
             # Limit conftest discovery to the eval test dir so an agent-authored
             # conftest.py at the workspace root can't break collection (SCBench's
             # own conftest lives inside WORKSPACE_TEST_DIR and still loads).
@@ -315,7 +455,6 @@ markers =
             "--json-report-omit=warnings",
             "-vv",
             *self._quote_args(extra_args),
-            WORKSPACE_TEST_DIR,
         ]
 
         return " ".join(cmd_parts)
@@ -798,19 +937,82 @@ markers =
             logger.debug("Generating pytest.ini")
             self._generate_pytest_ini(workspace_path)
 
+            base_env = self.environment.get_full_env(self.checkpoint.env)
+            cache_root = ".scbench/runtime-cache"
             full_env = {
-                **self.environment.get_full_env(self.checkpoint.env),
+                **base_env,
                 **asset_env_vars,
+                "PYTHONPATH": (
+                    f".scbench:{base_env.get('PYTHONPATH', '')}"
+                ).rstrip(":"),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPYCACHEPREFIX": f"{cache_root}/pycache",
+                "PYTEST_ADDOPTS": (
+                    f"{base_env.get('PYTEST_ADDOPTS', '')} "
+                    f"-o cache_dir={cache_root}/pytest"
+                ).strip(),
+                "UV_CACHE_DIR": f"{cache_root}/uv",
+                "XDG_CACHE_HOME": f"{cache_root}/xdg",
             }
-
+            if self.measurement_coverage:
+                full_env["COVERAGE_FILE"] = f"{cache_root}/coverage"
+                plugin_path = workspace_path / ".scbench" / "coverage_plugin.py"
+                plugin_path.parent.mkdir(parents=True, exist_ok=True)
+                plugin_path.write_bytes(
+                    Path(coverage_plugin.__file__).read_bytes()
+                )
+            corpus_files = []
+            test_root = workspace_path / WORKSPACE_TEST_DIR
+            for path in sorted(test_root.rglob("*")):
+                relative = path.relative_to(test_root).as_posix()
+                if path.is_symlink():
+                    corpus_files.append(
+                        {
+                            "path": relative,
+                            "kind": "symlink",
+                            "target": path.readlink().as_posix(),
+                        }
+                    )
+                elif path.is_file():
+                    content = path.read_bytes()
+                    corpus_files.append(
+                        {
+                            "path": relative,
+                            "kind": "file",
+                            "bytes": len(content),
+                            "sha256": hashlib.sha256(content).hexdigest(),
+                        }
+                    )
+            corpus_bytes = json.dumps(
+                corpus_files, sort_keys=True, separators=(",", ":")
+            ).encode()
+            test_corpus = {
+                "files": corpus_files,
+                "manifest_sha256": hashlib.sha256(corpus_bytes).hexdigest(),
+            }
+            environment_bytes = json.dumps(
+                {**base_env, **asset_env_vars},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            environment_fingerprint = hashlib.sha256(
+                environment_bytes
+            ).hexdigest()
+            evaluator_python = self._locked_evaluator_python(session)
+            platform_identity = self._session_platform_identity(
+                session, evaluator_python
+            )
             pytest_cmd = self._build_pytest_command(
+                evaluator_python,
                 pytest_args,
                 timeout=self.checkpoint.timeout,
             )
-            logger.debug("Pytest command", command=pytest_cmd)
 
             logger.info("Executing pytest")
-            runtime = session.exec(command=pytest_cmd)
+            runtime = session.exec(
+                command=pytest_cmd,
+                mounts=self._locked_evaluator_mounts(session),
+            )
             try:
                 exec_result = runtime.execute(
                     full_env,
@@ -819,6 +1021,25 @@ markers =
                 )
             finally:
                 runtime.cleanup()
+            coverage_ledger: dict[str, object] | None = {
+                "measurement_coverage": False,
+                "plugin_id": None,
+                "ledger": [],
+                "coverage": [],
+                "process_events": [],
+                "invalid_coverage_paths": 0,
+            }
+            if self.measurement_coverage:
+                ledger_path = (
+                    workspace_path / coverage_plugin.LEDGER_RELATIVE_PATH
+                )
+                coverage_ledger = (
+                    json.loads(ledger_path.read_bytes())
+                    if ledger_path.is_file()
+                    else None
+                )
+                if coverage_ledger is not None:
+                    coverage_ledger["measurement_coverage"] = True
 
             logger.info(
                 "Pytest execution complete",
@@ -910,6 +1131,20 @@ markers =
                 stderr=exec_result.stderr,
                 pytest_ctrf_report=ctrf_report,
                 pytest_json_report=pytest_report,
+                coverage_ledger=coverage_ledger,
+                evaluator_environment=(
+                    self._evaluator_environment.metadata
+                    if self._evaluator_environment is not None
+                    else None
+                ),
+                platform_identity=platform_identity,
+                problem_config=self.problem.model_dump(mode="json"),
+                test_corpus=test_corpus,
+                invocation={
+                    "command": pytest_cmd,
+                    "cwd": "snapshot",
+                },
+                environment_fingerprint=environment_fingerprint,
             )
             for group_type in GroupType:
                 results.total_counts.setdefault(group_type, 0)
@@ -968,6 +1203,9 @@ def run_checkpoint_pytest(
     checkpoint: CheckpointConfig,
     env_spec: EnvironmentSpec,
     pytest_args: list[str] | None = None,
+    *,
+    evaluator_environment_parent: Path,
+    measurement_coverage: bool = False,
 ) -> CorrectnessResults:
     """Public entrypoint for checkpoint pytest evaluation."""
     from slop_code.evaluation.collection import run_checkpoint_with_collection
@@ -978,4 +1216,6 @@ def run_checkpoint_pytest(
         checkpoint=checkpoint,
         env_spec=env_spec,
         pytest_args=pytest_args,
+        evaluator_environment_parent=evaluator_environment_parent,
+        measurement_coverage=measurement_coverage,
     )

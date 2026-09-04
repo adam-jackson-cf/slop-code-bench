@@ -317,6 +317,9 @@ class APIKeyStore:
         >>> print(cred.source)  # "ANTHROPIC_API_KEY"
     """
 
+    _cache: dict[str, ProviderCredential]
+    _frozen: bool
+
     def __init__(self) -> None:
         """Initialize the credential store.
 

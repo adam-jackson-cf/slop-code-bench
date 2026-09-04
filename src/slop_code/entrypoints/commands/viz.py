@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import subprocess
 import sys
 from pathlib import Path
@@ -15,6 +17,14 @@ from slop_code.logging import get_logger
 
 logger = get_logger(__name__)
 console = Console()
+
+
+async def _run_streamlit(command: tuple[str, ...]) -> None:
+    """Run the trusted Streamlit command and propagate a nonzero exit."""
+    process = await asyncio.create_subprocess_exec(*command)
+    returncode = await process.wait()
+    if returncode:
+        raise subprocess.CalledProcessError(returncode, command)
 
 
 def register(app: typer.Typer, name: str) -> None:
@@ -46,23 +56,21 @@ def diff(
         )
         raise typer.Exit(1)
 
-    cmd = [
-        sys.executable,
+    python_executable = Path(sys.executable).resolve(strict=True)
+    cmd = (
+        str(python_executable),
         "-m",
         "streamlit",
         "run",
         str(app_path),
-    ]
+    )
 
     if run_dir:
-        cmd.extend(["--", "--run-dir", str(run_dir)])
+        cmd += ("--", "--run-dir", str(run_dir))
 
     console.print(
         f"[green]Launching diff viewer for {run_dir or 'default'}...[/green]"
     )
     console.print("[dim](Press Ctrl+C to stop)[/dim]")
-
-    try:
-        subprocess.run(cmd, check=True)
-    except KeyboardInterrupt:
-        pass
+    with contextlib.suppress(KeyboardInterrupt):
+        asyncio.run(_run_streamlit(cmd))

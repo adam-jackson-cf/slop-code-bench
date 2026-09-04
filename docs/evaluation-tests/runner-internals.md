@@ -8,7 +8,7 @@ Technical reference for how SCBench executes pytest-based evaluations.
 
 1. Copy tests from problem to workspace
 2. Generate pytest.ini with markers
-3. Execute pytest via uvx
+3. Verify the locked evaluator environment and execute pytest
 4. Parse reports and categorize results
 
 ## Execution Flow
@@ -30,9 +30,11 @@ PytestRunner.run()
     ├─► Generate pytest.ini
     │   └─► Register markers
     │
-    ├─► Build pytest command
-    │   └─► uvx --with=pytest pytest ...
+    ├─► Verify/build evaluator environment
+    │   └─► uv sync --frozen --no-install-project
     │
+    ├─► Build pytest command
+    │   └─► <locked-python> -m pytest ...
     ├─► Execute pytest
     │   └─► Run in Docker container
     │
@@ -89,18 +91,15 @@ BUILTIN_MARKERS = {
 
 ## Command Construction
 
-The pytest command is built for uvx execution:
+The pytest command uses the interpreter from the problem's content-addressed
+evaluator environment:
 
 ```bash
-uvx --with=pytest \
-    --with=pytest-json-ctrf \
-    --with=pytest-json-report \
-    --with=pytest-timeout \
-    --with=jsonschema \
-    --with=deepdiff \
-    pytest tests/ \
+measurement_analysis/evaluator_environments/<environment_id>/.venv/bin/python \
+    -m pytest .evaluation_tests \
     --entrypoint="python main.py" \
     --checkpoint=checkpoint_1 \
+    --confcutdir=.evaluation_tests \
     --ctrf=.scbench/ctrf-report.json \
     --json-report \
     --json-report-file=.scbench/pytest-report.json \
@@ -108,12 +107,9 @@ uvx --with=pytest \
     -vv
 ```
 
-Additional dependencies from `test_dependencies` are added:
-
-```python
-for dep in problem.test_dependencies:
-    cmd.extend(["--with", dep])
-```
+Every `test_dependencies` entry must exactly match an entry in the problem's
+`pyproject.toml` `[project].dependencies`. `uv.lock` fixes resolution before
+execution; the runner does not add packages dynamically.
 
 ## Report Parsing
 
@@ -217,22 +213,17 @@ PytestRunner sets these environment variables:
 
 ## Test Dependencies
 
-Default dependencies (always available):
+The problem's `pyproject.toml` declares the full evaluator environment,
+including pytest, its report and timeout plugins, coverage, Ruff, and any
+problem-specific libraries. Commit the generated `uv.lock` with the problem.
 
-- `pytest`
-- `pytest-json-ctrf`
-- `pytest-json-report`
-- `pytest-timeout`
-- `jsonschema`
-- `deepdiff`
-
-Additional dependencies from `config.yaml`:
+`test_dependencies` documents problem-specific packages and must use the exact
+same requirement strings:
 
 ```yaml
 test_dependencies:
-  - pyyaml
-  - requests
-  - pandas
+  - "pyyaml==6.0.2"
+  - "requests==2.32.5"
 ```
 
 ## Timeout Handling
@@ -330,7 +321,8 @@ Reports are saved to the workspace:
 
 ```bash
 cd problems/my_problem
-pytest tests/ \
+uv sync --frozen --no-install-project
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -v

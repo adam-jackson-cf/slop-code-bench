@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2026-04-22
+last_updated: 2026-08-29
 ---
 
 # utils
@@ -12,7 +12,7 @@ Utility commands for maintenance and data processing.
 | Command | Description |
 |---------|-------------|
 | [`repopulate-diffs`](#repopulate-diffs) | Regenerate diff.json files |
-| [`backfill-reports`](#backfill-reports) | Backfill checkpoint reports |
+| [`backfill-reports`](#backfill-reports) | Publish canonical score state for historical runs |
 | [`backfill-categories`](#backfill-categories) | Backfill rubric categories |
 | [`compress-artifacts`](#compress-artifacts) | Compress agent artifacts |
 | [`combine-results`](#combine-results) | Combine results from multiple runs |
@@ -62,26 +62,27 @@ Displays a summary table with:
 
 ```bash
 # Regenerate diffs for all problems in a run
-slop-code utils repopulate-diffs outputs/my_run
+slop-code utils repopulate-diffs experiments/my_run
 
 # Regenerate diffs for a specific problem
-slop-code utils repopulate-diffs outputs/my_run -p file_backup
+slop-code utils repopulate-diffs experiments/my_run -p file_backup
 ```
 
 ---
 
 ## backfill-reports
 
-Generate checkpoint reports for all problems in a results directory.
+Capture immutable historical provenance and publish canonical score state for
+existing runs.
 
 ### Quick Start
 
 ```bash
 # Single run
-slop-code utils backfill-reports outputs/my_run
+slop-code utils backfill-reports experiments/my_run
 
 # Collection of runs
-slop-code utils backfill-reports outputs/all_runs --type collection
+slop-code utils backfill-reports experiments/all_runs --type collection
 ```
 
 ### Usage
@@ -104,20 +105,25 @@ slop-code utils backfill-reports [OPTIONS] RESULTS_DIR
 
 ### Behavior
 
-1. Scans results directory for problem runs
-2. Loads problem configuration for each
-3. Generates report entries for each checkpoint
-4. Updates `checkpoint_results.jsonl`
-5. Generates `result.json` summary
+For each run:
+
+1. Loads configured problems in their declared order
+2. Captures immutable, non-mutating historical provenance
+3. Finalizes and publishes a canonical generation under `measurement_analysis/`
+4. Reports whether the current generation is `eligible` or `ineligible`
+
+This command does not regenerate `checkpoint_results.jsonl` or `result.json`.
+An individual failure is reported and processing continues; the command exits
+nonzero if any run failed.
 
 ### Examples
 
 ```bash
 # Backfill single run
-slop-code utils backfill-reports outputs/my_run
+slop-code utils backfill-reports experiments/my_run
 
 # Backfill all runs in collection
-slop-code utils backfill-reports outputs/all_runs --type collection
+slop-code utils backfill-reports experiments/all_runs --type collection
 ```
 
 ---
@@ -158,13 +164,13 @@ are not modified.
 # Backfill categories for a single run
 slop-code utils backfill-categories \
   --rubric configs/rubrics/llm_judge.jsonl \
-  outputs/my_run
+  experiments/my_run
 
 # Backfill categories for a collection of runs
 slop-code utils backfill-categories \
   --rubric configs/rubrics/llm_judge.jsonl \
   --type collection \
-  outputs/
+  experiments/
 ```
 
 ---
@@ -202,25 +208,26 @@ directories.
 
 ```bash
 # Compress artifacts in a single run
-slop-code utils compress-artifacts outputs/my_run
+slop-code utils compress-artifacts experiments/my_run
 
 # Compress artifacts across all runs in a collection
-slop-code utils compress-artifacts outputs --type collection
+slop-code utils compress-artifacts experiments --type collection
 
 # Preview what would be compressed
-slop-code utils compress-artifacts outputs/my_run --dry-run
+slop-code utils compress-artifacts experiments/my_run --dry-run
 ```
 
 ---
 
 ## combine-results
 
-Combine `checkpoint_results.jsonl` from multiple runs into one JSONL file with run metadata.
+Combine `checkpoint_results.jsonl` from runs with verified canonical score
+generations into one JSONL file with run and scoring metadata.
 
 ### Quick Start
 
 ```bash
-slop-code utils combine-results outputs/runs -o outputs/combined.jsonl
+slop-code utils combine-results experiments/runs -o experiments/combined.jsonl
 ```
 
 ### Usage
@@ -245,26 +252,29 @@ slop-code utils combine-results [OPTIONS] RUNS_DIR
 ### Behavior
 
 1. Discovers all run directories
-2. Loads `checkpoint_results.jsonl` from each
-3. Attaches run-level metadata to each record:
-   - `run_name`, `run_dir`, `run_relative_path`
-   - `model_name`, `model_provider`
-   - `prompt_name`, `thinking_level`
-   - `agent_type`, `agent_version`
-   - `environment_name`, `environment_type`
-4. Writes combined JSONL file
+2. Verifies each current canonical generation; rejects unavailable, ineligible, or invalid generations
+3. Loads `checkpoint_results.jsonl` from accepted runs
+4. Attaches run-level metadata to each record:
+   - `run_name`, `run_dir`, `run_relative_path`, `run_group`
+   - `model_name`, `model_provider`, prompt and thinking fields
+   - agent and environment fields
+   - `assessment_policy`, `continue_after_test_failure`
+   - `benchmark_score`, `scoring.correctness`, `scoring.inertia`
+   - `scoring.cost_per_configured_checkpoint`, `scoring.run_identity`
+   - per-problem canonical score and component fields
+5. Writes the combined JSONL file
 
 ### Examples
 
 ```bash
 # Combine with default output
-slop-code utils combine-results outputs/runs
+slop-code utils combine-results experiments/runs
 
 # Custom output location
-slop-code utils combine-results outputs/runs -o analysis/all_results.jsonl
+slop-code utils combine-results experiments/runs -o analysis/all_results.jsonl
 
 # Overwrite existing
-slop-code utils combine-results outputs/runs -o outputs/combined.jsonl --overwrite
+slop-code utils combine-results experiments/runs -o experiments/combined.jsonl --overwrite
 ```
 
 ---
@@ -309,13 +319,13 @@ output_dir/
 slop-code utils render-prompts \
   -p just-solve \
   -e docker-python3.12-uv \
-  -o outputs/rendered_prompts
+  -o experiments/rendered_prompts
 
 # Render for specific problems
 slop-code utils render-prompts \
   -p just-solve \
   -e docker-python3.12-uv \
-  -o outputs/rendered_prompts \
+  -o experiments/rendered_prompts \
   --problem file_backup \
   --problem etl_pipeline
 ```
@@ -381,13 +391,13 @@ Displays a summary table with:
 
 ```bash
 # Migrate a single run directory
-slop-code utils migrate-eval-format outputs/my_run
+slop-code utils migrate-eval-format experiments/my_run
 
 # Preview migration on a collection (dry run)
-slop-code utils migrate-eval-format --type collection --dry-run outputs/
+slop-code utils migrate-eval-format --type collection --dry-run experiments/
 
 # Migrate all runs in a collection
-slop-code utils migrate-eval-format --type collection outputs/
+slop-code utils migrate-eval-format --type collection experiments/
 ```
 
 ---

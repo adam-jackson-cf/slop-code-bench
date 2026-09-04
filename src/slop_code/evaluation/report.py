@@ -265,6 +265,35 @@ class CorrectnessResults(BaseModel):
         exclude=True,
         description="Slimmed pytest-json-report output (saved as report.json)",
     )
+    coverage_ledger: dict[str, Any] | None = Field(
+        default=None,
+        description="Canonical locked-evaluator parity and process ledger",
+    )
+    evaluator_environment: dict[str, Any] | None = Field(
+        default=None,
+        description="Verified locked evaluator identity for parity",
+    )
+    platform_identity: dict[str, str] | None = Field(
+        default=None,
+        description="Exact canonical execution platform identity",
+    )
+    problem_config: dict[str, Any] | None = Field(
+        default=None,
+        description="Exact canonical problem configuration recorded at run",
+    )
+    test_corpus: dict[str, Any] | None = Field(
+        default=None,
+        description="Exact canonical test and static-asset corpus manifest",
+    )
+    invocation: dict[str, Any] | None = Field(
+        default=None,
+        description="Exact canonical evaluator invocation",
+    )
+    environment_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="Canonical evaluator environment fingerprint",
+    )
 
     def _group_tests_for_serialization(self) -> dict[str, dict[str, list[str]]]:
         """Group tests by checkpoint-GroupType for compact JSON serialization.
@@ -390,7 +419,7 @@ class CorrectnessResults(BaseModel):
             save_dir: Directory to save results (creates if doesn't exist)
 
         Example:
-            >>> results.save(Path("outputs/checkpoint_1"))
+            >>> results.save(Path("experiments/checkpoint_1"))
         """
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / "evaluation.json"
@@ -429,7 +458,7 @@ class CorrectnessResults(BaseModel):
             json.JSONDecodeError: If the file contains invalid JSON
 
         Example:
-            >>> results = CorrectnessResults.from_dir(Path("outputs/checkpoint_1"))
+            >>> results = CorrectnessResults.from_dir(Path("experiments/checkpoint_1"))
         """
         eval_path = dir_path / "evaluation.json"
         with eval_path.open() as f:

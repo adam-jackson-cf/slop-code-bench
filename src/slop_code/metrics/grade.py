@@ -27,7 +27,6 @@ from slop_code.common import RUBRIC_FILENAME
 from slop_code.common import replace_spec_placeholders
 from slop_code.common.render import render_criteria_text
 from slop_code.common.render import render_multi_file_prefix
-from slop_code.execution import EnvironmentSpec
 from slop_code.logging import get_logger
 from slop_code.metrics.driver import aggregate_usage
 from slop_code.metrics.driver import annotate_grades_with_category
@@ -45,6 +44,7 @@ from slop_code.metrics.rubric.router import grade_file_async
 
 if TYPE_CHECKING:
     from slop_code.evaluation import ProblemConfig
+    from slop_code.execution import EnvironmentSpec
 
 logger = get_logger(__name__)
 
@@ -91,7 +91,6 @@ def _build_spec_and_files(
     Returns:
         Tuple of (spec text, list of matching files).
     """
-    chkpt = problem.checkpoints[checkpoint_name]
     entry_file = environment.format_entry_file(problem.entry_file)
     entry_cmd = environment.get_command(problem.entry_file, is_agent_run=True)
     spec = replace_spec_placeholders(
@@ -446,6 +445,14 @@ def _load_diff_file(diff_path: Path) -> dict[str, str]:
     return file_diffs
 
 
+def _checkpoint_sort_key(checkpoint_name: str) -> int:
+    """Return the numeric suffix for standard checkpoint names."""
+    match = re.fullmatch(r"checkpoint_(\d+)", checkpoint_name)
+    if match is None:
+        return 0
+    return int(match.group(1))
+
+
 def _carry_forward_batch(
     run_dir: Path,
     results: dict[str, dict[str, tuple[list[dict], dict]]],
@@ -463,13 +470,7 @@ def _carry_forward_batch(
 
     for prob_name, checkpoints in results.items():
         # Sort checkpoints by number
-        chkpt_pattern = re.compile(r"^checkpoint_(\d+)$")
-        sorted_chkpts = sorted(
-            checkpoints.keys(),
-            key=lambda x: int(chkpt_pattern.match(x).group(1))
-            if chkpt_pattern.match(x)
-            else 0,
-        )
+        sorted_chkpts = sorted(checkpoints.keys(), key=_checkpoint_sort_key)
 
         prev_checkpoint_name: str | None = None
         prev_grades: list[dict] | None = None
@@ -753,10 +754,10 @@ def llm_judge_snapshot_batch(
     else:
         chunk_size = max_parallel_checkpoints or len(checkpoints_to_grade)
     grading_results: list[tuple[str, str, list[dict], dict, Path]] = []
-    chunk_index = 0
 
-    for chunk in _chunked(checkpoints_to_grade, chunk_size):
-        chunk_index += 1
+    for chunk_index, chunk in enumerate(
+        _chunked(checkpoints_to_grade, chunk_size), start=1
+    ):
         logger.info(
             "Starting checkpoint chunk",
             chunk_index=chunk_index,

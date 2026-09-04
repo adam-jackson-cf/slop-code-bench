@@ -1,6 +1,5 @@
 import dash
 import dash_bootstrap_components as dbc
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from dash import Input
@@ -206,8 +205,8 @@ def update_efficiency(run_a_path, run_b_path):
         df["bin"] = (df["progress"] / 5).round() * 5
         df["bin"] = df["bin"].clip(0, 100)
 
-        bins = np.arange(0, 105, 5)
-        results = []
+        bins: list[int] = list(range(0, 105, 5))
+        results: list[pd.DataFrame] = []
 
         # Process per problem
         for problem, prob_df in df.groupby("problem"):
@@ -227,9 +226,9 @@ def update_efficiency(run_a_path, run_b_path):
 
         if not results:
             return pd.DataFrame(
-                index=bins, columns=state_cols + rate_cols
-            ).fillna(0)
-
+                {metric: 0.0 for metric in [*state_cols, *rate_cols]},
+                index=pd.RangeIndex(0, 105, 5),
+            )
         # Average across problems
         final = pd.concat(results)
         return final.groupby(level=0).mean()

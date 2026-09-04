@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-17
+last_updated: 2026-08-29
 ---
 
 # Interpreting Metrics Results
@@ -171,19 +171,17 @@ Percentage changes between consecutive checkpoints.
 - `inf`: Previous value was 0, now non-zero
 - 0: No change
 
-## Composite Summary Scores
+## Descriptive and Canonical Quality Components
 
-High-level scores reported by the pinned `scb-check` release and aggregated
-across checkpoints.
+The `verbosity` and `erosion` values in `checkpoint_results.jsonl` and
+`result.json` summarize pinned `scb-check` output. Lower descriptive values are
+better, and `scb_check_version` records the checker release.
 
-### Verbosity Score
-
-Measures code bloat and over-abstraction. Lower is better.
-
-### Erosion Score
-
-Measures structural degradation. Lower is better. `scb_check_version` records
-the exact checker release used for the checkpoint scores.
+Canonical scoring does not treat these files as score authority. A verified
+generation under `measurement_analysis/` recomputes favorable components for
+verbosity, erosion, architecture, rework, and regression. Each is in `[0, 1]`,
+and higher is better. See the [Metrics Reference](../metrics-reference.md) for
+the formulas, eligibility rules, and published artifacts.
 
 ## Summary: What Good Code Looks Like
 

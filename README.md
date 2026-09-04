@@ -29,11 +29,11 @@ Problem definitions now live in the separate [scb-problems repository](https://g
   configuration.
 - `.agents/skills/` contains local workflows for experiment analysis and fault
   catalog maintenance.
-- `.experiments/` contains dated experiment observations, the fault catalog,
-  and detailed Fault Category Records.
+- `experiment_analysis/` contains dated experiment observations, the fault
+  catalog, and detailed Fault Category Records.
 - `docs/` contains guides for agents, evaluation, execution, metrics, commands,
   and problem authoring.
-- `outputs/` contains benchmark run artifacts and evaluation results.
+- `experiments/` contains benchmark run artifacts and evaluation results.
 - `assets/` contains project images and other static media.
 
 Dashboard visualization is documented with the `viz diff` command in
@@ -41,9 +41,9 @@ Dashboard visualization is documented with the `viz diff` command in
 
 ## Experiment analysis workflow
 
-Benchmark runs persist their artifacts and evaluation results under `outputs/`.
+Benchmark runs persist their artifacts and evaluation results under `experiments/`.
 The `experiment-observations` skill analyzes those artifacts and creates a
-dated observation record under `.experiments/`. The `fault-catalog` skill then
+dated observation record under `experiment_analysis/`. The `fault-catalog`
 reconciles supported findings with the fault catalog and detailed Fault
 Category Records. This keeps benchmark evidence, analysis, and tracked failure
 modes traceable without treating generated records as agent instructions.
@@ -82,7 +82,7 @@ uv run slop-code run \
 
 Results are saved to:
 ```
-outputs/opus-4.5/claude_code-just-solve_low_{timestamp}/
+experiments/opus-4.5/claude_code-just-solve_low_{timestamp}/
 ```
 
 **First Run:** Docker images build automatically for that _VERSION_ of the agent (5-10 minutes). Subsequent runs are faster.
@@ -116,7 +116,7 @@ For more issues, see [GitHub Issues](https://github.com/SprocketLab/slop-code-be
 
 **Evaluate a run:**
 ```bash
-slop-code eval outputs/your-run-directory/
+slop-code eval experiments/your-run-directory/
 ```
 
 **Grade code quality with LLM judge:**

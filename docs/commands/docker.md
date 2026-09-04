@@ -122,13 +122,13 @@ slop-code docker build-submission [OPTIONS] NAME SUBMISSION_PATH ENV_CONFIG_PATH
 ```bash
 # Build submission image
 slop-code docker build-submission my_submission \
-  outputs/my_run/file_backup/checkpoint_1/snapshot \
+  experiments/my_run/file_backup/checkpoint_1/snapshot \
   configs/environments/docker-python3.12-uv.yaml \
   file_backup
 
 # With base rebuild
 slop-code docker build-submission my_submission \
-  outputs/snapshot \
+  experiments/snapshot \
   configs/environments/docker-python3.12-uv.yaml \
   file_backup \
   --build-base

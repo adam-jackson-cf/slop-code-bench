@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2025-12-22
+last_updated: 2026-08-29
 ---
 
 # Configuration Guide
@@ -9,9 +9,11 @@ This guide covers problem and checkpoint configuration for the pytest-based eval
 
 ## Overview
 
-Configuration is defined in a single `config.yaml` at the problem root. The pytest runner uses:
+Configuration is defined in `config.yaml` at the problem root. The same
+directory must contain `pyproject.toml` and `uv.lock` for the locked evaluator
+environment. The pytest runner uses:
 
-- **ProblemConfig**: Entry file, static assets, custom markers, test dependencies
+- **ProblemConfig**: Entry file, static assets, custom markers, test dependencies, measurement globs
 - **CheckpointConfig**: Timeout, environment variables, test inclusion settings
 
 Test categorization is handled by pytest markers, not configuration.
@@ -54,6 +56,8 @@ checkpoints:
 | `static_assets` | dict | No | Named assets for tests |
 | `markers` | dict | No | Custom pytest markers |
 | `test_dependencies` | list | No | Additional packages for tests |
+| `measurement_generated_globs` | list | No | Project-relative globs excluded as generated source during scoring |
+| `measurement_test_globs` | list | No | Project-relative globs classified as test source during scoring |
 | `checkpoints` | dict | Yes | Checkpoint configurations |
 
 ### Static Assets
@@ -95,24 +99,54 @@ markers:
 
 ### Test Dependencies
 
-Additional packages needed by tests (beyond the standard set):
+Every evaluator dependency must be pinned through the problem's
+`pyproject.toml` and committed `uv.lock`:
+
+```toml
+[project]
+name = "file-backup-evaluator"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "coverage==7.15.4",
+    "pytest==8.4.1",
+    "pytest-json-ctrf==0.3.5",
+    "pytest-json-report==1.5.0",
+    "pytest-timeout==2.4.0",
+    "ruff==0.8.6",
+    "pyyaml==6.0.2",
+]
+```
+
+Generate and commit `uv.lock` after changing this manifest. `test_dependencies`
+may list problem-specific packages used by tests, but every listed string must
+exactly match an entry in `[project].dependencies`:
 
 ```yaml
 test_dependencies:
-  - "requests>=2.28"
-  - "httpx"
-  - "pyyaml"
+  - "pyyaml==6.0.2"
 ```
 
-These are installed via `uvx --with=...` during test execution.
+Evaluation builds the environment with `uv sync --frozen
+--no-install-project`; it never dynamically installs a missing package.
 
-**Standard dependencies** (always available):
-- pytest
-- pytest-json-ctrf
-- pytest-json-report
-- pytest-timeout
-- jsonschema
-- deepdiff
+### Measurement Globs
+
+Canonical scoring inventories production, generated, and test files.
+`measurement_generated_globs` and `measurement_test_globs` override
+classification with anchored project-relative patterns:
+
+```yaml
+measurement_generated_globs:
+  - "src/generated/**"
+measurement_test_globs:
+  - "tests/**"
+  - "**/test_*.py"
+```
+
+Patterns use relative POSIX paths. Empty paths, absolute paths, backslashes,
+`.` or `..` segments, character classes, and embedded `**` are invalid; `**`
+is supported only as a complete path segment.
 
 ## Checkpoint Configuration
 
@@ -219,7 +253,12 @@ markers:
     group: Functionality
 
 test_dependencies:
-  - "pyyaml>=6.0"
+  - "pyyaml==6.0.2"
+
+measurement_generated_globs:
+  - "src/generated/**"
+measurement_test_globs:
+  - "tests/**"
 
 checkpoints:
   checkpoint_1:

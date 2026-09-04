@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-26
+last_updated: 2026-08-29
 ---
 
 # Run Configuration Guide
@@ -113,7 +113,8 @@ The result is:
 | `assessment_policy` | string | `all-cases` | Strict checkpoint assessment policy |
 | `continue_after_test_failure` | boolean | `false` | Continue later checkpoints after failed assessment |
 | `problems` | list<string> | `[]` | Specific problems to run (otherwise auto-discover) |
-| `save_dir` | string | `outputs` | Base directory for run outputs |
+| `one_shot` | object | disabled | Collapse checkpoints; `prefix` is a Jinja template with `idx` |
+| `save_dir` | string | `experiments` | Base directory for run outputs |
 | `save_template` | string | (template) | Output path template with interpolation |
 
 ### agent
@@ -270,7 +271,7 @@ Base directory for run outputs:
 
 ```yaml
 # Default
-save_dir: outputs
+save_dir: experiments
 
 # Custom directory
 save_dir: /data/experiments
@@ -368,13 +369,13 @@ save_template: ${now:%Y%m%d_%H%M%S}/${model.name}  # -> 20251210_143022/sonnet-4
 ### Default Output Path
 
 ```yaml
-save_dir: outputs
+save_dir: experiments
 save_template: ${model.name}/${agent.type}-${agent.version}_${prompt}_${thinking}_${now:%Y%m%dT%H%M}
 ```
 
 Produces paths like:
-- With version: `outputs/sonnet-4.5/claude_code-2.0.51_just-solve_none_20251210T1430`
-- Without version: `outputs/sonnet-4.5/claude_code_just-solve_none_20251210T1430`
+- With version: `experiments/sonnet-4.5/claude_code-2.0.51_just-solve_none_20251210T1430`
+- Without version: `experiments/sonnet-4.5/claude_code_just-solve_none_20251210T1430`
 
 ## CLI Usage
 
@@ -396,6 +397,7 @@ slop-code run [OPTIONS] [OVERRIDES]...
 | `--problem NAME` | Problem to run (can be repeated) |
 | `--num-workers N` | Number of parallel workers |
 | `--evaluate/--no-evaluate` | Run evaluation after agent |
+| `--concurrent-evaluation/--no-concurrent-evaluation` | Evaluate one checkpoint while the next checkpoint is solved; does not change assessment and cannot stop before the overlapping solve |
 | `--provider-api-key-env VAR` | Override API key environment variable (see [Credentials Guide](../agents/credentials.md)) |
 | `--resume PATH` | Resume from an existing run directory (loads saved config; mutually exclusive with `--config`, `--agent`, `--environment`, `--prompt`, `--model`, and overrides) |
 | `--dry-run` | Preview what would be done without making changes |
@@ -437,7 +439,7 @@ Use `--resume` to continue an interrupted run from a previous checkpoint:
 
 ```bash
 # Resume from a previous run directory
-slop-code run --resume outputs/my_run/opus-4.5/claude_code-2.0.51_just-solve_none_20251210T1430
+slop-code run --resume experiments/my_run/opus-4.5/claude_code-2.0.51_just-solve_none_20251210T1430
 ```
 
 **Key behaviors:**
@@ -485,7 +487,7 @@ thinking: medium
 assessment_policy: all-cases
 continue_after_test_failure: false
 
-save_dir: outputs
+save_dir: experiments
 save_template: ${model.name}/${agent.type}-${agent.version}_${prompt}_${thinking}_${now:%Y%m%dT%H%M}
 ```
 
@@ -573,7 +575,8 @@ class RunConfig(BaseModel):
     assessment_policy: PassPolicy = PassPolicy.ALL_CASES
     continue_after_test_failure: bool = False
     problems: list[str] = []
-    save_dir: str = "outputs"
+    one_shot: OneShotConfig = OneShotConfig()
+    save_dir: str = "experiments"
     save_template: str = "..."
 ```
 
@@ -597,6 +600,7 @@ class ResolvedRunConfig(BaseModel):
     assessment_policy: PassPolicy
     continue_after_test_failure: bool
     problems: list[str]
+    one_shot: OneShotConfig = OneShotConfig()
     save_dir: str
     save_template: str  # Resolved template
     output_path: str  # Combined: save_dir/save_template

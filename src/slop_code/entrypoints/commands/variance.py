@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 import typer
 import yaml
@@ -103,12 +103,12 @@ def _t_crit_95(df: int) -> float:
     return _T_CRIT_95.get(df, 1.96)
 
 
-def _is_number(value: Any) -> bool:
-    if isinstance(value, bool):
-        return False
-    if not isinstance(value, (int, float)):
-        return False
-    return math.isfinite(float(value))
+def _is_number(value: object) -> TypeGuard[int | float]:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, int | float)
+        and math.isfinite(float(value))
+    )
 
 
 def _stats(values: list[float]) -> dict[str, float | int | None]:
@@ -291,9 +291,11 @@ def _metric_value(row: dict[str, Any], name: str) -> float | None:
         loc = row.get("loc")
         if not _is_number(flags) or not _is_number(loc):
             return None
-        if float(loc) <= 0:
+        flags_value = float(flags)
+        loc_value = float(loc)
+        if loc_value <= 0:
             return None
-        return float(flags) / float(loc)
+        return flags_value / loc_value
 
     if name.startswith("tests.") and name.endswith(".pass_rate"):
         bucket = name.split(".")[1]
@@ -305,9 +307,11 @@ def _metric_value(row: dict[str, Any], name: str) -> float | None:
             total = row.get(f"tests.{bucket}.total")
         if not _is_number(passed) or not _is_number(total):
             return None
-        if float(total) <= 0:
+        passed_value = float(passed)
+        total_value = float(total)
+        if total_value <= 0:
             return None
-        return float(passed) / float(total)
+        return passed_value / total_value
 
     value = row.get(name)
     if not _is_number(value):
@@ -323,10 +327,13 @@ def _derived_metric_value(
 
     if derived_name.startswith("total."):
         key = derived_name.removeprefix("total.")
-        values = [row.get(key) for row in rows]
-        if any(not _is_number(v) for v in values):
-            return None
-        return float(sum(float(v) for v in values))
+        values: list[int | float] = []
+        for row in rows:
+            value = row.get(key)
+            if not _is_number(value):
+                return None
+            values.append(value)
+        return float(sum(values))
 
     if derived_name.endswith(".mean_across_checkpoints"):
         metric = derived_name.removesuffix(".mean_across_checkpoints")
@@ -539,8 +546,9 @@ def _compute_problem_cv_summary(
                 stats = _stats(
                     _collect_metric_values(group, problem, checkpoints, metric)
                 )
-                if stats.get("cv") is not None:
-                    overall[problem][label].append(float(stats["cv"]))
+                cv = stats.get("cv")
+                if cv is not None:
+                    overall[problem][label].append(float(cv))
 
                 if first_ck:
                     stats_first = _stats(
@@ -552,8 +560,9 @@ def _compute_problem_cv_summary(
                             only_checkpoint=first_ck,
                         )
                     )
-                    if stats_first.get("cv") is not None:
-                        first[problem][label].append(float(stats_first["cv"]))
+                    cv_first = stats_first.get("cv")
+                    if cv_first is not None:
+                        first[problem][label].append(float(cv_first))
 
                 if final_ck:
                     stats_final = _stats(
@@ -565,8 +574,9 @@ def _compute_problem_cv_summary(
                             only_checkpoint=final_ck,
                         )
                     )
-                    if stats_final.get("cv") is not None:
-                        final[problem][label].append(float(stats_final["cv"]))
+                    cv_final = stats_final.get("cv")
+                    if cv_final is not None:
+                        final[problem][label].append(float(cv_final))
 
     return overall, first, final
 
@@ -637,7 +647,9 @@ def _collect_ci_entries(
         ci_high = record.get(f"{metric}.ci95_high")
         if not _is_number(ci_high):
             continue
-        width = float(ci_high) - float(value)
+        ci_low = float(value)
+        ci_high_value = float(ci_high)
+        width = ci_high_value - ci_low
         if width < min_width:
             continue
 
@@ -645,13 +657,14 @@ def _collect_ci_entries(
         mean = record.get(f"{metric}.mean") or record.get(
             f"{canonical_metric}.mean"
         )
+        mean_value = float(mean) if _is_number(mean) else None
         entries.append(
             ConfidenceIntervalEntry(
                 problem=problem,
                 metric=_format_ci_metric_label(base_metric, derivation),
-                mean=float(mean) if _is_number(mean) else None,
-                ci95_low=float(value),
-                ci95_high=float(ci_high),
+                mean=mean_value,
+                ci95_low=ci_low,
+                ci95_high=ci_high_value,
                 width=width,
                 runs=run_count,
                 group=group_key,
@@ -925,7 +938,7 @@ def variance_report(
         file_okay=False,
     ),
     output_dir: Path = typer.Option(
-        Path("outputs/variance"),
+        Path("experiments/variance"),
         "--output-dir",
         "-o",
         help="Directory to write problem_var.jsonl and checkpoint_var.jsonl.",

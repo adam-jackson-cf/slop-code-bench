@@ -9,7 +9,7 @@ Run benchmark problem tests using the `eval-snapshot` command instead of raw pyt
 
 **Usage**: `/run-tests <snapshot_path> <problem_name> <checkpoint_index>`
 
-**Example**: `/run-tests outputs/run_001/submissions/file_backup/checkpoint_2/snapshot file_backup checkpoint_2`
+**Example**: `/run-tests experiments/run_001/submissions/file_backup/checkpoint_2/snapshot file_backup checkpoint_2`
 
 ---
 

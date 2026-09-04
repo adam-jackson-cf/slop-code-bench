@@ -5,6 +5,8 @@ from __future__ import annotations
 from textwrap import dedent
 from unittest.mock import patch
 
+import pytest
+
 from slop_code.metrics.languages.python.type_check import (
     calculate_type_check_metrics,
 )
@@ -42,14 +44,14 @@ class TestCalculateTypeCheckMetrics:
         assert metrics.errors >= 1
         assert "invalid-assignment" in metrics.counts
 
-    def test_ty_not_available(self, tmp_path):
-        """Gracefully returns empty metrics when ty is not installed."""
+    def test_uv_not_available(self, tmp_path):
+        """Returns empty metrics when the uv executable is unavailable."""
         source = tmp_path / "test.py"
         source.write_text("x = 1\n")
 
         with patch(
-            "slop_code.metrics.languages.python.type_check.subprocess.run",
-            side_effect=FileNotFoundError,
+            "slop_code.metrics.languages.python.type_check._resolve_uv_executable",
+            return_value=None,
         ):
             metrics = calculate_type_check_metrics(source)
 
@@ -57,18 +59,31 @@ class TestCalculateTypeCheckMetrics:
         assert metrics.warnings == 0
         assert metrics.counts == {}
 
+    def test_spawn_error_propagates(self, tmp_path):
+        """Does not mistake a failed process spawn for unavailable uv."""
+        source = tmp_path / "test.py"
+        source.write_text("x = 1\n")
+
+        with (
+            patch(
+                "slop_code.metrics.languages.python.type_check._resolve_uv_executable",
+            ),
+            patch(
+                "slop_code.metrics.languages.python.type_check._run_with_captured_output",
+                side_effect=PermissionError,
+            ),
+            pytest.raises(PermissionError),
+        ):
+            calculate_type_check_metrics(source)
+
     def test_invalid_json_output(self, tmp_path):
         """Gracefully handles malformed ty output."""
         source = tmp_path / "test.py"
         source.write_text("x = 1\n")
 
-        class FakeResult:
-            stdout = "not json at all"
-            returncode = 1
-
         with patch(
-            "slop_code.metrics.languages.python.type_check.subprocess.run",
-            return_value=FakeResult(),
+            "slop_code.metrics.languages.python.type_check._run_with_captured_output",
+            return_value=(1, "not json at all", ""),
         ):
             metrics = calculate_type_check_metrics(source)
 

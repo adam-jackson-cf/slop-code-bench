@@ -167,7 +167,7 @@ def grade_file(
 async def grade_file_async(
     prompt_prefix: str,
     criteria_text: str,
-    file_name: str,
+    file_name: str | None,
     model: str,
     temperature: float = 0.0,
     thinking_tokens: int | None = None,
@@ -181,7 +181,8 @@ async def grade_file_async(
     Args:
         prompt_prefix: Static prompt content (spec + file content) to cache.
         criteria_text: Variable rubric criteria items text.
-        file_name: Name of the file being graded (for result annotation).
+        file_name: File name for single-file results; multi-file responses
+            identify files in their response blocks.
         model: OpenRouter model ID (e.g., "anthropic/claude-3.5-sonnet").
         temperature: Sampling temperature for the model.
         thinking_tokens: Extended thinking token budget (None or 0 to disable).

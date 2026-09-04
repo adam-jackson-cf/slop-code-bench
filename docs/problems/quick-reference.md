@@ -4,14 +4,16 @@ One-page reference for creating pytest-based evaluation problems in SCBench.
 
 ## Minimal Files Required
 
-Every problem needs exactly 4 things:
+Every problem needs exactly 6 things:
 
 1. **`config.yaml`** - Problem metadata and checkpoint definitions
-2. **`checkpoint_N.md`** - Specification for each checkpoint
-3. **`tests/conftest.py`** - Required pytest fixtures
-4. **`tests/test_checkpoint_N.py`** - Test files for each checkpoint
+2. **`pyproject.toml`** - Complete evaluator dependency manifest
+3. **`uv.lock`** - Exact evaluator dependency lock
+4. **`checkpoint_N.md`** - Specification for each checkpoint
+5. **`tests/conftest.py`** - Required pytest fixtures
+6. **`tests/test_checkpoint_N.py`** - Test files for each checkpoint
 
-## 5-Step Problem Creation
+## 6-Step Problem Creation
 
 ```bash
 # 1. Create structure
@@ -34,7 +36,24 @@ checkpoints:
     state: Core Tests
 EOF
 
-# 3. Create conftest.py
+# 3. Create and lock the evaluator project
+cat > problems/my_problem/pyproject.toml << 'EOF'
+[project]
+name = "my-problem-evaluator"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "coverage==7.15.4",
+    "pytest==8.4.1",
+    "pytest-json-ctrf==0.3.5",
+    "pytest-json-report==1.5.0",
+    "pytest-timeout==2.4.0",
+    "ruff==0.8.6",
+]
+EOF
+uv lock --project problems/my_problem
+
+# 4. Create conftest.py
 cat > problems/my_problem/tests/conftest.py << 'EOF'
 import shlex
 import pytest
@@ -52,10 +71,10 @@ def checkpoint_name(request):
     return request.config.getoption("--checkpoint")
 EOF
 
-# 4. Write spec
+# 5. Write spec
 echo "# Checkpoint 1: Build a CLI tool..." > problems/my_problem/checkpoint_1.md
 
-# 5. Write tests
+# 6. Write tests
 # (see test file template below)
 ```
 
@@ -64,6 +83,8 @@ echo "# Checkpoint 1: Build a CLI tool..." > problems/my_problem/checkpoint_1.md
 ```
 problems/my_problem/
 ├── config.yaml              # Problem metadata
+├── pyproject.toml           # Pinned evaluator dependencies
+├── uv.lock                  # Exact evaluator lock
 ├── checkpoint_1.md          # Spec for checkpoint 1
 ├── checkpoint_2.md          # Spec for checkpoint 2
 └── tests/
@@ -279,10 +300,10 @@ markers:
     description: integration tests
     group: FUNCTIONALITY
 
-# Additional pytest dependencies (optional)
+# Problem-specific pytest dependencies (must match pyproject.toml exactly)
 test_dependencies:
-  - pyyaml
-  - requests
+  - "pyyaml==6.0.2"
+  - "requests==2.32.5"
 
 checkpoints:
   checkpoint_1:
@@ -331,11 +352,12 @@ slop-code run \
   --problem my_problem
 
 # Evaluate results
-slop-code eval outputs/<run-directory>/
+slop-code eval experiments/<run-directory>/
 
 # Run tests locally (for development)
 cd problems/my_problem
-pytest tests/ \
+uv sync --frozen --no-install-project
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python main.py" \
   --checkpoint=checkpoint_1 \
   -v

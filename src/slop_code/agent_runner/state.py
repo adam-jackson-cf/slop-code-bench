@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import TypedDict
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -104,6 +105,16 @@ class AgentStats(BaseModel):
         self.cost += cost
 
 
+class AgentStatsDelta(TypedDict):
+    """Per-step changes to agent statistics."""
+
+    cost: float
+    total_tokens: int
+    input_tokens: int
+    generated_tokens: int
+    reasoning_tokens: int
+
+
 class AgentState(BaseModel):
     """Complete state tracking for an agent execution.
 
@@ -140,7 +151,7 @@ class AgentState(BaseModel):
         input_tokens: int = 0,
         generated_tokens: int = 0,
         reasoning_tokens: int = 0,
-    ) -> dict[str, int | float]:
+    ) -> AgentStatsDelta:
         """Calculate delta between new values and current checkpoint stats.
 
         Args:
@@ -170,6 +181,7 @@ class AgentState(BaseModel):
         input_tokens: int = 0,
         generated_tokens: int = 0,
         reasoning_tokens: int = 0,
+        *,
         use_delta: bool = True,
     ) -> None:
         """Update state with new execution step data.

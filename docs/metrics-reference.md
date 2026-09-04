@@ -259,9 +259,108 @@ Checkpoints with zero tests for a type are excluded from that type's average.
 | `cc.high_count`, `cc.high_mean`, `cc.max` | MetricStats | CC stats across checkpoints |
 | `ratios.rubric`, `ratios.lint` | MetricStats | `metric / loc` per checkpoint |
 
-### Composite Scores
+### Canonical Checkpoint Scoring
 
-`verbosity` and `erosion` come directly from the report emitted by the pinned
-`scb-check` release. `scb_check_version` records the release used for each
-successful checkpoint measurement. Both scores are aggregated as `MetricStats`
-over per-checkpoint values.
+`result.json` and checkpoint summaries are descriptive metrics, not score
+authority. Canonical scores are emitted only as a verified published generation
+under `measurement_analysis/`.
+
+#### Components and formulas
+
+For a configured problem with `K_p` checkpoints, `C_p,k` is the canonical
+`passed / total` correctness rate for checkpoint `k`. `V`, `E`, and `H` are
+the means of checkpoint `verbosity`, `erosion`, and `architecture`; `R` and
+`G` are the means of adjacent-transition `rework` and `regression`.
+
+```text
+C_p=sum(C_p,k)/K_p
+I_p=.15V_p+.15E_p+.20H_p+.30R_p+.20G_p
+S_p=100*C_p*(.70+.30*I_p)
+S_b=sum(S_p)/P;C_b=sum(C_p)/P;I_b=sum(I_p)/P
+```
+
+The component weights are `verbosity=0.15`, `erosion=0.15`,
+`architecture=0.20`, `rework=0.30`, and `regression=0.20`. All component
+values are favorable finite values in `[0, 1]`: higher is better. These
+canonical fields are not the similarly named descriptive values in
+`result.json`. Formula arithmetic uses decimal context precision `50` and
+`ROUND_HALF_EVEN`; emitted component values have `0.000000000001` places and
+scores have `0.000001` places.
+
+Each configured problem has at least two checkpoints. Checkpoint component
+evidence covers every configured checkpoint in configured order; `rework` and
+`regression` cover exactly its adjacent transitions. Missing configured problem
+scores contribute zero to `S_b`, `C_b`, and `I_b`. A produced checkpoint must
+have a finite non-negative `cost`; otherwise
+`cost_per_configured_checkpoint` is `null`. Unproduced checkpoints contribute
+zero cost.
+
+#### Published artifacts and eligibility
+
+A published generation is immutable at:
+
+```text
+measurement_analysis/generations/<generation_id>/
+├── <evidence-indexed sidecars>
+├── evidence_index.json
+├── producer_status.json
+├── eligibility.json
+├── problems/<SHA256(UTF-8(exact problem name))>/problem_score.json  # eligible only
+├── benchmark_score.json                # eligible only
+├── checkpoint_report_additions.jsonl   # eligible only
+├── manifest.json
+└── READY
+```
+
+`current.json` is the canonical JSON object `{"generation_id":"<generation_id>"}`
+and is the only current-generation pointer. `evidence_index.json` contains
+ordered `path`, `kind`, `byte_length`, `sha256`, `producer`, and `status`
+entries. `score_evidence.json` contains `problems` and `benchmark`; each problem
+input contains `problem_id`, `checkpoint_ids`, `checkpoint_correctness`,
+`verbosity`, `erosion`, `architecture`, `rework`, and `regression`, while
+`benchmark` contains `configured_problem_ids`,
+`configured_checkpoint_counts`, `costs`, and `run_identity`. `manifest.json`
+contains `kind` (`"benchmark_score_generation"`), `schema_id`, `entries`,
+`eligibility`, `publication_state`, `benchmark`, `ranking_position`, and
+`report_additions`. The generation directory name is the SHA-256 of the final
+canonical `manifest.json` bytes; the manifest does not contain a
+self-referential generation ID. `benchmark_score.json` contains `problems`,
+`benchmark_score`, `correctness`, `inertia`,
+`cost_per_configured_checkpoint`, and `run_identity`; each problem score
+contains `problem_id`, `configured_checkpoints`, `checkpoint_correctness`,
+`components`, and `score`. `components` uses the canonical field names
+`correctness`, `verbosity`, `erosion`, `architecture`, `rework`, `regression`,
+and `inertia`.
+
+Eligibility is `eligible=true` with no `reasons`, or `eligible=false` with
+deduplicated ASCII-sorted `reasons`. The only reason values are
+`canonical_artifact_invalid`, `canonical_provenance_unavailable`,
+`canonical_test_denominator_zero`, `configured_problem_too_short`,
+`coverage_parity_failed`, `coverage_parity_unavailable`,
+`measurement_environment_mismatch`, `production_language_unsupported`,
+`production_source_loc_zero`, `production_symbol_evidence_invalid`,
+`score_evidence_invalid`, and `score_formula_invalid`. Input ineligibility
+publishes an immutable scoreless generation with `eligibility.json`,
+`producer_status.json`, `manifest.json`, and `READY`, then atomically replaces
+`current.json`. Execution failure publishes no generation and leaves the prior
+pointer unchanged.
+
+Publication writes canonical, hash-indexed evidence into staging, verifies the
+score, writes `READY`, atomically renames the completed generation, then
+atomically replaces `current.json`. A failure cleans temporary staging and
+pointer files; before pointer replacement, the prior current generation remains
+current.
+
+#### Consumer behavior
+
+Consumers load only `current.json` through full verification: canonical pointer
+bytes, `READY`, `manifest` kind, `generation_id`, `schema_id`,
+`publication_state == "published"`, eligible `eligibility`, evidence hashes and
+inventory, per-problem scores, and `benchmark_score.json` must all agree.
+Invalid or unavailable generations are omitted from summaries, exports, and
+rankings rather than projected from `result.json`. Dashboard and export
+projections use `benchmark_score`, `correctness`, `inertia`,
+`cost_per_configured_checkpoint`, `run_identity`, problem `score`, and the
+canonical component fields. Ranking is
+`benchmark_score:desc`, `correctness:desc`, `inertia:desc`,
+`cost:nulls_last_asc`, `run_identity:asc`.

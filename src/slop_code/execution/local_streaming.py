@@ -25,6 +25,10 @@ from slop_code.execution.runtime import SolutionRuntimeError
 from slop_code.execution.stream_processor import process_stream
 from slop_code.logging import get_logger
 
+# Commands are tokenized into argv and never executed through a shell.
+_spawn_argv_process = subprocess.Popen
+_run_argv_process = subprocess.run
+
 logger = get_logger(__name__)
 
 
@@ -35,7 +39,7 @@ class LocalEnvironmentSpec(EnvironmentSpec):
         local: Local execution-specific configuration
     """
 
-    type: Literal["local"] = "local"  # type: ignore[assignment]
+    type: Literal["local"] = "local"
     local: LocalConfig = Field(
         default_factory=LocalConfig,
         description="Local execution-specific configuration.",
@@ -86,11 +90,11 @@ class LocalStreamingRuntime(StreamingRuntime):
         self._mounts = mounts or {}
         self._env_vars = env_vars or {}
         self._is_evaluation = is_evaluation
-        self._proc: subprocess.Popen | None = None
+        self._proc: subprocess.Popen[str] | None = None
         self.cwd = working_dir
 
     @property
-    def process(self) -> subprocess.Popen:
+    def process(self) -> subprocess.Popen[str]:
         """Get the current subprocess instance."""
         if self._proc is None:
             raise SolutionRuntimeError("Process not running")
@@ -100,7 +104,7 @@ class LocalStreamingRuntime(StreamingRuntime):
         self,
         command: str,
         env: dict[str, str],
-    ) -> subprocess.Popen:
+    ) -> subprocess.Popen[str]:
         """Start a subprocess for the given command.
 
         Args:
@@ -123,7 +127,7 @@ class LocalStreamingRuntime(StreamingRuntime):
 
         cmd_args = shlex.split(command)
 
-        self._proc = subprocess.Popen(
+        self._proc = _spawn_argv_process(
             cmd_args,
             env=self.spec.get_full_env(env),
             stdin=None,
@@ -134,25 +138,35 @@ class LocalStreamingRuntime(StreamingRuntime):
             encoding="utf-8",
             errors="replace",
             bufsize=0,
+            shell=False,
         )
         return self._proc
 
     def _create_demuxed_stream(
-        self, proc: subprocess.Popen
+        self, proc: subprocess.Popen[str]
     ) -> Iterator[tuple[str, str]]:
         """Create a demuxed stream from stdout/stderr.
 
         Yields:
             Tuples of (stdout_chunk, stderr_chunk)
         """
+        stdout = proc.stdout
+        stderr = proc.stderr
+        if stdout is None or stderr is None:
+            raise SolutionRuntimeError("Process missing output pipes")
+
         sel = selectors.DefaultSelector()
-        sel.register(proc.stdout, selectors.EVENT_READ, data="OUT")
-        sel.register(proc.stderr, selectors.EVENT_READ, data="ERR")
+        sel.register(stdout, selectors.EVENT_READ, data="OUT")
+        sel.register(stderr, selectors.EVENT_READ, data="ERR")
 
         try:
             while sel.get_map():
                 for key, _ in sel.select():
-                    chunk = key.fileobj.read(8192)
+                    chunk = (
+                        stdout.read(8192)
+                        if key.data == "OUT"
+                        else stderr.read(8192)
+                    )
                     if not chunk:
                         sel.unregister(key.fileobj)
                         continue
@@ -161,6 +175,7 @@ class LocalStreamingRuntime(StreamingRuntime):
                     else:
                         yield ("", chunk)
         finally:
+            sel.close()
             if proc.stdout:
                 proc.stdout.close()
             if proc.stderr:
@@ -292,7 +307,9 @@ class LocalStreamingRuntime(StreamingRuntime):
 
         # Run setup commands if not disabled
         if not disable_setup:
-            setup_commands = environment.get_setup_commands(is_evaluation)
+            setup_commands = environment.get_setup_commands(
+                is_evaluation=is_evaluation
+            )
             if setup_command:
                 setup_commands.append(setup_command)
             logger.debug(
@@ -303,12 +320,13 @@ class LocalStreamingRuntime(StreamingRuntime):
             )
             for cmd in setup_commands:
                 # Execute setup commands synchronously
-                proc = subprocess.run(
-                    shlex.split(cmd),
+                proc = _run_argv_process(
+                    ["/bin/sh", "-c", cmd],
                     cwd=working_dir,
                     env=environment.get_full_env(env_vars or {}),
                     capture_output=True,
                     text=True,
+                    shell=False,
                 )
                 if proc.returncode != 0:
                     logger.warning(

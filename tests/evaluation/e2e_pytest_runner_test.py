@@ -10,8 +10,13 @@ unavailable.
 import shutil
 from pathlib import Path
 
+import docker
 import pytest
+from docker.errors import DockerException
+from requests.exceptions import RequestException
 
+from slop_code.common.constants import EVALUATOR_ENVIRONMENTS_DIR
+from slop_code.evaluation.collection import collect_checkpoint_tc
 from slop_code.evaluation.config import ProblemConfig
 from slop_code.evaluation.pytest_runner import run_checkpoint_pytest
 from slop_code.evaluation.report import GroupType
@@ -25,12 +30,10 @@ SUBMISSION_DIR = FIXTURES_DIR / "submission"
 def docker_available() -> bool:
     """Check if Docker is available and running."""
     try:
-        import docker
-
         client = docker.from_env()
         client.ping()
         return True
-    except Exception:
+    except (DockerException, RequestException):
         return False
 
 
@@ -72,27 +75,30 @@ class TestPytestRunnerE2ECheckpoint1:
             problem=problem_config,
             checkpoint=checkpoint,
             env_spec=docker_environment_spec,
+            evaluator_environment_parent=(
+                submission_path.parent / "measurement_analysis"
+            ),
         )
 
         # Should have collected tests
         assert results.pytest_collected > 0, "No tests were collected"
 
         # Should not have infrastructure failure
-        assert not results.infrastructure_failure, (
-            f"Infrastructure failure: exit_code={results.pytest_exit_code}"
-        )
+        assert (
+            not results.infrastructure_failure
+        ), f"Infrastructure failure: exit_code={results.pytest_exit_code}"
 
         # Should have CORE tests
-        assert results.total_counts.get(GroupType.CORE, 0) > 0, (
-            "No CORE tests found"
-        )
+        assert (
+            results.total_counts.get(GroupType.CORE, 0) > 0
+        ), "No CORE tests found"
 
         # All CORE tests should pass
         core_passed = results.pass_counts.get(GroupType.CORE, 0)
         core_total = results.total_counts.get(GroupType.CORE, 0)
-        assert core_passed == core_total, (
-            f"CORE tests failed: {core_passed}/{core_total} passed"
-        )
+        assert (
+            core_passed == core_total
+        ), f"CORE tests failed: {core_passed}/{core_total} passed"
 
         # Should pass core policy
         assert results.passes_policy("core-cases"), "Failed core-cases policy"
@@ -115,15 +121,18 @@ class TestPytestRunnerE2ECheckpoint2:
             problem=problem_config,
             checkpoint=checkpoint,
             env_spec=docker_environment_spec,
+            evaluator_environment_parent=(
+                submission_path.parent / "measurement_analysis"
+            ),
         )
 
         # Should have collected tests
         assert results.pytest_collected > 0, "No tests were collected"
 
         # Should not have infrastructure failure
-        assert not results.infrastructure_failure, (
-            f"Infrastructure failure: exit_code={results.pytest_exit_code}"
-        )
+        assert (
+            not results.infrastructure_failure
+        ), f"Infrastructure failure: exit_code={results.pytest_exit_code}"
 
         # Should have CORE tests (including regression from checkpoint_1)
         core_total = results.total_counts.get(GroupType.CORE, 0)
@@ -131,9 +140,9 @@ class TestPytestRunnerE2ECheckpoint2:
 
         # All CORE tests should pass
         core_passed = results.pass_counts.get(GroupType.CORE, 0)
-        assert core_passed == core_total, (
-            f"CORE tests failed: {core_passed}/{core_total} passed"
-        )
+        assert (
+            core_passed == core_total
+        ), f"CORE tests failed: {core_passed}/{core_total} passed"
 
         # Should pass core policy
         assert results.passes_policy("core-cases"), "Failed core-cases policy"
@@ -152,6 +161,9 @@ class TestPytestRunnerE2ECheckpoint2:
             problem=problem_config,
             checkpoint=checkpoint,
             env_spec=docker_environment_spec,
+            evaluator_environment_parent=(
+                submission_path.parent / "measurement_analysis"
+            ),
         )
 
         # Count tests from each checkpoint by looking at test IDs
@@ -163,12 +175,12 @@ class TestPytestRunnerE2ECheckpoint2:
         ]
 
         # Should have tests from both checkpoints
-        assert len(checkpoint_1_tests) > 0, (
-            "No tests from checkpoint_1 were run"
-        )
-        assert len(checkpoint_2_tests) > 0, (
-            "No tests from checkpoint_2 were run"
-        )
+        assert (
+            len(checkpoint_1_tests) > 0
+        ), "No tests from checkpoint_1 were run"
+        assert (
+            len(checkpoint_2_tests) > 0
+        ), "No tests from checkpoint_2 were run"
 
 
 class TestPytestRunnerE2EStaticAssets:
@@ -182,9 +194,9 @@ class TestPytestRunnerE2EStaticAssets:
     ):
         """Test that static assets are correctly passed to tests."""
         # The word_stats problem has a 'stopwords' static asset
-        assert "stopwords" in problem_config.static_assets, (
-            "stopwords asset not found in problem config"
-        )
+        assert (
+            "stopwords" in problem_config.static_assets
+        ), "stopwords asset not found in problem config"
 
         checkpoint = problem_config.load_checkpoint("checkpoint_2")
 
@@ -193,6 +205,9 @@ class TestPytestRunnerE2EStaticAssets:
             problem=problem_config,
             checkpoint=checkpoint,
             env_spec=docker_environment_spec,
+            evaluator_environment_parent=(
+                submission_path.parent / "measurement_analysis"
+            ),
         )
 
         # Tests that use stopwords should pass
@@ -202,17 +217,86 @@ class TestPytestRunnerE2EStaticAssets:
         ]
 
         # Should have some stopword-related tests
-        assert len(stopword_tests) > 0, (
-            "No stopword tests found - static assets may not be working"
-        )
+        assert (
+            len(stopword_tests) > 0
+        ), "No stopword tests found - static assets may not be working"
 
         # Stopword tests should pass (not skip)
         passed_stopword_tests = [
             t for t in stopword_tests if t.status == "passed"
         ]
-        assert len(passed_stopword_tests) > 0, (
-            f"Stopword tests did not pass: {[t.status for t in stopword_tests]}"
+        assert (
+            len(passed_stopword_tests) > 0
+        ), f"Stopword tests did not pass: {[t.status for t in stopword_tests]}"
+
+
+class TestPytestRunnerE2ELockedEvaluator:
+    """E2E tests for the immutable evaluator environment."""
+
+    def test_execution_and_collection_reuse_locked_evaluator(
+        self,
+        problem_config: ProblemConfig,
+        submission_path: Path,
+        docker_environment_spec,
+    ):
+        """Run evaluator execution then collection without mutating inputs."""
+        checkpoint = problem_config.load_checkpoint("checkpoint_2")
+        immutable_inputs = {
+            path: path.read_bytes()
+            for path in (
+                submission_path / "main.py",
+                PROBLEM_DIR / "pyproject.toml",
+                PROBLEM_DIR / "uv.lock",
+                PROBLEM_DIR / "static" / "stopwords.txt",
+            )
+        }
+
+        results = run_checkpoint_pytest(
+            submission_path=submission_path,
+            problem=problem_config,
+            checkpoint=checkpoint,
+            env_spec=docker_environment_spec,
+            evaluator_environment_parent=(
+                submission_path.parent / "measurement_analysis"
+            ),
         )
+        assert not results.infrastructure_failure
+
+        environments = (
+            submission_path.parent
+            / "measurement_analysis"
+            / EVALUATOR_ENVIRONMENTS_DIR
+        )
+        canonical_environment = next(
+            path
+            for path in environments.iterdir()
+            if path.is_dir() and path.name != "locks"
+        )
+        canonical_environment_inode = canonical_environment.stat().st_ino
+
+        collection = collect_checkpoint_tc(
+            submission_path=submission_path,
+            problem=problem_config,
+            checkpoint=checkpoint,
+            env_spec=docker_environment_spec,
+            evaluator_environment_parent=(
+                submission_path.parent / "measurement_analysis"
+            ),
+        )
+
+        assert not collection.infrastructure_failure
+        assert collection.total_collected > 0
+        assert [
+            path
+            for path in environments.iterdir()
+            if path.is_dir() and path.name != "locks"
+        ] == [canonical_environment]
+        assert (
+            canonical_environment.stat().st_ino == canonical_environment_inode
+        )
+        assert {
+            path: path.read_bytes() for path in immutable_inputs
+        } == immutable_inputs
 
 
 class TestPytestRunnerE2EMarkers:
@@ -232,6 +316,9 @@ class TestPytestRunnerE2EMarkers:
             problem=problem_config,
             checkpoint=checkpoint,
             env_spec=docker_environment_spec,
+            evaluator_environment_parent=(
+                submission_path.parent / "measurement_analysis"
+            ),
         )
 
         # Should have some FUNCTIONALITY tests
@@ -240,9 +327,9 @@ class TestPytestRunnerE2EMarkers:
         )
 
         # The test_checkpoint_2.py has @pytest.mark.functionality tests
-        assert functionality_total > 0, (
-            "No FUNCTIONALITY tests found - marker handling may be broken"
-        )
+        assert (
+            functionality_total > 0
+        ), "No FUNCTIONALITY tests found - marker handling may be broken"
 
         # Functionality tests should be tracked separately from CORE
         core_total = results.total_counts.get(GroupType.CORE, 0)
@@ -250,6 +337,6 @@ class TestPytestRunnerE2EMarkers:
 
         # Total should be more than just CORE (has FUNCTIONALITY too)
         total_tests = sum(results.total_counts.values())
-        assert total_tests > core_total, (
-            "Only CORE tests found, expected FUNCTIONALITY tests too"
-        )
+        assert (
+            total_tests > core_total
+        ), "Only CORE tests found, expected FUNCTIONALITY tests too"

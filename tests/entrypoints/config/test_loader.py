@@ -384,10 +384,10 @@ problems:
         """Test that save_dir and save_template are set with defaults."""
         config = load_run_config()
 
-        assert config.save_dir == "outputs"
+        assert config.save_dir == "experiments"
         # Template should be resolved (no ${} remaining)
         assert "${" not in config.save_template
-        assert config.output_path.startswith("outputs/")
+        assert config.output_path.startswith("experiments/")
 
     def test_agent_version_in_output_path(self):
         """Test that agent version appears in output path when present."""
@@ -431,12 +431,12 @@ agent:
         assert "simple/" in config.output_path
         assert "sonnet-4.5" in config.output_path
 
-    def test_save_dir_cli_override(self):
+    def test_save_dir_cli_override(self, tmp_path):
         """Test overriding save_dir via CLI override."""
-        config = load_run_config(cli_overrides=["save_dir=/tmp/test"])
+        config = load_run_config(cli_overrides=[f"save_dir={tmp_path}"])
 
-        assert config.save_dir == "/tmp/test"
-        assert config.output_path.startswith("/tmp/test/")
+        assert config.save_dir == str(tmp_path)
+        assert config.output_path.startswith(f"{tmp_path}/")
 
     def test_empty_save_dir(self, tmp_path):
         """Test that empty save_dir produces path without leading slash."""

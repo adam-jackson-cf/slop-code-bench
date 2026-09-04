@@ -19,6 +19,7 @@ from slop_code.entrypoints import utils
 from slop_code.entrypoints.commands import common
 from slop_code.entrypoints.config import loader as config_loader
 from slop_code.evaluation import ProblemConfig
+from slop_code.execution import LocalEnvironmentSpec
 from slop_code.execution import docker_runtime
 from slop_code.logging import get_logger
 from slop_code.logging import setup_logging
@@ -103,16 +104,21 @@ def infer_problem(
         "--assessment-policy",
         help="Policy used to assess whether a checkpoint passed",
     ),
-    continue_after_test_failure: bool = typer.Option(  # noqa: FBT001
-        False,  # noqa: FBT003
-        "--continue-after-test-failure/--stop-after-test-failure",
-        help="Continue to later checkpoints after a failed assessment",
-    ),
-    evaluate: bool = typer.Option(
-        True,
-        "--evaluate/--no-evaluate",
-        help="Whether to run evaluation",
-    ),
+    *,
+    continue_after_test_failure: Annotated[
+        bool,
+        typer.Option(
+            "--continue-after-test-failure/--stop-after-test-failure",
+            help="Continue to later checkpoints after a failed assessment",
+        ),
+    ] = False,
+    evaluate: Annotated[
+        bool,
+        typer.Option(
+            "--evaluate/--no-evaluate",
+            help="Whether to run evaluation",
+        ),
+    ] = True,
 ) -> None:
     """Run inference on a single problem."""
     # Validate mutual exclusion of thinking options
@@ -182,6 +188,11 @@ def infer_problem(
             f"Using provider API key env override: {provider_api_key_env}"
         )
     env_spec = config_loader.resolve_environment(environment_config_path)
+    if not isinstance(
+        env_spec,
+        LocalEnvironmentSpec | docker_runtime.DockerEnvironmentSpec,
+    ):
+        raise RuntimeError("Resolved environment has an unsupported type")
     prompt_template = prompt_template_path.read_text(encoding="utf-8")
     save_dir = output_path / problem_name
     if save_dir.exists():

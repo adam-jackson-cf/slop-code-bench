@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import docker
 import pytest
+from docker.errors import DockerException
+from requests.exceptions import RequestException
 
 
 def is_docker_available() -> bool:
@@ -17,7 +19,7 @@ def is_docker_available() -> bool:
         client.ping()
         client.close()
         return True
-    except Exception:
+    except (DockerException, RequestException):
         return False
 
 

@@ -120,7 +120,7 @@ class TestLocalStreamingRuntimeSpawn:
             name="test",
             commands=CommandConfig(command="python"),
             setup=SetupConfig(
-                commands=[f"touch {marker_file}"],
+                commands=[f"printf ready > {marker_file}"],
             ),
         )
 
@@ -129,7 +129,7 @@ class TestLocalStreamingRuntimeSpawn:
             working_dir=tmp_path,
         )
 
-        assert marker_file.exists()
+        assert marker_file.read_text() == "ready"
 
     def test_spawn_with_disable_setup(self, tmp_path: Path) -> None:
         """Spawn skips setup commands when disable_setup=True."""

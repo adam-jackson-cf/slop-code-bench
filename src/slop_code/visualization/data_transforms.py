@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-import pandas as pd
 from plotly.colors import qualitative
+
+if TYPE_CHECKING:
+    import pandas as pd
+
 
 from slop_code.visualization.constants import MODEL_DISPLAY_NAMES
 from slop_code.visualization.constants import VERSION_COLORS

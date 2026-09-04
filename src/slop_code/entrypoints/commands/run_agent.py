@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import cast
+from typing import Annotated, cast
 
 import typer
 import yaml
+from pydantic import TypeAdapter
+from pydantic import ValidationError
 from rich.console import Console
 
 from slop_code import problem_catalog
-from slop_code.agent_runner.agent import AgentConfigBase
+from slop_code.agent_runner.agents import AgentConfigType
 from slop_code.agent_runner.credentials import API_KEY_STORE
 from slop_code.agent_runner.credentials import CredentialNotFoundError
 from slop_code.agent_runner.credentials import ProviderCredential
-from slop_code.agent_runner.registry import build_agent_config
 from slop_code.agent_runner.resume import detect_resume_point
 from slop_code.common import CHECKPOINT_RESULTS_FILENAME
 from slop_code.common import CONFIG_FILENAME
@@ -32,12 +33,16 @@ from slop_code.entrypoints.config.loader import load_config_from_run_dir
 from slop_code.entrypoints.evaluation.metrics import update_results_jsonl
 from slop_code.entrypoints.utils import count_expected_checkpoints
 from slop_code.entrypoints.utils import display_and_save_summary
+from slop_code.evaluation import ConfigError
 from slop_code.evaluation import ProblemConfig
 from slop_code.execution import EnvironmentSpecType
 from slop_code.execution import docker_runtime
 from slop_code.logging import get_logger
+from slop_code.metrics import MetricsError
+from slop_code.metrics.scoring import finalize_benchmark_score
 
 logger = get_logger(__name__)
+_AGENT_CONFIG_ADAPTER = TypeAdapter(AgentConfigType)
 
 
 def _get_nested(data: dict[str, object], path: str) -> object | None:
@@ -209,7 +214,14 @@ def _check_problem_needs_rerun(
     # Load problem config for checkpoint validation
     try:
         problem_config = ProblemConfig.from_yaml(problem_path)
-    except Exception as exc:  # noqa: BLE001
+    except (
+        ConfigError,
+        OSError,
+        TypeError,
+        ValueError,
+        yaml.YAMLError,
+        ValidationError,
+    ) as exc:
         logger.warning(
             "Failed to load problem config",
             problem=problem_name,
@@ -258,6 +270,7 @@ def _filter_problems_for_execution(
     *,
     overwrite: bool,
     resume: bool,
+    clear_outputs: bool,
 ) -> tuple[list[str], list[str], dict[str, str]]:
     """Filter problems based on completion status and prompt changes.
 
@@ -272,6 +285,7 @@ def _filter_problems_for_execution(
         environment: Current environment spec
         overwrite: If True, rerun all problems regardless of state
         resume: If True, preserve partial checkpoint outputs
+        clear_outputs: If True, remove invalid outputs before execution
 
     Returns:
         Tuple of (problems_to_run, skipped_problems, rerun_reasons)
@@ -279,8 +293,9 @@ def _filter_problems_for_execution(
     """
     if overwrite:
         # Clear all outputs and rerun everything
-        for p in problem_names:
-            _clear_problem_outputs(run_dir, p)
+        if clear_outputs:
+            for p in problem_names:
+                _clear_problem_outputs(run_dir, p)
         return list(problem_names), [], {}
 
     to_run: list[str] = []
@@ -299,7 +314,7 @@ def _filter_problems_for_execution(
             to_run.append(p)
             if reason:
                 rerun_reasons[p] = reason
-            if not resume:
+            if clear_outputs and not resume:
                 _clear_problem_outputs(run_dir, p)
         else:
             skipped.append(p)
@@ -399,7 +414,7 @@ def _resolve_environment_and_credentials(
     return env_spec_typed, model_def, credential
 
 
-def _build_agent_config(run_cfg: ResolvedRunConfig) -> AgentConfigBase:
+def _build_agent_config(run_cfg: ResolvedRunConfig) -> AgentConfigType:
     """Build agent configuration from resolved run config.
 
     Args:
@@ -412,7 +427,7 @@ def _build_agent_config(run_cfg: ResolvedRunConfig) -> AgentConfigBase:
         Always uses run_cfg.agent which already has CLI overrides applied,
         rather than re-loading from the file path.
     """
-    return build_agent_config(run_cfg.agent)
+    return _AGENT_CONFIG_ADAPTER.validate_python(run_cfg.agent)
 
 
 def _discover_problems(problem_path: Path) -> list[str]:
@@ -428,7 +443,14 @@ def _discover_problems(problem_path: Path) -> list[str]:
     for problem in problem_catalog.discover_problem_dirs(problem_path):
         try:
             cfg = ProblemConfig.from_yaml(problem)
-        except Exception as exc:  # noqa: BLE001
+        except (
+            ConfigError,
+            OSError,
+            TypeError,
+            ValueError,
+            yaml.YAMLError,
+            ValidationError,
+        ) as exc:
             logger.error(
                 "Problem config not valid",
                 problem=problem.name,
@@ -506,7 +528,14 @@ def _preview_dry_run(
         full_problem_path = problem_path / problem_name
         try:
             problem_config = ProblemConfig.from_yaml(full_problem_path)
-        except Exception as exc:  # noqa: BLE001
+        except (
+            ConfigError,
+            OSError,
+            TypeError,
+            ValueError,
+            yaml.YAMLError,
+            ValidationError,
+        ) as exc:
             typer.echo(
                 typer.style(
                     f"\n{problem_name}: Failed to load config - {exc}",
@@ -580,7 +609,7 @@ def _preview_dry_run(
 def _prepare_run_artifacts(
     run_dir: Path,
     env_spec: EnvironmentSpecType,
-    agent_config: AgentConfigBase,
+    agent_config: AgentConfigType,
     run_cfg: ResolvedRunConfig,
     catalog_manifest: problem_catalog.CatalogManifest,
 ) -> str:
@@ -676,11 +705,9 @@ def _resolve_problem_names(
     """
     if cli_problem_names:
         if is_resuming:
-            # When resuming, merge CLI problems with saved config
-            merged = list(config_problems)
-            for p in cli_problem_names:
-                if p not in merged:
-                    merged.append(p)
+            # Preserve the configured order so duplicate canonical names can be
+            # rejected after resolution instead of silently being removed.
+            merged = [*config_problems, *cli_problem_names]
             if merged != list(config_problems):
                 typer.echo(
                     typer.style(
@@ -702,16 +729,38 @@ def _resolve_problem_names(
     return []
 
 
+def _validate_unique_problem_names(problem_names: list[str]) -> None:
+    """Reject repeated canonical problem names without changing their order."""
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for problem_name in problem_names:
+        if problem_name in seen and problem_name not in duplicates:
+            duplicates.append(problem_name)
+        seen.add(problem_name)
+
+    if duplicates:
+        typer.echo(
+            typer.style(
+                f"Duplicate problem name(s): {', '.join(duplicates)}",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+        )
+        raise typer.Exit(1)
+
+
 def _resolve_output_directory(
     config_output_path: str,
+    *,
     debug: bool,
+    create: bool = True,
 ) -> tuple[Path, bool]:
     """Resolve and prepare output directory.
 
     Args:
         config_output_path: Output path from config
         debug: If True, prepend DEBUG_ prefix
-
+        create: If True, create the resolved directory
     Returns:
         Tuple of (run_dir, preexisted) where preexisted indicates
         if the directory existed before creation.
@@ -732,7 +781,8 @@ def _resolve_output_directory(
             f"Output directory: {run_dir}", fg=typer.colors.GREEN, bold=True
         )
     )
-    run_dir = utils.ensure_dir_exists(run_dir, create=True)
+    if create:
+        run_dir = utils.ensure_dir_exists(run_dir, create=True)
     return run_dir, preexisted
 
 
@@ -740,6 +790,7 @@ def _handle_resume_validation(
     run_dir: Path,
     run_cfg: ResolvedRunConfig,
     env_spec: EnvironmentSpecType,
+    *,
     resume: bool,
     overwrite: bool,
 ) -> None:
@@ -778,6 +829,7 @@ def _handle_early_completion(
     run_dir: Path,
     problems_base_path: Path,
     console: Console,
+    *,
     evaluate: bool,
     requested: list[str],
 ) -> bool:
@@ -810,8 +862,45 @@ def _handle_early_completion(
             problems_base_path=problems_base_path,
             problem_names=requested,
             console=console,
+            render_summary=False,
         )
+        score = finalize_benchmark_score(
+            run_dir, _load_score_problem_configs(problems_base_path, requested)
+        )
+        _create_checkpoint_results_and_summary(
+            run_dir=run_dir,
+            problems_base_path=problems_base_path,
+            problem_names=requested,
+            console=console,
+        )
+        if score is not None:
+            typer.echo(
+                typer.style(
+                    "Benchmark score finalized and verified.",
+                    fg=typer.colors.GREEN,
+                    bold=True,
+                )
+            )
+        else:
+            logger.info(
+                "Benchmark scoring finalized without publication",
+                run_directory=str(run_dir),
+            )
     return True
+
+
+def _load_score_problem_configs(
+    problems_base_path: Path, problem_names: list[str]
+) -> tuple[ProblemConfig, ...]:
+    """Load the configured problems once in their configured order for scoring."""
+    problems = tuple(
+        ProblemConfig.from_yaml(problems_base_path / problem_name)
+        for problem_name in problem_names
+    )
+    names = tuple(problem.name for problem in problems)
+    if len(set(names)) != len(names):
+        raise ValueError("configured problem names must be unique")
+    return problems
 
 
 def _validate_resume_flags(
@@ -873,18 +962,18 @@ def _create_task_config(
     problem_base_path: Path,
     run_dir: Path,
     env_spec: EnvironmentSpecType,
-    agent_config: AgentConfigBase,
+    agent_config: AgentConfigType,
     model_def: ModelDefinition,
     credential: ProviderCredential,
     run_cfg: ResolvedRunConfig,
-    seed: int | None,
+    seed: int,
     verbosity: int,
+    *,
     debug: bool,
     evaluate: bool,
     live_progress: bool,
     image_name: str,
     resume: bool,
-    *,
     concurrent_evaluation: bool = False,
 ) -> problem_runner.RunTaskConfig:
     """Create task configuration for problem execution.
@@ -995,6 +1084,8 @@ def _create_checkpoint_results_and_summary(
     problems_base_path: Path,
     problem_names: list[str],
     console: Console,
+    *,
+    render_summary: bool = True,
 ) -> None:
     """Generate checkpoint_results.jsonl and a run summary."""
     problems_to_process = {
@@ -1018,7 +1109,14 @@ def _create_checkpoint_results_and_summary(
         problem_dir = run_dir / problem_name
         try:
             problem = ProblemConfig.from_yaml(problems_base_path / problem_name)
-        except Exception as exc:  # noqa: BLE001
+        except (
+            ConfigError,
+            OSError,
+            TypeError,
+            ValueError,
+            yaml.YAMLError,
+            ValidationError,
+        ) as exc:
             logger.warning(
                 "Skipping checkpoint report generation for problem",
                 problem=problem_name,
@@ -1030,7 +1128,7 @@ def _create_checkpoint_results_and_summary(
             reports, _ = evaluation_entry.create_problem_reports(
                 problem_dir, problem
             )
-        except Exception as exc:  # noqa: BLE001
+        except (MetricsError, OSError, yaml.YAMLError) as exc:
             logger.warning(
                 "Failed to create checkpoint reports",
                 problem=problem_name,
@@ -1039,7 +1137,6 @@ def _create_checkpoint_results_and_summary(
             continue
 
         all_reports.extend(reports)
-
     if all_reports:
         update_results_jsonl(results_file, all_reports)
         logger.info(
@@ -1053,18 +1150,25 @@ def _create_checkpoint_results_and_summary(
             run_directory=str(run_dir),
         )
 
-    with (run_dir / CONFIG_FILENAME).open("r") as f:
-        config = yaml.safe_load(f)
-    expected_checkpoints = count_expected_checkpoints(
-        config, problems_base_path
-    )
-    display_and_save_summary(
-        results_file, run_dir, config, console, expected_checkpoints
-    )
+    if render_summary:
+        with (run_dir / CONFIG_FILENAME).open("r") as f:
+            config = yaml.safe_load(f)
+        expected_checkpoints = count_expected_checkpoints(
+            config, problems_base_path
+        )
+        display_and_save_summary(
+            results_file, run_dir, config, console, expected_checkpoints
+        )
 
 
 def run_agent(
     ctx: typer.Context,
+    # Config overrides via positional arguments
+    overrides: list[str] | None = typer.Argument(
+        None,
+        help="Config overrides in key=value format (e.g., thinking=medium model.name=opus-4)",
+    ),
+    *,
     # Config file (optional)
     config: Path | None = typer.Option(
         None,
@@ -1115,40 +1219,42 @@ def run_agent(
         "-n",
         help="Number of parallel workers for running problems",
     ),
-    evaluate: bool = typer.Option(  # noqa: FBT001, FBT002
-        True,  # noqa: FBT003
-        "--evaluate/--no-evaluate",
-        help="Whether to run evaluation",
-    ),
-    concurrent_evaluation: bool = typer.Option(  # noqa: FBT001, FBT002
-        False,  # noqa: FBT003
-        "--concurrent-evaluation/--no-concurrent-evaluation",
-        help="Evaluate each checkpoint concurrently with the next "
-        "checkpoint's solve (at most one solve + one eval at a time) so eval "
-        "doesn't block progress. Scores unchanged for the ANY_CASE pass "
-        "policy; cannot early-stop on test failures.",
-    ),
-    live_progress: bool = typer.Option(  # noqa: FBT001, FBT002
-        True,  # noqa: FBT003
-        "--live-progress/--no-live-progress",
-        help="Whether to show live progress",
-    ),
+    evaluate: Annotated[
+        bool,
+        typer.Option(
+            "--evaluate/--no-evaluate", help="Whether to run evaluation"
+        ),
+    ] = True,
+    concurrent_evaluation: Annotated[
+        bool,
+        typer.Option(
+            "--concurrent-evaluation/--no-concurrent-evaluation",
+            help="Evaluate each checkpoint concurrently with the next "
+            "checkpoint's solve (at most one solve + one eval at a time) so eval "
+            "doesn't block progress. Scores unchanged for the ANY_CASE pass "
+            "policy; cannot early-stop on test failures.",
+        ),
+    ] = False,
+    live_progress: Annotated[
+        bool,
+        typer.Option(
+            "--live-progress/--no-live-progress",
+            help="Whether to show live progress",
+        ),
+    ] = True,
     resume: Path | None = typer.Option(
         None,
         "--resume",
         help="Resume from an existing run directory (loads saved config). "
         "Cannot be used with --config, --agent, --environment, --prompt, --model, or config overrides.",
     ),
-    dry_run: bool = typer.Option(  # noqa: FBT001, FBT002
-        False,  # noqa: FBT003
-        "--dry-run",
-        help="Preview what would be done without making changes (use with --resume)",
-    ),
-    # Config overrides via positional arguments
-    overrides: list[str] | None = typer.Argument(
-        None,
-        help="Config overrides in key=value format (e.g., thinking=medium model.name=opus-4)",
-    ),
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Preview what would be done without making changes (use with --resume)",
+        ),
+    ] = False,
 ) -> None:
     """Run the agent with unified config system.
 
@@ -1166,10 +1272,10 @@ def run_agent(
         slop-code run --model anthropic/sonnet-4.5 thinking=medium assessment_policy=all-cases
 
         # Resume from an existing run directory (loads saved config)
-        slop-code run --resume outputs/sonnet-4/my-run/
+        slop-code run --resume experiments/sonnet-4/my-run/
 
         # Resume with different worker count
-        slop-code run --resume outputs/my-run/ --num-workers 4
+        slop-code run --resume experiments/my-run/ --num-workers 4
     """
     # 0. Validate --resume is not combined with conflicting options
     _validate_resume_flags(
@@ -1184,6 +1290,8 @@ def run_agent(
 
     # Track if we're in resume mode for later use
     is_resuming = resume is not None
+    run_dir: Path | None = None
+    run_dir_preexisted: bool | None = None
 
     # 1. Load config - either from run directory or via normal config loading
     if resume is not None:
@@ -1231,18 +1339,16 @@ def run_agent(
 
         run_cfg = _load_and_validate_run_config(config, cli_flags, overrides)
 
-        # Resolve output directory
-        run_dir, run_dir_preexisted = _resolve_output_directory(
-            run_cfg.output_path, ctx.obj.debug
-        )
-
     # 2. Resolve managed problem catalog
     try:
         scbench_home = Path(ctx.obj.scbench_home)
         if is_resuming:
+            if run_dir is None:
+                raise RuntimeError("Resume run directory was not initialized")
             catalog_manifest = problem_catalog.validate_resume_catalog(
                 run_dir, scbench_home
             )
+
             problem_root = problem_catalog.get_problem_root(
                 scbench_home, bootstrap=False
             )
@@ -1277,28 +1383,53 @@ def run_agent(
         list(problem_names), list(run_cfg.problems), is_resuming=is_resuming
     )
 
-    # 7. Setup logging
+    # 7. Discover problems if not specified
+    if not problem_names_resolved:
+        problem_names_resolved = _discover_problems(problem_root)
+        typer.echo(
+            typer.style(
+                f"Found {len(problem_names_resolved):,} problems",
+                fg=typer.colors.GREEN,
+                bold=True,
+            )
+        )
+
+    # 8. Reject duplicate canonical names before mutating a fresh run directory.
+    _validate_unique_problem_names(problem_names_resolved)
+
+    # 9. Validate problem paths exist
+    _validate_problem_paths(problem_names_resolved, problem_root)
+
+    if not is_resuming:
+        run_dir, run_dir_preexisted = _resolve_output_directory(
+            run_cfg.output_path, debug=ctx.obj.debug, create=not dry_run
+        )
+    if run_dir is None or run_dir_preexisted is None:
+        raise RuntimeError("Run directory was not initialized")
+
+    # 10. Setup logging
     console = Console()
-    common.setup_command_logging(
-        log_dir=run_dir,
-        verbosity=ctx.obj.verbosity,
-        log_file_name="run_agent.log",
-        console=console,
-        add_multiproc_info=num_workers > 1,
-    )
     run_logger = get_logger(__name__)
-    run_logger.info(
-        "Starting agent run",
-        agent_config=str(run_cfg.agent_config_path or "inline"),
-        environment_config=str(run_cfg.environment_config_path or "inline"),
-        prompt_path=str(run_cfg.prompt_path),
-        model=f"{run_cfg.model.provider}/{run_cfg.model.name}",
-        thinking=run_cfg.thinking,
-        assessment_policy=run_cfg.assessment_policy.value,
-        continue_after_test_failure=run_cfg.continue_after_test_failure,
-        problem_names=problem_names_resolved,
-        one_shot=run_cfg.one_shot.enabled,
-    )
+    if not dry_run:
+        common.setup_command_logging(
+            log_dir=run_dir,
+            verbosity=ctx.obj.verbosity,
+            log_file_name="run_agent.log",
+            console=console,
+            add_multiproc_info=num_workers > 1,
+        )
+        run_logger.info(
+            "Starting agent run",
+            agent_config=str(run_cfg.agent_config_path or "inline"),
+            environment_config=str(run_cfg.environment_config_path or "inline"),
+            prompt_path=str(run_cfg.prompt_path),
+            model=f"{run_cfg.model.provider}/{run_cfg.model.name}",
+            thinking=run_cfg.thinking,
+            assessment_policy=run_cfg.assessment_policy.value,
+            continue_after_test_failure=run_cfg.continue_after_test_failure,
+            problem_names=problem_names_resolved,
+            one_shot=run_cfg.one_shot.enabled,
+        )
 
     # 8. Discover problems if not specified
     if not problem_names_resolved:
@@ -1331,7 +1462,11 @@ def run_agent(
 
         # Validate config matches saved config when resuming
         _handle_resume_validation(
-            run_dir, run_cfg, env_spec, is_resuming, ctx.obj.overwrite
+            run_dir,
+            run_cfg,
+            env_spec,
+            resume=is_resuming,
+            overwrite=ctx.obj.overwrite,
         )
 
         to_run, skipped, rerun_reasons = _filter_problems_for_execution(
@@ -1342,6 +1477,7 @@ def run_agent(
             env_spec,
             overwrite=ctx.obj.overwrite,
             resume=is_resuming,
+            clear_outputs=not dry_run,
         )
 
         if not ctx.obj.overwrite:
@@ -1368,13 +1504,13 @@ def run_agent(
         problem_names_resolved = to_run
 
         # Check if nothing to do
-        if _handle_early_completion(
+        if not dry_run and _handle_early_completion(
             problem_names_resolved,
             run_dir,
             problem_root,
             console,
-            evaluate,
-            requested,
+            evaluate=evaluate,
+            requested=requested,
         ):
             return
 
@@ -1407,6 +1543,9 @@ def run_agent(
     )
 
     # 14. Create task config
+    if ctx.obj.seed is None:
+        raise RuntimeError("CLI context is missing its required random seed")
+
     task_config = _create_task_config(
         problem_base_path=problem_root,
         run_dir=run_dir,
@@ -1436,12 +1575,37 @@ def run_agent(
     # 16. Report results
     _report_results(results)
 
-    # 17. Create summary if evaluating
+    # 17. Create summary and finalize scoring if evaluating. Measurement runs
+    # only after all checkpoint reports and the durable run summary are saved.
     if evaluate:
         _create_checkpoint_results_and_summary(
             run_dir=run_dir,
             problems_base_path=problem_root,
-            problem_names=problem_names_resolved,
+            problem_names=full_problem_list,
+            console=console,
+            render_summary=False,
+        )
+        score = finalize_benchmark_score(
+            run_dir,
+            _load_score_problem_configs(problem_root, full_problem_list),
+        )
+        if score is not None:
+            typer.echo(
+                typer.style(
+                    "Benchmark score finalized and verified.",
+                    fg=typer.colors.GREEN,
+                    bold=True,
+                )
+            )
+        else:
+            run_logger.info(
+                "Benchmark scoring finalized without publication",
+                run_directory=str(run_dir),
+            )
+        _create_checkpoint_results_and_summary(
+            run_dir=run_dir,
+            problems_base_path=problem_root,
+            problem_names=full_problem_list,
             console=console,
         )
     else:

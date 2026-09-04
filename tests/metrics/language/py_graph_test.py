@@ -18,6 +18,7 @@ import pytest
 
 from slop_code.metrics.languages.python.graph import build_dependency_graph
 from slop_code.metrics.languages.python.graph import compute_graph_metrics
+from slop_code.metrics.languages.python.graph import dependency_graph_traversal
 
 # =============================================================================
 # Test Utilities
@@ -217,7 +218,7 @@ class TestBuildDependencyGraph:
         graph = build_dependency_graph(tmp_path, tmp_path / "main.py")
 
         # Only outer function should be in graph
-        node_names = [n for n in graph.nodes]
+        node_names = list(graph.nodes)
         assert len(node_names) == 1
         assert "::outer" in node_names[0]
 
@@ -300,6 +301,22 @@ class TestComputeGraphMetrics:
 
 
 # =============================================================================
+def test_dependency_graph_traversal_is_utf8_byte_ordered_and_preserves_weight():
+    graph = nx.DiGraph()
+    graph.add_edge("z.py::z", "a.py::a", weight=3)
+    graph.add_node("a.py::a")
+
+    nodes, edges = dependency_graph_traversal(graph)
+
+    assert [(node.identity, node.path) for node in nodes] == [
+        ("a.py::a", "a.py"),
+        ("z.py::z", "z.py"),
+    ]
+    assert [(edge.source, edge.target, edge.weight) for edge in edges] == [
+        ("z.py::z", "a.py::a", 3),
+    ]
+
+
 # Cyclic Dependency Mass Tests
 # =============================================================================
 
@@ -498,14 +515,14 @@ class TestCallResolution:
         ][0]
 
         # main() should call module_a.process
-        assert graph.has_edge(main_node, process_a_node), (
-            "Should have edge from main to module_a.process"
-        )
+        assert graph.has_edge(
+            main_node, process_a_node
+        ), "Should have edge from main to module_a.process"
 
         # main() should NOT call module_b.process (this is the bug!)
-        assert not graph.has_edge(main_node, process_b_node), (
-            "Should NOT have edge from main to module_b.process (false edge bug)"
-        )
+        assert not graph.has_edge(
+            main_node, process_b_node
+        ), "Should NOT have edge from main to module_b.process (false edge bug)"
 
     def test_qualified_module_calls(self, tmp_path):
         """Test that qualified calls like 'module.function()' are resolved correctly."""
@@ -531,14 +548,14 @@ class TestCallResolution:
         ]
 
         # main() should call utils.helper (qualified call)
-        assert graph.has_edge(main_node, utils_helper_node), (
-            "Should have edge from main to utils.helper"
-        )
+        assert graph.has_edge(
+            main_node, utils_helper_node
+        ), "Should have edge from main to utils.helper"
 
         # main() should NOT call local helper
-        assert not graph.has_edge(main_node, local_helper_node), (
-            "Should NOT have edge from main to local helper (wrong resolution)"
-        )
+        assert not graph.has_edge(
+            main_node, local_helper_node
+        ), "Should NOT have edge from main to local helper (wrong resolution)"
 
     def test_same_file_resolution_priority(self, tmp_path):
         """Test that same-file calls are resolved correctly when imported names exist."""
@@ -566,14 +583,14 @@ class TestCallResolution:
         ][0]
 
         # main() should call local helper (same-file priority)
-        assert graph.has_edge(main_node, local_helper_node), (
-            "Should have edge from main to local helper"
-        )
+        assert graph.has_edge(
+            main_node, local_helper_node
+        ), "Should have edge from main to local helper"
 
         # main() should NOT call external helper
-        assert not graph.has_edge(main_node, external_helper_node), (
-            "Should NOT have edge from main to external helper"
-        )
+        assert not graph.has_edge(
+            main_node, external_helper_node
+        ), "Should NOT have edge from main to external helper"
 
 
 # =============================================================================
@@ -607,9 +624,9 @@ class TestAdvancedResolution:
         helper_node = [n for n in graph.nodes if "submodule.py::helper" in n][0]
 
         # main() should call mypackage.submodule.helper
-        assert graph.has_edge(main_node, helper_node), (
-            "Should resolve dotted import 'from mypackage.submodule import helper'"
-        )
+        assert graph.has_edge(
+            main_node, helper_node
+        ), "Should resolve dotted import 'from mypackage.submodule import helper'"
 
     def test_relative_import_same_package(self, tmp_path):
         """Test that relative imports like 'from . import sibling' resolve."""
@@ -628,9 +645,9 @@ class TestAdvancedResolution:
         helper_node = [n for n in graph.nodes if "utils.py::helper" in n][0]
 
         # main() should call utils.helper via relative import
-        assert graph.has_edge(main_node, helper_node), (
-            "Should resolve relative import 'from . import utils'"
-        )
+        assert graph.has_edge(
+            main_node, helper_node
+        ), "Should resolve relative import 'from . import utils'"
 
     def test_relative_import_from_module(self, tmp_path):
         """Test that relative imports like 'from .sibling import func' resolve."""
@@ -649,9 +666,9 @@ class TestAdvancedResolution:
         helper_node = [n for n in graph.nodes if "utils.py::helper" in n][0]
 
         # main() should call helper via relative import
-        assert graph.has_edge(main_node, helper_node), (
-            "Should resolve relative import 'from .utils import helper'"
-        )
+        assert graph.has_edge(
+            main_node, helper_node
+        ), "Should resolve relative import 'from .utils import helper'"
 
     def test_local_variable_type_tracking(self, tmp_path):
         """Test that method calls on local variables are resolved."""
@@ -678,12 +695,12 @@ class TestAdvancedResolution:
         send_node = [n for n in graph.nodes if "Client.send" in n][0]
 
         # main() should call Client.connect and Client.send
-        assert graph.has_edge(main_node, connect_node), (
-            "Should resolve c.connect() to Client.connect via type tracking"
-        )
-        assert graph.has_edge(main_node, send_node), (
-            "Should resolve c.send() to Client.send via type tracking"
-        )
+        assert graph.has_edge(
+            main_node, connect_node
+        ), "Should resolve c.connect() to Client.connect via type tracking"
+        assert graph.has_edge(
+            main_node, send_node
+        ), "Should resolve c.send() to Client.send via type tracking"
 
     def test_super_resolution(self, tmp_path):
         """Test that super().method() calls resolve to parent class methods."""
@@ -704,9 +721,9 @@ class TestAdvancedResolution:
         base_process = [n for n in graph.nodes if "Base.process" in n][0]
 
         # Child.process should call Base.process via super()
-        assert graph.has_edge(child_process, base_process), (
-            "Should resolve super().process() to Base.process"
-        )
+        assert graph.has_edge(
+            child_process, base_process
+        ), "Should resolve super().process() to Base.process"
 
 
 # =============================================================================

@@ -444,75 +444,42 @@ class TestKimiCliParser:
 
 
 class TestMinisweParser:
-    """Tests for MinisweParser."""
+    """Tests for typed MiniSWE trajectory artifacts."""
 
-    def test_can_parse_miniswe_file(self, tmp_path: Path) -> None:
-        """Test detection of MiniSWE trajectory format."""
-        jsonl = tmp_path / "stdout.jsonl"
+    def test_round_trips_saved_typed_steps(self, tmp_path: Path) -> None:
+        """Parse every step shape that MiniSWE saves to trajectory.jsonl."""
+        emitted_steps = [
+            UserStep(content="System prompt"),
+            UserStep(content="Please fix the bug"),
+            ThinkingStep(content="I will inspect the parser."),
+            AgentStep(content="I found the issue."),
+            ToolUseStep(
+                type="environment",
+                arguments={},
+                result="total 8\nfile1.txt\nfile2.txt",
+            ),
+        ]
+        jsonl = tmp_path / "trajectory.jsonl"
         jsonl.write_text(
-            '{"role": "system", "content": "You are an assistant"}\n'
+            "".join(f"{step.model_dump_json()}\n" for step in emitted_steps)
         )
 
         parser = MinisweParser()
-        assert parser.can_parse(tmp_path) is True
+        assert parser.can_parse(tmp_path)
 
-    def test_cannot_parse_non_miniswe_file(self, tmp_path: Path) -> None:
-        """Test rejection of non-MiniSWE files."""
-        jsonl = tmp_path / "stdout.jsonl"
-        jsonl.write_text('{"type": "init", "model": "gemini"}\n')
+        trajectory = parser.parse(tmp_path)
 
-        parser = MinisweParser()
-        assert parser.can_parse(tmp_path) is False
+        assert trajectory.agent_type == "miniswe"
+        assert trajectory.steps == emitted_steps
+        assert trajectory.metadata == {}
 
-    def test_parse_thought_block(self, tmp_path: Path) -> None:
-        """Test parsing THOUGHT blocks."""
-        jsonl = tmp_path / "stdout.jsonl"
-        jsonl.write_text(
-            '{"role": "system", "content": "System prompt"}\n'
-            '{"role": "assistant", "content": "THOUGHT: Let me analyze this problem carefully."}\n'
+    def test_rejects_legacy_role_records(self, tmp_path: Path) -> None:
+        """MiniSWE no longer claims role-based artifacts."""
+        (tmp_path / "trajectory.jsonl").write_text(
+            '{"role": "assistant", "content": "Hello"}\n'
         )
 
-        parser = MinisweParser()
-        traj = parser.parse(tmp_path)
-
-        assert len(traj.steps) == 1
-        assert isinstance(traj.steps[0], ThinkingStep)
-        assert "analyze this problem" in traj.steps[0].content
-
-    def test_parse_bash_command(self, tmp_path: Path) -> None:
-        """Test parsing bash commands."""
-        jsonl = tmp_path / "stdout.jsonl"
-        jsonl.write_text(
-            '{"role": "system", "content": "System prompt"}\n'
-            '{"role": "assistant", "content": "THOUGHT: Check files\\n\\n```bash\\nls -la\\n```"}\n'
-            '{"role": "environment", "content": "total 8\\nfile1.txt\\nfile2.txt"}\n'
-        )
-
-        parser = MinisweParser()
-        traj = parser.parse(tmp_path)
-
-        # Should have thinking + tool use
-        assert len(traj.steps) == 2
-        assert isinstance(traj.steps[0], ThinkingStep)
-        assert isinstance(traj.steps[1], ToolUseStep)
-        assert traj.steps[1].type == "bash"
-        assert traj.steps[1].arguments["command"] == "ls -la"
-        assert "file1.txt" in traj.steps[1].result
-
-    def test_parse_user_message(self, tmp_path: Path) -> None:
-        """Test parsing user messages."""
-        jsonl = tmp_path / "stdout.jsonl"
-        jsonl.write_text(
-            '{"role": "system", "content": "System prompt"}\n'
-            '{"role": "user", "content": "Please fix the bug"}\n'
-        )
-
-        parser = MinisweParser()
-        traj = parser.parse(tmp_path)
-
-        assert len(traj.steps) == 1
-        assert isinstance(traj.steps[0], UserStep)
-        assert traj.steps[0].content == "Please fix the bug"
+        assert MinisweParser().can_parse(tmp_path) is False
 
 
 class TestOpenHandsParser:
@@ -715,15 +682,15 @@ class TestAutoDetectNewParsers:
         assert traj.agent_type == "kimi_cli"
 
     def test_auto_detect_miniswe(self, tmp_path: Path) -> None:
-        """Test auto-detection of MiniSWE format."""
-        jsonl = tmp_path / "stdout.jsonl"
+        """Auto-detect MiniSWE's typed trajectory artifact."""
+        jsonl = tmp_path / "trajectory.jsonl"
         jsonl.write_text(
-            '{"role": "system", "content": "System"}\n'
-            '{"role": "assistant", "content": "Hello"}\n'
+            '{"step_type":"user","content":"System"}\n'
+            '{"step_type":"agent","content":"Hello"}\n'
         )
 
-        traj = parse_trajectory(tmp_path)
-        assert traj.agent_type == "miniswe"
+        trajectory = parse_trajectory(tmp_path)
+        assert trajectory.agent_type == "miniswe"
 
 
 class TestPiParser:

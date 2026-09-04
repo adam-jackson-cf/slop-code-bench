@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated, Any
@@ -13,6 +14,8 @@ from slop_code.common import CONFIG_FILENAME
 from slop_code.entrypoints.utils import discover_run_directories
 from slop_code.logging import get_logger
 from slop_code.logging import setup_logging
+from slop_code.metrics.scoring import ScoreEvidenceError
+from slop_code.metrics.scoring import load_verified_current_generation
 
 logger = get_logger(__name__)
 
@@ -51,6 +54,7 @@ def combine_results(
             dir_okay=False,
         ),
     ] = None,
+    *,
     overwrite: Annotated[
         bool,
         typer.Option(
@@ -92,31 +96,49 @@ def combine_results(
     total_records = 0
     runs_with_results = 0
 
-    with output_path.open("w", encoding="utf-8") as merged_file:
-        for run_dir in run_dirs:
-            run_meta = _load_run_metadata(run_dir, runs_dir)
-            results_path = run_dir / CHECKPOINT_RESULTS_FILENAME
-            if not results_path.exists():
-                logger.warning(
-                    "Skipping run with no checkpoint results",
-                    run=str(run_dir),
-                    results_path=str(results_path),
-                )
-                continue
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=output_path.parent,
+            prefix=f".{output_path.name}.",
+            delete=False,
+        ) as merged_file:
+            temporary_path = Path(merged_file.name)
+            for run_dir in run_dirs:
+                run_meta = _load_run_metadata(run_dir, runs_dir)
+                if run_meta is None:
+                    continue
+                results_path = run_dir / CHECKPOINT_RESULTS_FILENAME
+                if not results_path.exists():
+                    logger.warning(
+                        "Skipping run with no checkpoint results",
+                        run=str(run_dir),
+                        results_path=str(results_path),
+                    )
+                    continue
 
-            records_written = 0
-            for record in _load_checkpoint_results(results_path):
-                merged_record = {**record, **run_meta}
-                merged_file.write(json.dumps(merged_record))
-                merged_file.write("\n")
-                records_written += 1
+                records_written = 0
+                for record in _load_checkpoint_results(results_path):
+                    merged_record = {**record, **run_meta}
+                    merged_file.write(json.dumps(merged_record))
+                    merged_file.write("\n")
+                    records_written += 1
 
-            if records_written:
-                runs_with_results += 1
-                total_records += records_written
-                typer.echo(
-                    f"  {run_dir}: wrote {records_written} checkpoint record(s)"
-                )
+                if records_written:
+                    runs_with_results += 1
+                    total_records += records_written
+                    typer.echo(
+                        f"  {run_dir}: wrote {records_written} checkpoint record(s)"
+                    )
+        if temporary_path is None:
+            raise RuntimeError("temporary output path was not created")
+        temporary_path.replace(output_path)
+    except BaseException:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
 
     typer.echo(
         typer.style(
@@ -153,8 +175,8 @@ def _load_checkpoint_results(results_path: Path) -> Iterator[dict[str, Any]]:
         )
 
 
-def _load_run_metadata(run_dir: Path, base_dir: Path) -> dict[str, Any]:
-    """Extract run-level metadata useful for grouping."""
+def _load_run_metadata(run_dir: Path, base_dir: Path) -> dict[str, Any] | None:
+    """Extract grouping metadata and verified canonical scoring."""
     meta: dict[str, Any] = {
         "run_name": run_dir.name,
         "run_dir": str(run_dir),
@@ -171,6 +193,30 @@ def _load_run_metadata(run_dir: Path, base_dir: Path) -> dict[str, Any]:
     relative_parts = Path(meta["run_relative_path"]).parts
     if len(relative_parts) > 1:
         meta["run_group"] = relative_parts[0]
+
+    try:
+        score, _ = load_verified_current_generation(run_dir)
+    except (OSError, ScoreEvidenceError, ValueError) as exc:
+        logger.warning(
+            "Skipping run with rejected canonical score generation",
+            run=str(run_dir),
+            error=str(exc),
+        )
+        return None
+
+    serialized_score = score.model_dump(mode="json")
+    meta["benchmark_score"] = serialized_score["benchmark_score"]
+    meta["scoring.correctness"] = serialized_score["correctness"]
+    meta["scoring.inertia"] = serialized_score["inertia"]
+    meta["scoring.cost_per_configured_checkpoint"] = serialized_score[
+        "cost_per_configured_checkpoint"
+    ]
+    meta["scoring.run_identity"] = serialized_score["run_identity"]
+    for problem in serialized_score["problems"]:
+        prefix = f"scoring.problems.{problem['problem_id']}"
+        meta[f"{prefix}.score"] = problem["score"]
+        for component, value in problem["components"].items():
+            meta[f"{prefix}.{component}"] = value
 
     config_path = run_dir / CONFIG_FILENAME
     if not config_path.exists():

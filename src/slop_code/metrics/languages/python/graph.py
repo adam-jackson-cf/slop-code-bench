@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import networkx as nx
-from tree_sitter import Node
+
+if TYPE_CHECKING:
+    from tree_sitter import Node
 
 from slop_code.logging import get_logger
 from slop_code.metrics.languages.python.imports import trace_source_files
@@ -29,14 +33,14 @@ def _extract_functions_from_file(file_path: Path) -> list[tuple[str, Node]]:
 
     try:
         source_code = file_path.read_bytes()
-        tree = parser.parse(source_code)
-    except Exception as e:  # noqa: BLE001
+    except OSError as exc:
         logger.debug(
-            "Failed to parse file for function extraction",
+            "Failed to read file for function extraction",
             file=str(file_path),
-            error=str(e),
+            error=str(exc),
         )
         return []
+    tree = parser.parse(source_code)
 
     functions = []
 
@@ -89,14 +93,14 @@ def _extract_class_hierarchy(file_path: Path) -> dict[str, list[str]]:
 
     try:
         source_code = file_path.read_bytes()
-        tree = parser.parse(source_code)
-    except Exception as e:  # noqa: BLE001
+    except OSError as exc:
         logger.debug(
-            "Failed to parse file for class hierarchy extraction",
+            "Failed to read file for class hierarchy extraction",
             file=str(file_path),
-            error=str(e),
+            error=str(exc),
         )
         return {}
+    tree = parser.parse(source_code)
 
     hierarchy: dict[str, list[str]] = {}
 
@@ -153,14 +157,14 @@ def _extract_imports(
 
     try:
         source_code = file_path.read_bytes()
-        tree = parser.parse(source_code)
-    except Exception as e:  # noqa: BLE001
+    except OSError as exc:
         logger.debug(
-            "Failed to parse file for import extraction",
+            "Failed to read file for import extraction",
             file=str(file_path),
-            error=str(e),
+            error=str(exc),
         )
         return {}
+    tree = parser.parse(source_code)
 
     imports = {}
 
@@ -504,17 +508,19 @@ def _resolve_call(
                     return f"{file_path.as_posix()}::{qual_name}"
 
         # Special case: 'super()' - call to parent class method
-        if qualifier == "super()":
-            # Need to know which class we're in to find parent
-            if caller_qual_name and "." in caller_qual_name:
-                current_class = caller_qual_name.split(".")[0]
-                parent_classes = class_hierarchy.get(current_class, [])
-                if parent_classes:
-                    # Look for method in first parent class (MRO)
-                    parent_class = parent_classes[0]
-                    for file_path, qual_name in candidates:
-                        if qual_name == f"{parent_class}.{called_name}":
-                            return f"{file_path.as_posix()}::{qual_name}"
+        if (
+            qualifier == "super()"
+            and caller_qual_name
+            and "." in caller_qual_name
+        ):
+            current_class = caller_qual_name.split(".")[0]
+            parent_classes = class_hierarchy.get(current_class, [])
+            if parent_classes:
+                # Look for method in first parent class (MRO)
+                parent_class = parent_classes[0]
+                for file_path, qual_name in candidates:
+                    if qual_name == f"{parent_class}.{called_name}":
+                        return f"{file_path.as_posix()}::{qual_name}"
 
         # Check if qualifier is an imported module
         if qualifier in imports:
@@ -688,6 +694,49 @@ def build_dependency_graph(
     )
 
     return graph
+
+
+@dataclass(frozen=True)
+class DependencyGraphNode:
+    """Canonical node identity emitted by Python graph traversal."""
+
+    identity: str
+    path: str
+
+
+@dataclass(frozen=True)
+class DependencyGraphEdge:
+    """Canonical weighted edge emitted by Python graph traversal."""
+
+    source: str
+    target: str
+    weight: object
+
+
+def dependency_graph_traversal(
+    graph: nx.DiGraph,
+) -> tuple[tuple[DependencyGraphNode, ...], tuple[DependencyGraphEdge, ...]]:
+    """Return deterministically ordered graph identities and raw edge weights.
+
+    This deliberately only observes a graph constructed by
+    :func:`build_dependency_graph`; metric calculations retain their historical
+    handling of malformed or unusual weights.
+    """
+
+    nodes = tuple(
+        DependencyGraphNode(identity=node, path=node.partition("::")[0])
+        for node in sorted(graph.nodes(), key=lambda item: item.encode("utf-8"))
+    )
+    edges = tuple(
+        DependencyGraphEdge(
+            source=source, target=target, weight=data.get("weight", 1)
+        )
+        for source, target, data in sorted(
+            graph.edges(data=True),
+            key=lambda item: (item[0].encode("utf-8"), item[1].encode("utf-8")),
+        )
+    )
+    return nodes, edges
 
 
 def _compute_cyclic_dependency_mass(graph: nx.DiGraph) -> float:

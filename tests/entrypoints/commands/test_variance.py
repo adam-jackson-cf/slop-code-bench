@@ -21,11 +21,11 @@ def _write_checkpoint_results_file(run_dir: Path) -> None:
 
 
 def test_discovers_runs_nested_under_model_dirs(tmp_path: Path) -> None:
-    outputs_dir = tmp_path / "outputs"
-    outputs_dir.mkdir()
+    experiments_dir = tmp_path / "experiments"
+    experiments_dir.mkdir()
 
-    model_a = outputs_dir / "model_a"
-    model_b = outputs_dir / "model_b"
+    model_a = experiments_dir / "model_a"
+    model_b = experiments_dir / "model_b"
     model_a.mkdir()
     model_b.mkdir()
 
@@ -34,10 +34,10 @@ def test_discovers_runs_nested_under_model_dirs(tmp_path: Path) -> None:
     _write_checkpoint_results_file(run_a)
     _write_checkpoint_results_file(run_b)
 
-    unrelated_dir = outputs_dir / "not_a_run"
+    unrelated_dir = experiments_dir / "not_a_run"
     unrelated_dir.mkdir()
 
-    discovered = _discover_run_dirs(outputs_dir)
+    discovered = _discover_run_dirs(experiments_dir)
 
     assert discovered == sorted([run_a, run_b])
 

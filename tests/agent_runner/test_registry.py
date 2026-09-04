@@ -27,7 +27,7 @@ def test_build_agent_config_uses_registry(isolated_registry):
         extra: str
 
         def initialize_agent(
-            self, problem_name: str, verbose: bool, image: str
+            self, problem_name: str, *, verbose: bool, image: str
         ):
             raise NotImplementedError
 
@@ -43,7 +43,7 @@ def test_duplicate_agent_type_registration_errors(isolated_registry):
         type: Literal["dup"] = "dup"
 
         def initialize_agent(
-            self, problem_name: str, verbose: bool, image: str
+            self, problem_name: str, *, verbose: bool, image: str
         ):
             raise NotImplementedError
 
@@ -53,7 +53,7 @@ def test_duplicate_agent_type_registration_errors(isolated_registry):
             type: Literal["dup"] = "dup"
 
             def initialize_agent(
-                self, problem_name: str, verbose: bool, image: str
+                self, problem_name: str, *, verbose: bool, image: str
             ):
                 raise NotImplementedError
 
@@ -64,7 +64,7 @@ def test_agent_type_validator_requires_match(isolated_registry):
         type: str = Field(default="sample", frozen=True)
 
         def initialize_agent(
-            self, problem_name: str, verbose: bool, image: str
+            self, problem_name: str, *, verbose: bool, image: str
         ):
             raise NotImplementedError
 

@@ -297,7 +297,7 @@ def evaluate_agent_run(
     report_errors: list[tuple[str, str]] = []
     all_reports: list[dict] = []
     for p_dir in agent_run_dir.iterdir():
-        if not p_dir.is_dir():
+        if not p_dir.is_dir() or p_dir.name not in valid_problems:
             continue
         typer.echo(f"Processing problem {p_dir}")
         problem_name = p_dir.name

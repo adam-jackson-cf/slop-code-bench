@@ -100,7 +100,7 @@ def parse_trajectory(artifact_dir: Path) -> Trajectory:
         KimiCliParser,
         GeminiParser,
         OpenHandsParser,
-        MinisweParser,  # Last since it matches any role-based format
+        MinisweParser,  # Last since it matches MiniSWE's typed step schema
     ]
 
     for parser_cls in parsers:

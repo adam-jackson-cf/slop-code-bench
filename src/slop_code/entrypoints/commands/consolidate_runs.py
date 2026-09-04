@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -14,6 +15,9 @@ import typer
 from slop_code.common import CHECKPOINT_RESULTS_FILENAME
 from slop_code.logging import get_logger
 from slop_code.logging import setup_logging
+from slop_code.metrics.scoring import BenchmarkScore
+from slop_code.metrics.scoring import ScoreEvidenceError
+from slop_code.metrics.scoring import load_verified_current_generation
 
 logger = get_logger(__name__)
 
@@ -120,6 +124,7 @@ def consolidate_runs(
             help="Output directory for consolidated CSVs",
         ),
     ],
+    *,
     force: Annotated[
         bool,
         typer.Option(
@@ -195,7 +200,7 @@ def consolidate_runs(
     all_rubric: list[dict[str, Any]] = []
     runs_missing_mass: set[str] = set()  # Track runs missing mass columns
 
-    for run_dir, result in runs:
+    for run_dir, result, score in runs:
         timestamp = extract_timestamp(run_dir)
         setup, run_id = build_keys(result, timestamp)
 
@@ -222,12 +227,20 @@ def consolidate_runs(
 
         typer.echo(f"  Processing: {run_id}")
 
-        # Add run-level data
-        run_record = flatten_result(result, setup, run_id, timestamp)
+        run_record = flatten_result(result, score, setup, run_id, timestamp)
         all_runs.append(run_record)
 
         # Process checkpoints
         for checkpoint_record in checkpoint_records:
+            problem = checkpoint_record.get("problem")
+            checkpoint = checkpoint_record.get("checkpoint")
+            if not isinstance(problem, str) or not isinstance(checkpoint, str):
+                logger.warning(
+                    "Skipping checkpoint artifacts without string identifiers",
+                    run_dir=str(run_dir),
+                )
+                continue
+
             # Add foreign keys
             checkpoint_record["setup"] = setup
             checkpoint_record["run_id"] = run_id
@@ -242,8 +255,6 @@ def consolidate_runs(
 
             # Process quality analysis if not skipped
             if not skip_quality:
-                problem = checkpoint_record.get("problem")
-                checkpoint = checkpoint_record.get("checkpoint")
                 problem_dir = run_dir / problem
                 checkpoint_dir = problem_dir / checkpoint
                 quality_dir = checkpoint_dir / "quality_analysis"
@@ -271,8 +282,6 @@ def consolidate_runs(
 
             # Process evaluation.json if not skipped
             if not skip_evaluations:
-                problem = checkpoint_record.get("problem")
-                checkpoint = checkpoint_record.get("checkpoint")
                 problem_dir = run_dir / problem
                 checkpoint_dir = problem_dir / checkpoint
                 eval_path = checkpoint_dir / "evaluation.json"
@@ -292,8 +301,6 @@ def consolidate_runs(
 
             # Process rubric if not skipped
             if not skip_rubric:
-                problem = checkpoint_record.get("problem")
-                checkpoint = checkpoint_record.get("checkpoint")
                 problem_dir = run_dir / problem
                 checkpoint_dir = problem_dir / checkpoint
                 rubric_path = checkpoint_dir / "rubric.jsonl"
@@ -432,8 +439,10 @@ def _normalize_solve_rates(runs_df: pd.DataFrame) -> pd.DataFrame:
     return runs_df
 
 
-def discover_runs(runs_dir: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
-    """Find all valid run directories and load their result.json."""
+def discover_runs(
+    runs_dir: Path,
+) -> Iterator[tuple[Path, dict[str, Any], BenchmarkScore]]:
+    """Find runs with a verified current canonical score generation."""
     for result_json in runs_dir.rglob("result.json"):
         run_dir = result_json.parent
         # Get path relative to input dir for cleaner output
@@ -467,7 +476,16 @@ def discover_runs(runs_dir: Path) -> Iterator[tuple[Path, dict[str, Any]]]:
         if not validate_config(config_path, rel_path):
             continue  # Message already printed in validate_config
 
-        yield run_dir, result
+        try:
+            score, _ = load_verified_current_generation(run_dir)
+        except (OSError, ScoreEvidenceError, ValueError) as exc:
+            typer.echo(
+                typer.style("  SKIP: ", fg=typer.colors.YELLOW)
+                + f"{rel_path} (rejected canonical score generation: {exc})"
+            )
+            continue
+
+        yield run_dir, result, score
 
 
 def validate_config(config_path: Path, rel_path: Path) -> bool:
@@ -484,10 +502,10 @@ def validate_config(config_path: Path, rel_path: Path) -> bool:
 
         load_config_from_run_dir(config_path.parent)
         return True
-    except Exception as e:
+    except (FileNotFoundError, OSError, ValueError) as exc:
         typer.echo(
             typer.style("  SKIP: ", fg=typer.colors.YELLOW)
-            + f"{rel_path} (config.yaml invalid: {e})"
+            + f"{rel_path} (config.yaml invalid: {exc})"
         )
         return False
 
@@ -511,13 +529,17 @@ def check_mass_columns(record: dict[str, Any]) -> bool:
     """Check if expected mass.* columns are missing. Returns True if missing."""
     present_mass_cols = [k for k in record if k.startswith("mass.")]
     missing = set(EXPECTED_MASS_COLS) - set(present_mass_cols)
-    return len(missing) > 0
+    return bool(missing)
 
 
 def flatten_result(
-    result: dict[str, Any], setup: str, run_id: str, timestamp: str
+    result: dict[str, Any],
+    score: BenchmarkScore,
+    setup: str,
+    run_id: str,
+    timestamp: str,
 ) -> dict[str, Any]:
-    """Flatten result.json into a single row for runs.csv."""
+    """Flatten result diagnostics and verified canonical score into a runs.csv row."""
     flat: dict[str, Any] = {
         "setup": setup,
         "run_id": run_id,
@@ -531,6 +553,20 @@ def flatten_result(
         "num_checkpoints": result.get("num_checkpoints"),
         "expected_checkpoints": result.get("expected_checkpoints"),
     }
+    flat["benchmark_score"] = score.benchmark_score
+    flat["scoring.correctness"] = score.correctness
+    flat["scoring.inertia"] = score.inertia
+    flat["scoring.cost_per_configured_checkpoint"] = (
+        score.cost_per_configured_checkpoint
+    )
+    flat["scoring.run_identity"] = score.run_identity
+    for problem in score.problems:
+        prefix = f"scoring.problems.{problem.problem_id}"
+        flat[f"{prefix}.score"] = problem.score
+        for component, value in problem.components.model_dump(
+            mode="python"
+        ).items():
+            flat[f"{prefix}.{component}"] = value
 
     # Flatten nested cost stats
     costs = result.get("costs", {})
@@ -615,10 +651,8 @@ def load_jsonl(path: Path) -> Iterator[dict[str, Any]]:
             for line in f:
                 stripped = line.strip()
                 if stripped:
-                    try:
+                    with suppress(json.JSONDecodeError):
                         yield json.loads(stripped)
-                    except json.JSONDecodeError:
-                        pass
     except OSError:
         pass
 

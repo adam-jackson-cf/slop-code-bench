@@ -1,10 +1,13 @@
 """Tests for metrics driver (file measurement orchestration)."""
 
 from __future__ import annotations
+import json
 
 from pathlib import Path
 
 import pytest
+from slop_code.common import FILES_QUALITY_SAVENAME
+from slop_code.common import QUALITY_DIR
 
 from slop_code.metrics.driver import _calculate_file_metrics
 from slop_code.metrics.driver import measure_files
@@ -16,6 +19,7 @@ from slop_code.metrics.models import LanguageSpec
 from slop_code.metrics.models import LineCountMetrics
 from slop_code.metrics.models import LintMetrics
 from slop_code.metrics.models import SymbolMetrics
+from slop_code.metrics.quality_io import save_quality_metrics
 
 
 class TestCalculateFileMetrics:
@@ -430,6 +434,30 @@ class TestMeasureSnapshotQuality:
         assert snapshot.lint.fixable == 2  # 1 + 1
         assert snapshot.lint.counts["E501"] == 2  # 1 + 1
         assert snapshot.lint.counts["E302"] == 2  # 1 + 1
+
+    def test_saved_file_rows_mark_measured_files_successful(self, tmp_path):
+        """Persisted rows distinguish successful measurement from failure."""
+        snapshot_dir = tmp_path / "snapshot"
+        snapshot_dir.mkdir()
+        (snapshot_dir / "file.py").write_text("# file")
+        snapshot, file_metrics = measure_snapshot_quality(
+            "file.py", snapshot_dir
+        )
+
+        output_dir = tmp_path / "output"
+        save_quality_metrics(output_dir, snapshot, file_metrics)
+        rows = [
+            json.loads(line)
+            for line in (
+                output_dir / QUALITY_DIR / FILES_QUALITY_SAVENAME
+            )
+            .read_text()
+            .splitlines()
+        ]
+
+        assert [(row["file_path"], row["success"]) for row in rows] == [
+            ("file.py", True)
+        ]
 
     def test_measure_snapshot_quality_excludes_patterns(self, tmp_path):
         """Test that default exclude patterns are applied.

@@ -6,6 +6,8 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock
 from unittest.mock import patch
 from unittest.mock import sentinel
@@ -22,7 +24,10 @@ from slop_code.agent_runner.resume import ResumeInfo
 from slop_code.common import INFERENCE_RESULT_FILENAME
 from slop_code.common import PROMPT_FILENAME
 from slop_code.common.llms import TokenUsage
+from slop_code.evaluation import CheckpointConfig
+from slop_code.evaluation import ProblemConfig
 from slop_code.evaluation.report import PassPolicy
+from slop_code.execution import EnvironmentSpec
 
 
 class StubCheckpoint:
@@ -106,6 +111,35 @@ class CapturingLogger:
 
     def error(self, event: str, **kwargs: object) -> None:
         self.errors.append((event, kwargs))
+
+
+def test_evaluate_agent_snapshot_enables_measurement_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class StopEvaluationError(Exception):
+        pass
+
+    def stop_after_capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+        raise StopEvaluationError
+
+    monkeypatch.setattr(runner, "evaluate_checkpoint", stop_after_capture)
+
+    with pytest.raises(StopEvaluationError):
+        runner.evaluate_agent_snapshot(
+            checkpoint=cast(
+                CheckpointConfig, SimpleNamespace(name="checkpoint_1")
+            ),
+            save_dir=tmp_path / "run" / "problem" / "checkpoint_1",
+            snapshot_dir=tmp_path / "snapshot",
+            problem=cast(ProblemConfig, SimpleNamespace(name="problem")),
+            environment=cast(EnvironmentSpec, SimpleNamespace()),
+        )
+
+    assert captured["measurement_coverage"] is True
 
 
 def test_run_checkpoint_retries_agent_errors_with_continue_prompt() -> None:
@@ -589,6 +623,8 @@ def test_run_problem_resume_does_not_duplicate_preloaded_checkpoint_results(
         checkpoint_dir.mkdir()
         with (checkpoint_dir / INFERENCE_RESULT_FILENAME).open("w") as f:
             json.dump({"usage": usage, "had_error": False}, f)
+        if checkpoint_name == "checkpoint_1":
+            (checkpoint_dir / "evaluation.json").write_text('{"tests":')
 
     checkpoints = [
         (StubCheckpoint("checkpoint_1", ""), tmp_path / "checkpoint_1"),
@@ -616,6 +652,10 @@ def test_run_problem_resume_does_not_duplicate_preloaded_checkpoint_results(
             "_run_checkpoint",
             side_effect=_run_checkpoint_side_effect,
         ),
+        patch(
+            "slop_code.agent_runner.runner.capture_live_checkpoint_oracle"
+        ) as capture_oracle,
+        patch.object(runner, "logger") as logger,
     ):
         ar._run_problem()
 
@@ -624,6 +664,99 @@ def test_run_problem_resume_does_not_duplicate_preloaded_checkpoint_results(
         "checkpoint_2",
         "checkpoint_3",
     ]
+    capture_oracle.assert_not_called()
+    assert logger.warning.call_args.args == (
+        "Failed to load evaluation results",
+    )
+    assert logger.warning.call_args.kwargs["checkpoint"] == "checkpoint_1"
+
+
+def test_resume_with_truncated_evaluation_has_no_evaluation_result(
+    tmp_path: Path,
+) -> None:
+    agent = Mock(spec=Agent)
+    run_spec = Mock()
+    run_spec.problem.name = "prob"
+    run_spec.compress_artifacts = False
+    run_spec.assessment_policy = PassPolicy.ALL_CASES
+    ar = runner.AgentRunner(
+        run_spec=run_spec,
+        agent=agent,
+        output_path=tmp_path,
+        progress_queue=queue.Queue(),
+    )
+    checkpoint = Mock()
+    checkpoint.name = "checkpoint_1"
+    checkpoint_dir = tmp_path / checkpoint.name
+    checkpoint_dir.mkdir()
+    with (checkpoint_dir / INFERENCE_RESULT_FILENAME).open("w") as f:
+        json.dump({"usage": {}, "had_error": False}, f)
+    (checkpoint_dir / "evaluation.json").write_text('{"tests":')
+
+    with (
+        patch(
+            "slop_code.agent_runner.runner.capture_live_checkpoint_oracle"
+        ) as capture_oracle,
+        patch.object(runner, "logger") as logger,
+    ):
+        summary = ar._load_checkpoint_summary(checkpoint, checkpoint_dir)
+
+    assert summary is not None
+    assert summary.passed_policy is False
+    capture_oracle.assert_not_called()
+    assert logger.warning.call_args.args == (
+        "Failed to load evaluation results",
+    )
+    assert logger.warning.call_args.kwargs["checkpoint"] == checkpoint.name
+
+
+def test_load_checkpoint_summary_captures_oracle_for_valid_evaluation(
+    tmp_path: Path,
+) -> None:
+    agent = Mock(spec=Agent)
+    run_spec = Mock()
+    run_spec.problem.name = "prob"
+    run_spec.compress_artifacts = False
+    run_spec.assessment_policy = PassPolicy.ALL_CASES
+    ar = runner.AgentRunner(
+        run_spec=run_spec,
+        agent=agent,
+        output_path=tmp_path,
+        progress_queue=queue.Queue(),
+    )
+    checkpoint = StubCheckpoint("checkpoint_1", "")
+    checkpoint_dir = tmp_path / checkpoint.name
+    checkpoint_dir.mkdir()
+    with (checkpoint_dir / INFERENCE_RESULT_FILENAME).open("w") as f:
+        json.dump({"usage": {}, "had_error": False}, f)
+    (checkpoint_dir / "evaluation.json").write_text("{}")
+    evaluation_result = runner.CorrectnessResults(
+        problem_name="prob",
+        problem_version=1,
+        checkpoint_name=checkpoint.name,
+        checkpoint_version=1,
+        duration=0.0,
+        entrypoint="pytest",
+        pytest_exit_code=0,
+        pytest_collected=0,
+    )
+
+    with (
+        patch.object(
+            runner.CorrectnessResults,
+            "from_dir",
+            return_value=evaluation_result,
+        ),
+        patch(
+            "slop_code.agent_runner.runner.capture_live_checkpoint_oracle"
+        ) as capture_oracle,
+    ):
+        summary = ar._load_checkpoint_summary(checkpoint, checkpoint_dir)
+
+    assert summary is not None
+    capture_oracle.assert_called_once_with(
+        checkpoint_dir, "prob", checkpoint.name
+    )
 
 
 def test_run_problem_concurrent_eval_bounds_inflight(tmp_path):

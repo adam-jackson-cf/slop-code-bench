@@ -208,8 +208,6 @@ class PiAgent(Agent):
     def __init__(
         self,
         problem_name: str,
-        verbose: bool,  # noqa: FBT001
-        image: str,
         # From base config
         cost_limits: AgentCostLimits,
         pricing: APIPricing | None,
@@ -222,6 +220,9 @@ class PiAgent(Agent):
         thinking: PiThinking | None,
         extra_args: list[str],
         env: dict[str, str],
+        *,
+        verbose: bool,
+        image: str,
     ) -> None:
         super().__init__(
             agent_name="pi",
@@ -259,7 +260,8 @@ class PiAgent(Agent):
         model: ModelDefinition,
         credential: ProviderCredential,
         problem_name: str,
-        verbose: bool,  # noqa: FBT001
+        *,
+        verbose: bool,
         image: str | None,
         thinking_preset: ThinkingPreset | None = None,
         thinking_max_tokens: int | None = None,

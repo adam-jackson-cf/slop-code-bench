@@ -353,6 +353,7 @@ class TestEvaluateSelectionBehavior:
             problem_dir = agent_run_dir / problem_name
             problem_dir.mkdir()
             (problem_dir / "checkpoint_1").mkdir()
+        (agent_run_dir / "measurement_analysis").mkdir()
 
         available_problems = {
             "datagate": _mock_source_problem("datagate"),

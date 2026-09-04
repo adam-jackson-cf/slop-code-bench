@@ -167,6 +167,12 @@ def process_stream(
 
         yield from handle_event(kind, payload)
 
+    # A process can exit before the pump has queued bytes already readable from
+    # its pipes. Give the pump the remaining command budget to reach EOF before
+    # taking the final queue snapshot.
+    if not timed_out and exit_code is not None:
+        thread.join(timeout=max(0.0, timeout_fn()))
+
     # Handle any remaining events in the queue
     while True:
         try:

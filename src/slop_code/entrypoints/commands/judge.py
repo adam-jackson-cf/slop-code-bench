@@ -137,7 +137,8 @@ def judge_evaluate(
             dir_okay=False,
         ),
     ] = None,
-    overwrite: Annotated[  # noqa: FBT002
+    *,
+    overwrite: Annotated[
         bool,
         typer.Option(
             "--overwrite",
@@ -385,9 +386,6 @@ def judge_evaluate(
         )
         live.update(build_progress_panel())
 
-    # Build problem lookup dict for callback
-    problems_dict = {p.name: p for p in problems_to_eval}
-
     # Load problem versions (needed for reports)
     problem_versions: dict[str, str] = {}
     for prob in problems_to_eval:
@@ -455,7 +453,7 @@ def judge_evaluate(
 
     with (run_dir / CONFIG_FILENAME).open("r") as f:
         config = yaml.safe_load(f)
-    # Display and save summary statistics (updates result.json)
+    # Display and save summary statistics after publishing the score generation.
     expected_checkpoints = sum(len(p.checkpoints) for p in problems_to_eval)
     summary = display_and_save_summary(
         results_file, run_dir, config, console, expected_checkpoints

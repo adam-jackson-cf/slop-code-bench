@@ -167,6 +167,7 @@ class KimiCliAgent(Agent):
         model: ModelDefinition,
         credential: ProviderCredential,
         problem_name: str,
+        *,
         verbose: bool,  # noqa: FBT001
         image: str | None,
         thinking_preset: ThinkingPreset | None = None,

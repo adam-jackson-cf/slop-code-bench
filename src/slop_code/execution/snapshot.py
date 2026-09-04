@@ -248,7 +248,7 @@ class Snapshot(BaseModel):
     def __repr__(self) -> str:
         return (
             f"Snapshot(path={self.path}, timestamp={self.timestamp}, "
-            f"env={list(self.env.keys())}, "  # type: ignore
+            f"env={list(self.env.keys())}, "
             f"archive={self.archive.stat().st_size / (1024**2):.2f} MB, "
             f"checksum={self.checksum[:8]}, "
             f"matched_paths={len(self.matched_paths):,}, "
@@ -325,11 +325,11 @@ class Snapshot(BaseModel):
             size=f"{archive_path.stat().st_size / (1024**2):.4f} MB",
         )
 
-        hash_md5 = hashlib.md5()
-        with archive_path.open("rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_md5.update(chunk)
-        checksum = hash_md5.hexdigest()
+        archive_hash = hashlib.sha256()
+        with archive_path.open("rb") as archive:
+            while chunk := archive.read(4096):
+                archive_hash.update(chunk)
+        checksum = archive_hash.hexdigest()
 
         return cls(
             path=cwd,

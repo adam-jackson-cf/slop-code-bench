@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2026-04-17
+last_updated: 2026-08-29
 ---
 
 # Providers Guide
@@ -37,7 +37,7 @@ Providers define where credentials come from for each API service. They map prov
 | Provider | File Path | Description |
 |----------|-----------|-------------|
 | `codex_auth` | `~/.codex/auth.json` | OpenAI Codex CLI authentication file |
-| `opencode_auth` | `~/.local/share/opencode/auth.json` | OpenCode authentication file |
+| `opencode_auth` | `~/.local/share/opencode/auth.json` | OpenCode authentication file; mounted without reading its contents |
 | `gemini_auth` | `~/.gemini/oauth_creds.json` | Gemini CLI OAuth credentials file |
 
 ## Provider Types
@@ -74,7 +74,9 @@ Some providers (like `codex_auth`) read credentials from files. The file path su
 codex auth login
 ```
 
-File-based credentials are read once and cached.
+File-based credentials are resolved once and cached. Providers with
+`mount_only: true`, including `opencode_auth`, verify and mount the source file
+without loading its contents into `ProviderCredential.value`.
 
 ## PI Provider Notes
 
@@ -106,6 +108,13 @@ providers:
     type: file
     file_path: ~/.codex/auth.json
     description: OpenAI Codex CLI authentication file
+
+  # Mount the file without reading or injecting its contents
+  opencode_auth:
+    type: file
+    file_path: ~/.local/share/opencode/auth.json
+    mount_only: true
+    description: OpenCode authentication file
 ```
 
 ### Schema
@@ -115,6 +124,7 @@ providers:
 | `type` | `env_var` \| `file` | Yes | Credential source type |
 | `env_var` | string | For `env_var` type | Environment variable name |
 | `file_path` | string | For `file` type | Path to credential file (supports `~`) |
+| `mount_only` | boolean | No | Verify and mount a file credential without loading its contents |
 | `description` | string | No | Human-readable description |
 
 ## Adding a New Provider
@@ -166,6 +176,7 @@ class ProviderDefinition(BaseModel):
     credential_type: CredentialType  # ENV_VAR or FILE
     env_var: str | None          # Env var name (for env_var type)
     file_path: str | None        # File path (for file type)
+    mount_only: bool             # Mount file without loading contents
     description: str             # Human-readable description
 ```
 

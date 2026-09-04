@@ -305,9 +305,7 @@ def _resolve_save_template(
         resolved = resolved.replace("__", "_")
 
     # Clean up any trailing underscore before path separator or at end
-    resolved = resolved.replace("_/", "/").rstrip("_")
-
-    return resolved
+    return resolved.replace("_/", "/").rstrip("_")
 
 
 def _get_default_config() -> dict[str, Any]:
@@ -326,7 +324,7 @@ def _get_default_config() -> dict[str, Any]:
             "prefix": "",
             "include_first_prefix": False,
         },
-        "save_dir": "outputs",
+        "save_dir": "experiments",
         "save_template": "${model.name}/${agent.type}-${agent.version}_${prompt}_${thinking}_${now:%Y%m%dT%H%M}",
     }
 
@@ -338,7 +336,7 @@ def _normalize_problems(value: Any) -> list[str]:
     if isinstance(value, str):
         value = [value]
 
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         problems: list[str] = []
         for item in value:
             if not isinstance(item, str):
@@ -517,7 +515,7 @@ def load_run_config(
     )
 
     # 14. Resolve output path from root and template
-    save_dir = cfg_dict.get("save_dir", "outputs")
+    save_dir = cfg_dict.get("save_dir", "experiments")
     save_template_raw = cfg_dict.get(
         "save_template",
         "${model.name}/${agent.type}-${agent.version}_${prompt}_${thinking}_${now:%Y%m%dT%H%M}",
@@ -525,10 +523,7 @@ def load_run_config(
     save_template = _resolve_save_template(save_template_raw, context)
 
     # Combine root and template, handling empty root case
-    if save_dir:
-        output_path = f"{save_dir}/{save_template}"
-    else:
-        output_path = save_template
+    output_path = f"{save_dir}/{save_template}" if save_dir else save_template
 
     logger.debug(
         "Loaded run config",

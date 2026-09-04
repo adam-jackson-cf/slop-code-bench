@@ -21,6 +21,8 @@ Advanced example demonstrating shared utilities and complex test infrastructure.
 ```
 problems/layered_config_synthesizer/
 ├── config.yaml
+├── pyproject.toml
+├── uv.lock
 ├── checkpoint_1.md
 ├── checkpoint_2.md
 ├── checkpoint_3.md
@@ -426,15 +428,16 @@ def assert_subset_match(actual: dict, expected: dict) -> None:
 
 ```bash
 cd problems/layered_config_synthesizer
+uv sync --frozen --no-install-project
 
 # Run tests
-pytest tests/ \
+.venv/bin/python -m pytest tests/ \
   --entrypoint="python solutions/reference/synthesizer.py" \
   --checkpoint=checkpoint_1 \
   -v
 
 # Run specific checkpoint
-pytest tests/test_checkpoint_2.py \
+.venv/bin/python -m pytest tests/test_checkpoint_2.py \
   --entrypoint="python solutions/reference/synthesizer.py" \
   --checkpoint=checkpoint_2 \
   -v

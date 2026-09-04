@@ -459,10 +459,10 @@ def test_something(case_store, processed_data):
 
 ```bash
 # Use -v to see test execution order
-pytest tests/test_checkpoint_1.py -v
+.venv/bin/python -m pytest tests/test_checkpoint_1.py -v
 
 # Collect only, don't run
-pytest tests/test_checkpoint_1.py --collect-only
+.venv/bin/python -m pytest tests/test_checkpoint_1.py --collect-only
 ```
 
 ### Isolate State Issues

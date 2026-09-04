@@ -59,6 +59,8 @@ def make_registry(
         log_dir=None,
         verbosity=ctx.obj.verbosity,
     )
+    if logger is None:
+        raise RuntimeError("Standard logging did not produce a logger")
 
     problem_root = common.resolve_problem_catalog_root(ctx)
     problems = get_available_problems(problem_root)

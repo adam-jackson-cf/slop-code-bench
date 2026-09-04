@@ -49,13 +49,14 @@ Use the `--agent` flag with one of the supported agents:
 See [Agent Guide](agents/README.md) for configuration details.
 
 ### Where are results saved?
-Results are saved to `outputs/{model_name}/{agent}-{prompt}_{params}_{timestamp}/`
+Results are saved to `experiments/{model_name}/{agent}-{prompt}_{params}_{timestamp}/`
 
 Each run creates:
-- `results.json` - Evaluation results
-- `overall_quality.json` - Code quality metrics
-- `submissions/` - Agent-generated code
-- `workspaces/` - Execution environments
+- `config.yaml` - Resolved run configuration
+- `checkpoint_results.jsonl` - Descriptive checkpoint results
+- `result.json` - Descriptive run summary
+- `measurement_analysis/` - Verified canonical score generations
+- Per-problem checkpoint directories with snapshots, evaluation, and quality artifacts
 
 ---
 
@@ -65,11 +66,16 @@ Each run creates:
 - **Correctness**: Does the solution pass the test cases? (Pass/Fail)
 - **Quality**: How clean, maintainable, and well-structured is the code? (Metrics like complexity, duplication, etc.)
 
-### How do I interpret pass policies?
-Pass policies determine what counts as "passing" an evaluation:
-- `ALL_CASES` - All test cases must pass
-- `ANY_CASE` - At least one test case must pass
-- `MAJORITY` - More than 50% of test cases must pass
+### How do I interpret assessment policies?
+`assessment_policy` determines what counts as a successful checkpoint:
+- `all-cases` - All test cases must pass; this is the strict default
+- `all-non-error-cases` - All non-error test cases must pass
+- `core-cases` / `all-core-cases` - All core cases must pass
+- `any-core-cases` - At least one core case must pass
+- `any` / `any-case` - At least one test case must pass
+
+Execution stops after a failed assessment by default. Set
+`continue_after_test_failure: true` only when later checkpoints must still run.
 
 ### What are checkpoints?
 Checkpoints represent stages of specification refinement. Problems have multiple checkpoints, each adding requirements or complexity. This tests how code quality evolves as specifications change.
@@ -206,7 +212,7 @@ Absolutely! Documentation improvements are very welcome. See the [Contributing G
 ### Can I run evaluations in parallel?
 Yes, you can run evaluations with multiple workers:
 ```bash
-slop-code eval outputs/my_run --num-workers 4
+slop-code eval experiments/my_run --num-workers 4
 ```
 This speeds up evaluation by running multiple problems or checkpoints in parallel.
 

@@ -70,6 +70,11 @@ def update_table(selected_paths, filter_settings):
     # Define columns with specific formatting if needed
     columns = [
         {"name": "Model", "id": "Model"},
+        {
+            "name": "Benchmark Score",
+            "id": "Benchmark Score",
+            "type": "numeric",
+        },
         {"name": "Solved (%)", "id": "Solved (%)", "type": "numeric"},
         {"name": "Partial (%)", "id": "Partial (%)", "type": "numeric"},
         {"name": "Wins", "id": "Wins", "type": "numeric"},
@@ -88,7 +93,7 @@ def update_table(selected_paths, filter_settings):
         {"name": "Time (min)", "id": "Time (min)", "type": "numeric"},
     ]
 
-    table = dash_table.DataTable(
+    return dash_table.DataTable(
         data=data,
         columns=columns,
         sort_action="native",
@@ -114,5 +119,3 @@ def update_table(selected_paths, filter_settings):
         ],
         page_size=20,
     )
-
-    return table

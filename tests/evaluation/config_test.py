@@ -1,7 +1,13 @@
 """Tests for evaluation configuration models."""
 
+from pathlib import Path
+
+import pytest
+
 from slop_code.evaluation.config import CheckpointConfig
 from slop_code.evaluation.config import GroupConfig
+from slop_code.evaluation.config import ProblemConfig
+from slop_code.evaluation.config import validate_measurement_glob
 from slop_code.evaluation.report import GroupType
 
 
@@ -167,10 +173,6 @@ class TestCheckpointConfig:
 # ProblemConfig test_dependencies Tests
 # ============================================================================
 
-from pathlib import Path
-
-from slop_code.evaluation.config import ProblemConfig
-
 
 class TestProblemConfigTestDependencies:
     """Tests for ProblemConfig.test_dependencies field."""
@@ -230,3 +232,56 @@ class TestProblemConfigTestDependencies:
             test_dependencies=["requests"],
         )
         assert config.test_dependencies == ["requests"]
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ("src/*.py", "src/**/test?.py", "**/*.py", "a/**/b?.py"),
+)
+def test_measurement_glob_accepts_bounded_anchored_grammar(pattern):
+    assert validate_measurement_glob(pattern) == pattern
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    (
+        "",
+        "/absolute.py",
+        "a//b.py",
+        "./a.py",
+        "a/../b.py",
+        "a/[x].py",
+        r"a/\*.py",
+        "a/**x.py",
+    ),
+)
+def test_measurement_glob_rejects_unsupported_path_syntax(pattern):
+    with pytest.raises(ValueError):
+        validate_measurement_glob(pattern)
+
+
+def test_problem_config_measurement_globs_default_and_validate(tmp_path: Path):
+    default_config = ProblemConfig(
+        name="example",
+        path=tmp_path,
+        version=1,
+        description="example",
+        tags=["test"],
+        checkpoints={},
+        entry_file="main.py",
+    )
+    assert default_config.measurement_generated_globs == []
+    assert default_config.measurement_test_globs == []
+    config = ProblemConfig(
+        name="example",
+        path=tmp_path,
+        version=1,
+        description="example",
+        tags=["test"],
+        checkpoints={},
+        entry_file="main.py",
+        measurement_generated_globs=["src/**/generated.py"],
+        measurement_test_globs=["**/test_?.py"],
+    )
+    assert config.measurement_generated_globs == ["src/**/generated.py"]
+    assert config.measurement_test_globs == ["**/test_?.py"]

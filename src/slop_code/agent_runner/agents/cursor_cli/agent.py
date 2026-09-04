@@ -121,6 +121,7 @@ class CursorCliAgent(Agent):
         model: ModelDefinition,
         credential: ProviderCredential,
         problem_name: str,
+        *,
         verbose: bool,  # noqa: FBT001
         image: str | None,
         thinking_preset: ThinkingPreset | None = None,
@@ -183,6 +184,8 @@ class CursorCliAgent(Agent):
         except json.JSONDecodeError:
             return None, None, None
 
+        if not isinstance(payload, dict):
+            return None, None, {}
         if payload.get("type") != "result":
             return None, None, payload
 

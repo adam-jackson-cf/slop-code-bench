@@ -23,7 +23,7 @@ Launch the diff viewer visualization to inspect changes between checkpoints.
 
 ```bash
 # Visualize diffs for a run
-slop-code viz diff outputs/my_run
+slop-code viz diff experiments/my_run
 
 # The diff viewer will launch in a web browser
 ```
@@ -60,7 +60,7 @@ The diff viewer is an interactive Streamlit application that displays:
 
 ```bash
 # Visualize a specific run
-slop-code viz diff outputs/opus-4.5/claude_code-2.0.51_just-solve_none_20250104
+slop-code viz diff experiments/opus-4.5/claude_code-2.0.51_just-solve_none_20250104
 
 # Launch and then browse to select a run
 slop-code viz diff
@@ -88,7 +88,7 @@ The diff viewer launches a local web server (default port 8501) and opens a brow
 
 ```bash
 # Repopulate diffs if they're missing
-slop-code utils repopulate-diffs outputs/my_run
+slop-code utils repopulate-diffs experiments/my_run
 ```
 
 **Browser doesn't open automatically:**

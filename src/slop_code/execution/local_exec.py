@@ -18,6 +18,10 @@ from slop_code.execution.protocols import ExecRuntime
 from slop_code.execution.runtime import RuntimeResult
 from slop_code.logging import get_logger
 
+# Commands are tokenized into argv and never executed through a shell.
+_spawn_argv_process = subprocess.Popen
+_run_argv_process = subprocess.run
+
 logger = get_logger(__name__)
 
 
@@ -112,13 +116,14 @@ class LocalExecRuntime(ExecRuntime):
         timed_out = False
 
         try:
-            proc = subprocess.Popen(
+            proc = _spawn_argv_process(
                 cmd_args,
                 cwd=self.cwd,
                 env=full_env,
                 stdin=subprocess.PIPE if stdin_data is not None else None,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                shell=False,
             )
             self._proc = proc
 
@@ -132,12 +137,12 @@ class LocalExecRuntime(ExecRuntime):
                 stdout_bytes, stderr_bytes = proc.communicate()
 
             exit_code = proc.returncode
-        except Exception as e:
-            logger.error("Failed to execute command", error=str(e))
+        except (OSError, ValueError) as exc:
+            logger.error("Failed to execute command", error=str(exc))
             return RuntimeResult(
                 exit_code=-1,
                 stdout="",
-                stderr=str(e),
+                stderr=str(exc),
                 setup_stdout="",
                 setup_stderr="",
                 elapsed=time.time() - start_time,
@@ -234,7 +239,9 @@ class LocalExecRuntime(ExecRuntime):
 
         # Run setup commands before creating runtime if not disabled
         if not disable_setup:
-            setup_commands = environment.get_setup_commands(is_evaluation)
+            setup_commands = environment.get_setup_commands(
+                is_evaluation=is_evaluation
+            )
             if setup_command:
                 setup_commands.append(setup_command)
             logger.debug(
@@ -244,12 +251,13 @@ class LocalExecRuntime(ExecRuntime):
                 verbose=True,
             )
             for cmd in setup_commands:
-                proc = subprocess.run(
-                    shlex.split(cmd),
+                proc = _run_argv_process(
+                    ["/bin/sh", "-c", cmd],
                     cwd=working_dir,
                     env=environment.get_full_env(env_vars or {}),
                     capture_output=True,
                     text=True,
+                    shell=False,
                 )
                 if proc.returncode != 0:
                     logger.warning(

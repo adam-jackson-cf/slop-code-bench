@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-17
+last_updated: 2026-08-29
 ---
 
 # Metrics System Documentation
@@ -19,7 +19,9 @@ When an agent completes a checkpoint, the metrics system analyzes the submitted 
 - **Code quality**: Waste detection (trivial wrappers, single-use functions)
 - **Dependencies**: Graph metrics for import relationships
 
-Results are saved to JSON/JSONL files in each checkpoint's `quality_analysis/` directory.
+These descriptive results are saved to JSON/JSONL files in each checkpoint's
+`quality_analysis/` directory. Canonical benchmark scores are published
+separately as verified generations under the run's `measurement_analysis/`.
 
 ## Documentation Guide
 
@@ -30,7 +32,7 @@ Results are saved to JSON/JSONL files in each checkpoint's `quality_analysis/` d
 - Contains correctness (test results) and quality (code metrics) for that checkpoint
 - Located in: `checkpoint_N/evaluation.json` and `checkpoint_N/quality_analysis/`
 
-**Run-level results** (aggregated across all checkpoints):
+**Descriptive run-level results** (aggregated across all checkpoints):
 - Comparing runs or analyzing trends across checkpoints? See [Run-Level Results](run-results.md) - aggregated statistics
 - Contains solve rates, average costs, efficiency metrics, quality trends
 - Located in: `checkpoint_results.jsonl` and `result.json` at run root
@@ -38,6 +40,7 @@ Results are saved to JSON/JSONL files in each checkpoint's `quality_analysis/` d
 ### All Metrics
 - **New to metrics?** Start with [Interpreting Results](interpreting-results.md) - explains what each metric means
 - **Looking at output files?** See [Output Files Reference](output-files.md) - file locations and formats
+- **Need canonical formulas and artifacts?** See [Metrics Reference](../metrics-reference.md)
 
 ### Configuration
 - **Adjusting thresholds?** Read [Configuration Guide](configuration.md)
@@ -57,15 +60,20 @@ Results are saved to JSON/JSONL files in each checkpoint's `quality_analysis/` d
 | **Delta Metrics** | Percentage changes between checkpoints |
 | **Pass Rate** | Percentage of tests passing by category (CORE, FUNCTIONALITY, etc.) |
 | **Solve Rate** | Percentage of checkpoints/problems meeting success criteria |
+| **Canonical Score** | Verified benchmark score published under `measurement_analysis/`; higher is better |
 
 ## Common Questions
 
-### What metrics indicate good code quality?
+### What metrics indicate good descriptive code quality?
 - **CC ratings**: More A/B ratings, fewer D/E/F
 - **Lint errors**: Lower is better
-- **Verbosity**: Lower is better
+- **Descriptive `scb-check` verbosity**: Lower is better
 - **Waste metrics**: Fewer trivial wrappers and single-use functions
 - **Cloned percentage**: Lower `scb-check` percentage means less duplication
+
+Canonical components use favorable `[0, 1]` orientation, so higher is better.
+They are not interchangeable with similarly named descriptive checkpoint
+metrics.
 
 ### Where do I find metrics for my run?
 
@@ -73,7 +81,7 @@ Metrics are saved at two levels:
 
 **Checkpoint-level** (detailed for single checkpoint):
 ```
-outputs/run_name/problem_name/checkpoint_N/
+experiments/run_name/problem_name/checkpoint_N/
 ├── evaluation.json                       # Test results
 ├── quality_analysis/
 │   ├── overall_quality.json              # Aggregated snapshot metrics
@@ -83,14 +91,22 @@ outputs/run_name/problem_name/checkpoint_N/
     ├── stdout.txt, stderr.txt, report.json  # Test artifacts
 ```
 
-**Run-level** (aggregated across all checkpoints):
+**Run-level** (descriptive aggregation and canonical score state):
 ```
-outputs/run_name/
-├── checkpoint_results.jsonl       # All checkpoint metrics in one file
-└── result.json                    # Aggregated statistics and summaries
+experiments/run_name/
+├── checkpoint_results.jsonl       # Descriptive checkpoint metrics
+├── result.json                    # Descriptive run summary
+└── measurement_analysis/
+    ├── current.json               # Current verified generation pointer
+    └── generations/<generation_id>/
+        ├── manifest.json
+        ├── benchmark_score.json   # Eligible generations only
+        └── READY
 ```
 
-Use checkpoint-level files for detailed analysis of a specific checkpoint. Use run-level files for comparing runs or identifying trends.
+Use checkpoint-level files for detailed analysis of a specific checkpoint. Use
+`result.json` for descriptive trends and the verified current
+`measurement_analysis` generation for canonical comparison.
 
 ### How do I compare checkpoints?
 Delta metrics (prefixed with `delta.`) show percentage changes:
@@ -108,7 +124,7 @@ Delta metrics (prefixed with `delta.`) show percentage changes:
 - **Evaluation (test results)**: `src/slop_code/evaluation/report.py`
   - `CorrectnessResults`: Test result model
   - `GroupType`: Test categorization (CORE, FUNCTIONALITY, REGRESSION, ERROR)
-  - `PassPolicy`: Success criteria
+  - `PassPolicy`: API enum used by `assessment_policy`
 - **Main entry points**:
   - Snapshot quality: `slop_code.metrics.driver.measure_snapshot_quality()`
   - Checkpoint metrics: `slop_code.metrics.checkpoint.driver.get_checkpoint_metrics()`

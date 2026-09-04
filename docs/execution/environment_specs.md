@@ -1,5 +1,6 @@
+---
 version: 1.2
-last_updated: 2025-11-18
+last_updated: 2026-08-29
 ---
 
 # Environment Specs
@@ -62,7 +63,7 @@ setup:
     - python -m pytest --version
 ```
 
-For comprehensive examples and use cases, see [Environment Configuration in the Evaluation Guide](../evaluation/configuration.md#environment-configuration).
+For comprehensive examples and use cases, see [Environment Configuration in the Evaluation Guide](../evaluation/configuration.md#environment-configuration-runtime-parameter).
 
 ### CommandConfig
 

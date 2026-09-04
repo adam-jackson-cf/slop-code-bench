@@ -53,7 +53,7 @@ class TestRunConfig:
         assert config.thinking == "none"
         assert config.assessment_policy == PassPolicy.ALL_CASES
         assert config.continue_after_test_failure is False
-        assert config.save_dir == "outputs"
+        assert config.save_dir == "experiments"
         assert "${model.name}" in config.save_template
         assert "${now:" in config.save_template
 

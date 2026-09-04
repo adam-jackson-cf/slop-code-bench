@@ -2,29 +2,36 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, cast
 
 import yaml
 from pydantic import BaseModel
+from pydantic import ValidationError
 from rich import box
+from rich.console import Console
 from rich.table import Table
 
 from slop_code import common
 from slop_code.agent_runner import ProviderCatalog
+from slop_code.common.constants import CURRENT_POINTER_FILENAME
+from slop_code.common.constants import MEASUREMENT_ANALYSIS_DIR
 from slop_code.common.llms import ModelCatalog
 from slop_code.common.llms import ModelDefinition
 from slop_code.evaluation import CheckpointConfig
+from slop_code.evaluation import ConfigError
 from slop_code.evaluation import ProblemConfig
 from slop_code.logging import get_logger
 from slop_code.metrics import RunSummary
 from slop_code.metrics import compute_run_summary
 from slop_code.metrics import load_checkpoint_data
 from slop_code.metrics import save_summary_json
+from slop_code.metrics.scoring import ScoreEvidenceError
+from slop_code.metrics.scoring import load_verified_current_generation_state
 
-if TYPE_CHECKING:
-    from rich.console import Console
+EXPERIMENT_SUMMARY_FILENAME = "experiment_summary.txt"
 
 logger = get_logger(__name__)
 
@@ -263,111 +270,252 @@ def discover_checkpoints(problem_dir: Path) -> list[Path]:
     return [path for _, path in checkpoints]
 
 
-def render_summary_table(summary: RunSummary, console: Console) -> None:
-    """Render summary statistics as a Rich table to console.
+def _verified_score_projection(
+    run_dir: Path, checkpoint_keys: set[tuple[str, str]]
+) -> dict[str, object] | None:
+    """Return the verified canonical score projection for saved checkpoints."""
+    try:
+        manifest, evidence = load_verified_current_generation_state(run_dir)
+        benchmark = manifest.benchmark
+        if not manifest.eligibility.eligible or benchmark is None:
+            raise ScoreEvidenceError(set(manifest.eligibility.reasons))
+        pointer = json.loads(
+            (
+                run_dir
+                / MEASUREMENT_ANALYSIS_DIR
+                / CURRENT_POINTER_FILENAME
+            ).read_bytes()
+        )
+        generation_id = pointer["generation_id"]
+        evaluator_identities = {
+            json.dumps(
+                json.loads(payload)["interpreter"],
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            for path, payload in evidence.items()
+            if path.endswith("/production_quality.json")
+        }
+        if len(evaluator_identities) > 1:
+            raise ScoreEvidenceError({"measurement_environment_mismatch"})
+        if evaluator_identities:
+            raw_evaluator_identity = json.loads(
+                next(iter(evaluator_identities))
+            )
+            evaluator_identity = {
+                field: raw_evaluator_identity[field]
+                for field in (
+                    "implementation",
+                    "cache_tag",
+                    "executable_sha256",
+                )
+                if field in raw_evaluator_identity
+            }
+        else:
+            evaluator_identity = None
+    except (
+        json.JSONDecodeError,
+        KeyError,
+        OSError,
+        ScoreEvidenceError,
+        TypeError,
+        ValueError,
+    ) as error:
+        logger.info(
+            "Canonical score generation unavailable for summary",
+            run_directory=str(run_dir),
+            error=str(error),
+        )
+        return None
 
-    Args:
-        summary: Computed summary statistics.
-        console: Rich console for output.
-    """
-    table = Table(
-        title="Run Summary",
+    return {
+        "benchmark_score": benchmark.benchmark_score,
+        "correctness": benchmark.correctness,
+        "inertia": benchmark.inertia,
+        "cost_per_configured_checkpoint": (
+            benchmark.cost_per_configured_checkpoint
+        ),
+        "generation_id": generation_id,
+        "eligibility": manifest.eligibility.model_dump(mode="json"),
+        "formula_id": manifest.formula_id,
+        "evaluator_identity": evaluator_identity,
+        "problems": {
+            problem.problem_id: {
+                "score": problem.score,
+                "production_concision": problem.components.verbosity,
+                "structural_quality": problem.components.erosion,
+                "acyclic_architecture": problem.components.architecture,
+                "rework_stability": problem.components.rework,
+                "regression_resistance": problem.components.regression,
+            }
+            for problem in benchmark.problems
+        },
+        "report_additions": [
+            addition.model_dump(mode="json")
+            for addition in manifest.report_additions
+            if (addition.problem_name, addition.checkpoint_id)
+            in checkpoint_keys
+        ],
+    }
+
+
+def _completion_projection(
+    summary: RunSummary,
+    config: dict[str, Any],
+    checkpoint_data: list[dict[str, Any]],
+    scoring: dict[str, object] | None,
+) -> dict[str, object]:
+    passed_tests = sum(int(row.get("passed_tests") or 0) for row in checkpoint_data)
+    total_tests = sum(int(row.get("total_tests") or 0) for row in checkpoint_data)
+    return {
+        "model": summary.model,
+        "assessment_policy": str(config.get("assessment_policy", "unknown")),
+        "checkpoints_produced": summary.num_checkpoints,
+        "checkpoints_configured": summary.expected_checkpoints,
+        "tests_passed": passed_tests,
+        "tests_total": total_tests,
+        "strict_score": (
+            scoring["benchmark_score"] if scoring is not None else None
+        ),
+        "total_cost": summary.costs.total,
+        "duration_seconds": sum(
+            float(row.get("duration") or 0) for row in checkpoint_data
+        ),
+        "steps": sum(int(row.get("steps") or 0) for row in checkpoint_data),
+    }
+
+
+def _identity_text(identity: object) -> str:
+    if not isinstance(identity, Mapping):
+        return "Not produced"
+    identity_fields = cast("Mapping[str, object]", identity)
+    implementation = identity_fields.get("implementation", "unknown")
+    cache_tag = identity_fields.get("cache_tag", "unknown")
+    executable_sha256 = identity_fields.get(
+        "executable_sha256", "unknown"
+    )
+    return f"{implementation} {cache_tag}; executable SHA-256 {executable_sha256}"
+
+
+def render_summary_tables(
+    completion: dict[str, object],
+    console: Console,
+    scoring: dict[str, object] | None = None,
+) -> None:
+    """Render operational, scoring-quality, and publication summary tables."""
+    completion_table = Table(
+        title="Completion Summary",
         show_header=True,
         header_style="bold cyan",
         box=box.ROUNDED,
     )
-    table.add_column("Metric", style="cyan", width=28)
-    table.add_column("Value", justify="right", width=22)
-
-    # Counts
-    table.add_row("Problems ran", str(summary.num_problems))
-    table.add_row("Checkpoints", str(summary.num_checkpoints))
-
-    # Costs
-    table.add_row("Total cost", f"${summary.costs.total:.4f}")
-    table.add_row(
-        "Mean cost / chkpt",
-        f"${summary.costs.checkpoint.format_display(4)}",
-    )
-
-    # Time
-    table.add_row(
-        "Mean time / chkpt",
-        summary.time.checkpoint.format_display(1, "s"),
-    )
-
-    # Tokens (now means, not MetricStats)
-    table.add_row(
-        "Mean input tokens / chkpt",
-        f"{summary.tokens.checkpoint.input:,.0f}",
-    )
-    table.add_row(
-        "Mean output tokens / chkpt",
-        f"{summary.tokens.checkpoint.output:,.0f}",
-    )
-
-    # Steps
-    table.add_row(
-        "Mean steps / chkpt",
-        summary.steps.checkpoint.format_display(1),
-    )
-
-    # Separator for pass rate section
-    table.add_section()
-
-    # Pass rates (only show if available)
-    table.add_row(
-        "% checkpoints solved",
-        f"{summary.pct_checkpoints_solved:.1f}%",
-    )
-    table.add_row(
-        "% checkpoints iso solved",
-        f"{summary.pct_checkpoints_iso_solved:.1f}%",
-    )
-    table.add_row(
-        "% checkpoints core solved",
-        f"{summary.pct_checkpoints_core_solved:.1f}%",
-    )
-    table.add_row(
-        "% problems solved",
-        f"{summary.pct_problems_solved:.1f}%",
-    )
-    table.add_row(
-        "% problems partial",
-        f"{summary.pct_problems_partial:.1f}%",
-    )
-    table.add_row(
-        "Mean test pass rate",
-        f"{summary.pass_rates.checkpoint.total:.3f}",
-    )
-
-    # Separator for quality section
-    table.add_section()
-
-    # Quality ratios (only show if data available)
-    if summary.ratios.rubric.count > 0:
-        table.add_row(
-            "Mean rubric:loc",
-            summary.ratios.rubric.format_display(4),
+    for heading in (
+        "Model",
+        "Policy",
+        "Checkpoints",
+        "Tests",
+        "Strict score",
+        "Cost",
+        "Duration",
+        "Steps",
+    ):
+        completion_table.add_column(
+            heading,
+            justify="right" if heading not in {"Model", "Policy"} else "left",
         )
-    if summary.ratios.lint.count > 0:
-        table.add_row(
-            "Mean lint:loc",
-            summary.ratios.lint.format_display(4),
-        )
-    if summary.verbosity.count > 0:
-        table.add_row(
-            "Mean verbosity score",
-            summary.verbosity.format_display(4),
-        )
-    if summary.erosion.count > 0:
-        table.add_row(
-            "Mean erosion score",
-            summary.erosion.format_display(4),
-        )
+    strict_score = completion["strict_score"]
+    completion_table.add_row(
+        str(completion["model"]),
+        str(completion["assessment_policy"]),
+        (
+            f"{completion['checkpoints_produced']}/"
+            f"{completion['checkpoints_configured']}"
+        ),
+        f"{completion['tests_passed']}/{completion['tests_total']}",
+        "Unavailable" if strict_score is None else str(strict_score),
+        f"${float(str(completion['total_cost'])):.4f}",
+        f"{float(str(completion['duration_seconds'])):.1f}s",
+        str(completion["steps"]),
+    )
 
     console.print()
-    console.print(table)
+    console.print(completion_table)
+    if scoring is None:
+        return
+
+    quality_table = Table(
+        title="Scoring Quality",
+        show_header=True,
+        header_style="bold cyan",
+        box=box.ROUNDED,
+    )
+    quality_table.add_column("Problem", overflow="fold")
+    quality_table.add_column("Quality component", overflow="fold")
+    quality_table.add_column("Value", justify="right")
+    quality_table.add_row(
+        "Benchmark", "Correctness", str(scoring["correctness"])
+    )
+    quality_table.add_row("Benchmark", "Inertia", str(scoring["inertia"]))
+    problems = scoring["problems"]
+    if isinstance(problems, Mapping):
+        problem_rows = cast("Mapping[object, object]", problems)
+        for problem_name, raw_components in problem_rows.items():
+            if not isinstance(raw_components, Mapping):
+                continue
+            components = cast("Mapping[str, object]", raw_components)
+            for label, key in (
+                ("Score", "score"),
+                ("Production concision", "production_concision"),
+                ("Structural quality", "structural_quality"),
+                ("Acyclic architecture", "acyclic_architecture"),
+                ("Rework stability", "rework_stability"),
+                ("Regression resistance", "regression_resistance"),
+            ):
+                quality_table.add_row(
+                    str(problem_name), label, str(components[key])
+                )
+
+    eligibility = scoring["eligibility"]
+    eligible = False
+    if isinstance(eligibility, Mapping):
+        eligibility_fields = cast("Mapping[str, object]", eligibility)
+        eligible = eligibility_fields.get("eligible") is True
+    takeaways = Table(
+        title="Key Takeaways",
+        show_header=False,
+        box=box.ROUNDED,
+    )
+    takeaways.add_column("Field", style="cyan")
+    takeaways.add_column("Value", overflow="fold")
+    takeaways.add_row("Published generation", str(scoring["generation_id"]))
+    takeaways.add_row("Eligibility", "Eligible" if eligible else "Ineligible")
+    takeaways.add_row("Formula ID", str(scoring["formula_id"]))
+    takeaways.add_row(
+        "Evaluator identity", _identity_text(scoring["evaluator_identity"])
+    )
+
+    console.print()
+    console.print(quality_table)
+    console.print()
+    console.print(takeaways)
+
+
+def _save_experiment_summary(
+    run_dir: Path,
+    completion: dict[str, object],
+    scoring: dict[str, object] | None,
+) -> Path:
+    recording = Console(
+        record=True,
+        width=180,
+        force_terminal=False,
+        color_system=None,
+    )
+    render_summary_tables(completion, recording, scoring)
+    output_path = run_dir / EXPERIMENT_SUMMARY_FILENAME
+    output_path.write_text(recording.export_text(styles=False), encoding="utf-8")
+    logger.info("Saved human-facing experiment summary", path=str(output_path))
+    return output_path
 
 
 def count_expected_checkpoints(config: dict, problems_dir: Path) -> int:
@@ -383,7 +531,14 @@ def count_expected_checkpoints(config: dict, problems_dir: Path) -> int:
         problem_path = problems_dir / name
         try:
             problem_config = ProblemConfig.from_yaml(problem_path)
-        except Exception as e:
+        except (
+            ConfigError,
+            OSError,
+            TypeError,
+            ValueError,
+            yaml.YAMLError,
+            ValidationError,
+        ) as e:
             logger.warning(
                 "Could not resolve problem for expected-checkpoint count",
                 problem=name,
@@ -402,20 +557,7 @@ def display_and_save_summary(
     console: Console,
     expected_checkpoints: int,
 ) -> RunSummary | None:
-    """Convenience function to load, compute, display, and save summary.
-
-    Args:
-        results_file: Path to checkpoint_results.jsonl file.
-        run_dir: Directory to save result.json to.
-        config: Parsed run config.
-        console: Rich console for display.
-        expected_checkpoints: Total checkpoints the run was configured
-            to attempt. Used as the pct_checkpoints_* denominator so
-            agent crashes don't inflate rates.
-
-    Returns:
-        RunSummary if successful, None if no data available.
-    """
+    """Load, compute, display, and persist one completed-run summary."""
     if not results_file.exists():
         logger.debug(
             "Checkpoint results file not found, skipping summary",
@@ -425,11 +567,11 @@ def display_and_save_summary(
 
     try:
         checkpoint_data = load_checkpoint_data(results_file)
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, json.JSONDecodeError) as error:
         logger.warning(
             "Failed to load checkpoint results data",
             path=str(results_file),
-            error=str(e),
+            error=str(error),
         )
         return None
 
@@ -440,8 +582,21 @@ def display_and_save_summary(
         )
         return None
 
+    checkpoint_keys = {
+        (str(checkpoint.get("problem")), str(checkpoint.get("checkpoint")))
+        for checkpoint in checkpoint_data
+    }
     summary = compute_run_summary(config, checkpoint_data, expected_checkpoints)
-    render_summary_table(summary, console)
-    save_summary_json(summary, run_dir)
-
+    scoring = _verified_score_projection(run_dir, checkpoint_keys)
+    completion = _completion_projection(
+        summary, config, checkpoint_data, scoring
+    )
+    render_summary_tables(completion, console, scoring)
+    save_summary_json(
+        summary,
+        run_dir,
+        completion_projection=completion,
+        score_projection=scoring,
+    )
+    _save_experiment_summary(run_dir, completion, scoring)
     return summary
