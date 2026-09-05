@@ -15,7 +15,7 @@
 **SlopCodeBench** evaluates coding agents under iterative specification refinement: the agent implements a spec, then extends its own code as the spec changes. This exposes behaviors that single-shot benchmarks cannot measure, including path dependence, non-convergence, and trade-offs between explicit handling and structural stability. We release SCBench as an open, community-driven evaluation primitive rather than a finalized benchmark.
 
 
-Problem definitions now live in the separate [scb-problems repository](https://github.com/gabeorlanski/scb-problems) and are also available as a [Harbor dataset](https://registry.harborframework.com/datasets/gabeorlanski/slopcodebench/latest). We actively want more problems; follow [the creating a problem guide](/docs/contributing-problems/) and open a PR there.
+Problem definitions now live in the separate [scb-problems repository](https://github.com/SprocketLab/scb-problems) and are also available as a [Harbor dataset](https://registry.harborframework.com/datasets/gabeorlanski/slopcodebench/latest). We actively want more problems; follow [the creating a problem guide](/docs/contributing-problems/) and open a PR there.
 
 > [!NOTE]
 > This is an initial release. We're actively developing and welcome feedback via [GitHub Issues](https://github.com/SprocketLab/slop-code-bench/issues).
@@ -27,8 +27,8 @@ Problem definitions now live in the separate [scb-problems repository](https://g
 - `tests/` contains the pytest suite and generally mirrors the core library.
 - `configs/` contains agent, model, provider, prompt, environment, and run
   configuration.
-- `.agents/skills/` contains local workflows for experiment analysis and fault
-  catalog maintenance.
+- `.agents/skills/` contains the local experiment lifecycle, snapshot
+  evaluation, observations, and fault-catalog workflows.
 - `experiment_analysis/` contains dated experiment observations, the fault
   catalog, and detailed Fault Category Records.
 - `docs/` contains guides for agents, evaluation, execution, metrics, commands,
@@ -39,14 +39,61 @@ Problem definitions now live in the separate [scb-problems repository](https://g
 Dashboard visualization is documented with the `viz diff` command in
 [`docs/commands/viz.md`](docs/commands/viz.md).
 
-## Experiment analysis workflow
+## Architecture
 
-Benchmark runs persist their artifacts and evaluation results under `experiments/`.
-The `experiment-observations` skill analyzes those artifacts and creates a
-dated observation record under `experiment_analysis/`. The `fault-catalog`
-reconciles supported findings with the fault catalog and detailed Fault
-Category Records. This keeps benchmark evidence, analysis, and tracked failure
-modes traceable without treating generated records as agent instructions.
+`slop-code` resolves run configuration and the managed problem catalog, then
+coordinates five principal subsystems:
+
+- `agent_runner` starts and resumes coding-agent processes.
+- `execution` provides isolated local or Docker workspaces.
+- `evaluation` collects and executes cumulative checkpoint tests.
+- `metrics` records code-quality evidence and publishes immutable scoring
+  generations.
+- `dashboard` and `visualization` consume persisted results without becoming
+  scoring authorities.
+
+Problem definitions are versioned independently in `scb-problems`; this
+repository owns the runner, evaluation semantics, scoring, and reporting.
+
+## Configuration
+
+Reusable agents, environments, prompts, providers, models, and run examples
+live under `configs/`. Run configuration uses `save_dir` and `save_template`
+for output placement. Values resolve in this order: command-line overrides,
+command-line flags, configuration file, then built-in defaults.
+
+See [`docs/commands/run.md`](docs/commands/run.md) for every field and override.
+
+## Local skills
+
+- `experiment-lifecycle` defines, preflights, launches, monitors, controls, and
+  hands off single-run or matrix experiments.
+- `run-tests` evaluates one saved snapshot through the isolated evaluator.
+- `experiment-observations` publishes evidence-backed analysis from terminal
+  artifacts.
+- `fault-catalog` selects fault-driven targets and reconciles supported
+  findings.
+
+Problem-authoring and reference-solution workflows live with the source
+problems in the `scb-problems` repository.
+
+## Experiment lifecycle
+
+1. Define the objective, any declared experimental variable, and fixed
+   controls in the existing run configuration.
+2. Preflight the exact command with `uv run slop-code run ... --dry-run`.
+3. Launch the same command without `--dry-run`. The resolved configuration and
+   persisted run artifacts are the canonical experiment record.
+4. Use `experiment-lifecycle` to inspect, resume, stop, restart, or hand off
+   executions without overwriting prior artifacts.
+5. After all configured executions become terminal, use
+   `experiment-observations`; use `fault-catalog` when observations support a
+   catalog transition.
+
+Benchmark assessment is always strict `all-cases`: a checkpoint is solved only
+when every evaluated test passes. Longitudinal runs may set
+`continue_after_test_failure: true` to continue execution, but this does not
+make assessment permissive.
 
 ## Prerequisites
 
@@ -64,28 +111,28 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/SprocketLab/slop-code-bench.git && cd slop-code-bench && uv sync
 export ANTHROPIC_API_KEY="your-key"
 
-# Run!
+# Preflight without consuming model tokens
 uv run slop-code run \
-  --agent claude_code \
-  --model anthropic/opus-4.5 \
-  --environment configs/environments/docker-python3.12-uv.yaml \
-  --prompt configs/prompts/just-solve.jinja \
+  --config configs/runs/example_full.yaml \
   --problem file_backup \
-  --problem execution_server \
-  thinking=low \
-  version=2.0.51
+  --dry-run
+
+# Start the experiment
+uv run slop-code run \
+  --config configs/runs/example_full.yaml \
+  --problem file_backup
 ```
 
-**Parameter Reference:**
-- `thinking=none|low|medium|high` - Controls extended thinking budget based on agent.
-- `version=X.Y.Z` - Agent version to use.
+The default output layout is:
 
-Results are saved to:
-```
-experiments/opus-4.5/claude_code-just-solve_low_{timestamp}/
+```text
+experiments/<model>/<agent>-<version>_<prompt>_<thinking>_<timestamp>/
 ```
 
-**First Run:** Docker images build automatically for that _VERSION_ of the agent (5-10 minutes). Subsequent runs are faster.
+The agent version segment is omitted when the selected agent has no version.
+Every run persists its resolved configuration, provenance, checkpoint
+artifacts, evaluations, summaries, and scoring evidence beneath that directory.
+Use a distinct output location for every restart or comparison member.
 
 ### Troubleshooting
 
@@ -97,11 +144,13 @@ docker ps
 ```
 
 **API key not found:**
+
 ```bash
-# Verify your environment variable is set
-echo $ANTHROPIC_API_KEY
-# Or pass it directly
-ANTHROPIC_API_KEY="your-key" uv run slop-code run ...
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "ANTHROPIC_API_KEY is set"
+else
+  echo "ANTHROPIC_API_KEY is not set"
+fi
 ```
 
 **Out of disk space:**
@@ -116,12 +165,12 @@ For more issues, see [GitHub Issues](https://github.com/SprocketLab/slop-code-be
 
 **Evaluate a run:**
 ```bash
-slop-code eval experiments/your-run-directory/
+uv run slop-code eval experiments/your-run-directory/
 ```
 
 **Grade code quality with LLM judge:**
 ```bash
-slop-code metrics judge \
+uv run slop-code metrics judge \
   --rubric configs/rubrics/llm_judge.jsonl \
   --model <model on openrouter> \
   --criteria-template configs/rubrics/templates/criteria_with_pn.j2 \

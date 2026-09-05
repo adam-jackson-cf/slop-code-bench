@@ -23,12 +23,6 @@ uv run pytest tests/path/to/test_file.py
 uv run ruff check --fix .
 ```
 
-## Benchmark Operations
-
-- After a benchmark (experiment) completes successfully, use the [`experiment-observations`](./.agents/skills/experiment-observations/SKILL.md) skill to capture observations and surface results to the user.
-- Use the [`fault-catalog`](./.agents/skills/fault-catalog/SKILL.md) skill to update the fault catalog and corresponding
-Fault Category Records when the observations require it.
-
 ## Experiment Snapshot Integrity
 
 - **NEVER** modify experiment snapshots during implementation, remediation,
@@ -78,9 +72,9 @@ use `uv run slop-code --quiet eval-snapshot` or
 note verification performed, and add screenshots for dashboard or UI
 changes.
 
-## Configuration and Credentials
+## Security
 
-- API keys are provided through environment variables. Do not commit secrets.
-- Environment and runtime settings live in `configs/environments/` and
-`configs/providers.yaml`.
+- Never commit, print, or log API keys, tokens, passwords, or other secrets.
+- Verify environment variables by presence only. If a value must be displayed,
+  mask it to the first and last four characters.
 

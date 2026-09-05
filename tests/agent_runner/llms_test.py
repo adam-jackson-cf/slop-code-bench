@@ -784,6 +784,36 @@ class TestYAMLLoadedModels:
             "config": {"$schema": "https://opencode.ai/config.json"},
         }
 
+    def test_gpt_6_astra_loaded(self):
+        """GPT-6 Astra should expose Codex routing and tiered pricing."""
+        model = ModelCatalog.get("gpt-6-astra")
+
+        assert model is not None
+        assert model.internal_name == "gpt-6-astra"
+        assert model.provider == "openai"
+        assert model.get_model_slug("openai-codex") == "gpt-6-astra"
+        assert model.pricing.source == (
+            "https://developers.openai.com/api/docs/models/gpt-6-astra"
+        )
+        assert model.pricing.effective_date == date(2026, 9, 5)
+        assert model.pricing.input == 20.0
+        assert model.pricing.output == 75.0
+        assert model.pricing.cache_read == 2.0
+        assert model.pricing.cache_write == 25.0
+        assert len(model.pricing.prompt_tiers) == 1
+        tier = model.pricing.prompt_tiers[0]
+        assert tier.max_input_tokens == 272_000
+        assert tier.input == 10.0
+        assert tier.output == 50.0
+        assert tier.cache_read == 1.0
+        assert tier.cache_write == 12.5
+        assert model.get_agent_settings("opencode") == {
+            "provider_name": "openai",
+            "model": "gpt-6-astra",
+            "thinking_enabled": True,
+            "config": {"$schema": "https://opencode.ai/config.json"},
+        }
+
     @pytest.mark.parametrize(
         ("model_name", "openrouter_slug"),
         [

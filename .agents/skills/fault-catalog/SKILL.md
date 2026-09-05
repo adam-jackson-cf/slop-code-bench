@@ -1,6 +1,6 @@
 ---
 name: "fault-catalog"
-description: "Maintain the experiment fault catalog consistently. USE WHEN extracting fault types from experiments, updating fault status, or selecting the next fault to target."
+description: "Use when selecting, recording, reconciling, or updating experiment fault categories."
 ---
 
 # Task

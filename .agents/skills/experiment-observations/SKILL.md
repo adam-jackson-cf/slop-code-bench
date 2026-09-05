@@ -1,6 +1,6 @@
 ---
 name: "experiment-observations"
-description: "Analyze completed, equivalent experiment runs and publish evidence-backed observations. USE WHEN comparing completed benchmark results or reporting their observed faults."
+description: "Use when analyzing terminal benchmark artifacts or reporting observed faults."
 ---
 
 # Workflow

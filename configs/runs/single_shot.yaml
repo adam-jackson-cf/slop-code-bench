@@ -3,7 +3,8 @@
 environment: docker-python3.12-uv
 prompt: just-solve
 thinking: high
-output_path: experiments/single_shot_runs/${model.name}_${thinking}_${now:%Y%m%dT%H%M}
+save_dir: experiments
+save_template: single_shot_runs/${model.name}_${thinking}_${now:%Y%m%dT%H%M}
 one_shot:
   enabled: true
   prefix: "\n===============================\nPART {{idx}}\n===============================\n"
