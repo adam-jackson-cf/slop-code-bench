@@ -60,7 +60,7 @@ REGRESSION_CONTRACT = {
     "coverage": "contexts_join_exact_parametrized_node_id",
     "attribution": "failing_canonical_regression_to_innermost_changed_symbol",
     "deduplication": "node_path_line_symbol_stable_identity",
-    "process_audit": "failing_regression_process_event_is_parity_unavailable",
+    "process_audit": "failing_regression_process_event_requires_node_coverage",
     "regression": "1-affected_changed_symbols/all_changed_symbols;one_when_none",
 }
 EVIDENCE_PROJECTION_CONTRACT = {

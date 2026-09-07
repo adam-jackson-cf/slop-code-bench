@@ -386,8 +386,7 @@ def _ruff(
         end = item.get("end_location")
         filename = item.get("filename")
         if (
-            code not in RUFF_RULES
-            or not isinstance(location, Mapping)
+            not isinstance(location, Mapping)
             or not isinstance(end, Mapping)
             or not isinstance(filename, str)
         ):
@@ -425,6 +424,19 @@ def _ruff(
         if start < (1, 1) or finish <= start:
             raise ProductionQualityError(
                 "score_evidence_invalid: invalid Ruff range"
+            )
+        if code is None:
+            message = item.get("message")
+            if not isinstance(message, str) or not message.startswith(
+                "SyntaxError:"
+            ):
+                raise ProductionQualityError(
+                    "score_evidence_invalid: unexpected Ruff diagnostic"
+                )
+            continue
+        if code not in RUFF_RULES:
+            raise ProductionQualityError(
+                "score_evidence_invalid: unexpected Ruff diagnostic"
             )
         normalized.append(
             {

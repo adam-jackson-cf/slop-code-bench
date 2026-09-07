@@ -74,6 +74,7 @@ PRODUCTION_QUALITY_CONTRACT = {
         "arguments": RUFF_ARGUMENTS,
         "expected_version": EXPECTED_RUFF_VERSION,
         "rules": RUFF_RULES,
+        "parser_diagnostics": "ignored_after_locked_cpython_acceptance",
     },
 }
 

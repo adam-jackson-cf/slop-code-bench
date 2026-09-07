@@ -106,7 +106,8 @@ def calculate_regression_breadth(
 ) -> RegressionAttribution:
     """Calculate G from failing canonical regressions and changed symbols only.
 
-    A parity or process-audit failure is ineligible rather than a numerical score.
+    Exact parity is required. Process-created failing regressions are attributable
+    only when the locked measurement includes coverage for their canonical nodes.
     """
     if not _parity_available(evidence):
         return _ineligible_attribution(evidence)
@@ -116,9 +117,13 @@ def calculate_regression_breadth(
         if item.group_type == "Regression"
         and item.outcome in (RegressionOutcome.FAILED, RegressionOutcome.ERROR)
     )
-    if failed_nodes and any(
+    coverage_nodes = _coverage_nodes(evidence.produced)
+    if any(
         event.phase is RegressionPhase.COLLECTION
-        or event.node_id in failed_nodes
+        or (
+            event.node_id in failed_nodes
+            and event.node_id not in coverage_nodes
+        )
         for event in evidence.produced.process_events
     ):
         return _ineligible_attribution(evidence)

@@ -149,7 +149,6 @@ def _run(
     )
 
 
-
 def _measurement_results(
     tests: list[EvaluationTestResult], node_ids: tuple[str, ...]
 ) -> SimpleNamespace:
@@ -226,9 +225,7 @@ def test_run_evidence_maps_report_test_id_to_canonical_regression_node(
         (node_id,),
     )
 
-    evidence = _run_evidence(
-        results, platform_identity={"system": "container"}
-    )
+    evidence = _run_evidence(results, platform_identity={"system": "container"})
 
     assert evidence is not None
     assert [(row.node_id, row.group_type) for row in evidence.outcomes] == [
@@ -250,9 +247,7 @@ def test_run_evidence_uses_file_path_to_resolve_duplicate_short_ids():
         node_ids,
     )
 
-    evidence = _run_evidence(
-        results, platform_identity={"system": "container"}
-    )
+    evidence = _run_evidence(results, platform_identity={"system": "container"})
 
     assert evidence is not None
     assert [row.node_id for row in evidence.outcomes] == list(node_ids)
@@ -356,9 +351,7 @@ def test_live_regression_producer_unions_persisted_accepted_lineage(
     canonical_platform = {"system": "container"}
     measurement_platform = {"system": "container"}
     canonical_result = object()
-    measurement_result = SimpleNamespace(
-        platform_identity=measurement_platform
-    )
+    measurement_result = SimpleNamespace(platform_identity=measurement_platform)
     monkeypatch.setattr(
         "slop_code.metrics.scoring.live_regression._validate_live_oracle",
         lambda *_args: {"platform": canonical_platform},
@@ -596,10 +589,30 @@ def test_snapshot_diff_with_no_changes_retains_empty_symbol_semantics(
     assert _changed_production_symbols(prior, current) == ()
 
 
-def test_process_event_on_failing_regression_is_ineligible():
-    evidence = _input(_run(event=True))
+def test_process_event_on_covered_failing_regression_is_attributable():
+    covered_run = _run(event=True)
+    result = calculate_regression_breadth(
+        _input(covered_run).model_copy(update={"baseline": covered_run})
+    )
+
+    assert result.eligibility.eligible
+    assert result.regression == Decimal("0.666666666667")
+    assert {item.symbol.qualified_name for item in result.attributions} == {
+        "outer.inner"
+    }
+
+
+def test_process_event_without_failing_regression_coverage_is_ineligible():
+    uncovered_run = _run(event=True).model_copy(update={"coverage": ()})
     _assert_ineligible(
-        evidence.model_copy(update={"baseline": _run(event=True)})
+        _input(uncovered_run).model_copy(update={"baseline": uncovered_run})
+    )
+
+
+def test_collection_process_event_is_ineligible():
+    collection_run = _run(phase=RegressionPhase.COLLECTION, event=True)
+    _assert_ineligible(
+        _input(collection_run).model_copy(update={"baseline": collection_run})
     )
 
 

@@ -45,6 +45,7 @@ def test_plugin_records_exact_parameterized_id_and_phase_outcomes(
         {"node_id": nodeid, "phase": "teardown", "outcome": "passed"},
     ]
 
+
 def test_plugin_ignores_external_dependencies_but_rejects_symlink_escapes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -124,6 +125,40 @@ def test_plugin_records_each_audited_process_api(
     ]
 
 
+def test_popen_propagates_locked_coverage_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def popen(command: object, **kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    plugin = CoverageAuditPlugin(tmp_path)
+    plugin._prepare_subprocess_coverage()
+    plugin._install_process_audit()
+    plugin.pytest_runtest_call(
+        SimpleNamespace(nodeid="test.py::test_process[param]")
+    )
+    getattr(subprocess, "Popen")(
+        ["python"], env={"PYTHONPATH": "existing"}
+    )
+    plugin._restore_process_audit()
+
+    startup = str((tmp_path / ".scbench/subprocess-coverage").resolve())
+    assert captured["env"] == {
+        "PYTHONPATH": f"{startup}:existing",
+        "COVERAGE_FILE": str(
+            (tmp_path / ".scbench/runtime-cache/coverage").resolve()
+        ),
+        "COVERAGE_PROCESS_START": str(
+            (tmp_path / ".scbench/subprocess-coveragerc").resolve()
+        ),
+        "SCBENCH_COVERAGE_CONTEXT": "test.py::test_process[param]|call",
+    }
+
+
 def test_plugin_records_collection_failure_and_passing_call(
     tmp_path: Path,
 ) -> None:
@@ -159,7 +194,7 @@ def test_plugin_preserves_exact_process_event_order(
         calls.append(command)
         return 0
 
-    def popen(command: str) -> int:
+    def popen(command: str, **kwargs: object) -> int:
         calls.append(command)
         return 0
 

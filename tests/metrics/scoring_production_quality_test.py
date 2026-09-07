@@ -186,6 +186,7 @@ value = (
 )
 text = """multiline
 literal"""
+sentinel = 1; match = sentinel
 '''
     first = produce(tmp_path, source)
     second = produce(tmp_path, source)
@@ -193,7 +194,7 @@ literal"""
     assert first.evidence.model_dump(mode="json") == second.evidence.model_dump(
         mode="json"
     )
-    assert first.evidence.files[0].source_lines == (1, 3, 4, 5, 6, 7, 8)
+    assert first.evidence.files[0].source_lines == (1, 3, 4, 5, 6, 7, 8, 9)
     assert first.evidence.interpreter.executable == str(PYTHON)
     assert first.evidence.parser_tokenizer_schema_id
 

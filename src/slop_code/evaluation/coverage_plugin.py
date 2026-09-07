@@ -6,12 +6,17 @@ import importlib
 import json
 import os
 import pty
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, cast
 
 LEDGER_RELATIVE_PATH = ".scbench/coverage-ledger.json"
-PLUGIN_ID = "slop-code-coverage-audit-v1"
+PLUGIN_ID = "slop-code-coverage-audit"
+_SUBPROCESS_COVERAGE_DIRECTORY = ".scbench/subprocess-coverage"
+_SUBPROCESS_COVERAGE_CONFIG = ".scbench/subprocess-coveragerc"
+_SUBPROCESS_COVERAGE_DATA = ".scbench/runtime-cache/coverage"
+_SUBPROCESS_STARTUP = "import coverage; coverage.process_startup()\n"
 
 
 def canonical_ledger_bytes(ledger: dict[str, object]) -> bytes:
@@ -34,11 +39,13 @@ class CoverageAuditPlugin:
         self._originals: list[tuple[object, str, Any]] = []
 
     def pytest_configure(self, config: Any) -> None:
+        self._prepare_subprocess_coverage()
         self._install_process_audit()
         self._switch_coverage_context("collection")
 
     def pytest_unconfigure(self, config: Any) -> None:
         self._restore_process_audit()
+        self._combine_subprocess_coverage()
         outcomes = [
             {"node_id": nodeid, "phase": phase, "outcome": node[phase]}
             for nodeid, node in sorted(self._nodes.items())
@@ -165,6 +172,68 @@ class CoverageAuditPlugin:
             ),
         )
 
+    def _prepare_subprocess_coverage(self) -> None:
+        startup = self._root / _SUBPROCESS_COVERAGE_DIRECTORY
+        startup.mkdir(parents=True, exist_ok=True)
+        try:
+            coverage_module = importlib.import_module("coverage")
+        except ModuleNotFoundError:
+            pass
+        else:
+            module_file = getattr(coverage_module, "__file__", None)
+            if isinstance(module_file, str):
+                shutil.copytree(
+                    Path(module_file).resolve().parent,
+                    startup / "coverage",
+                    dirs_exist_ok=True,
+                )
+        (startup / "sitecustomize.py").write_text(_SUBPROCESS_STARTUP)
+        (self._root / _SUBPROCESS_COVERAGE_CONFIG).write_text(
+            "[run]\n"
+            "branch = true\n"
+            "parallel = true\n"
+            "sigterm = true\n"
+            "context = $SCBENCH_COVERAGE_CONTEXT\n"
+        )
+
+    def _combine_subprocess_coverage(self) -> None:
+        try:
+            coverage_module = importlib.import_module("coverage")
+        except ModuleNotFoundError:
+            return
+        coverage = coverage_module.Coverage.current()
+        if coverage is not None:
+            coverage.combine(
+                data_paths=[
+                    str((self._root / _SUBPROCESS_COVERAGE_DATA).parent)
+                ]
+            )
+
+    def _subprocess_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        if self._active_nodeid is None or self._active_phase is None:
+            return kwargs
+        supplied_environment = kwargs.get("env")
+        environment = dict(
+            os.environ if supplied_environment is None else supplied_environment
+        )
+        startup = str((self._root / _SUBPROCESS_COVERAGE_DIRECTORY).resolve())
+        existing_pythonpath = environment.get("PYTHONPATH", "")
+        environment["PYTHONPATH"] = (
+            f"{startup}:{existing_pythonpath}"
+            if existing_pythonpath
+            else startup
+        )
+        environment["COVERAGE_FILE"] = str(
+            (self._root / _SUBPROCESS_COVERAGE_DATA).resolve()
+        )
+        environment["COVERAGE_PROCESS_START"] = str(
+            (self._root / _SUBPROCESS_COVERAGE_CONFIG).resolve()
+        )
+        environment["SCBENCH_COVERAGE_CONTEXT"] = (
+            f"{self._active_nodeid}|{self._active_phase}"
+        )
+        return {**kwargs, "env": environment}
+
     def _install_process_audit(self) -> None:
         self._patch(subprocess, "Popen", "subprocess.Popen")
         self._patch(os, "system", "os.system")
@@ -179,6 +248,8 @@ class CoverageAuditPlugin:
 
         def audited(*args: Any, **kwargs: Any) -> Any:
             self._record_process_event(api)
+            if api == "subprocess.Popen":
+                kwargs = self._subprocess_kwargs(kwargs)
             return original(*args, **kwargs)
 
         self._originals.append((owner, attribute, original))
