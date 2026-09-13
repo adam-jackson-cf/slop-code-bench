@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-1c4859137b-fa52_64bd108fcc",
+  "featureId": "feat_library_1c4859137b",
+  "title": "Missing terminal events are reported as successful execution",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/cli_utils.py",
+      "startLine": 106,
+      "endLine": 115,
+      "symbol": "stream_cli_command",
+      "quote": null
+    }
+  ],
+  "reasoning": "When the runtime stream ends without a finished event, the helper invents exit_code=0 and timed_out=False. No terminal status was observed, so incomplete execution is presented to callers as successful, potentially hiding runtime failures.",
+  "reproduction": "Provide a runtime whose stream yields a stdout event and then ends without a finished event. The final yielded RuntimeResult reports success.",
+  "recommendation": "Raise an explicit incomplete-stream error when no terminal result is received, or represent the execution as failed with an unknown termination status.",
+  "whyTestsDoNotAlreadyCoverThis": "The included test exercises dictionary merging in slop_code.evaluation.utils; it does not exercise streaming execution.",
+  "suggestedRegressionTest": "Cover streams with successful and failed terminal results, empty streams, and streams ending after partial output. Require success to be backed by an explicit successful terminal result.",
+  "minimumFixScope": "Change the missing-result branch in stream_cli_command and extend streaming lifecycle coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T191945-5bf09d",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original file exists. Its missing-result branch at lines 106–109 now raises IncompleteStreamError instead of fabricating success. Current lifecycle tests cover empty streams, partial output, missing terminal results, and preservation of a failed terminal result. No linked patch attempts were supplied. Targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory. The code supports the repair, but failed validation prevents confirming fixed.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/cli_utils.py | tail -35",
+        "rg -n 'IncompleteStream|stream_cli_command' tests/agent_runner --glob '!resources/**'",
+        "cat tests/agent_runner/agents/cli_utils_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/cli_utils_test.py"
+      ],
+      "createdAt": "2026-09-12T19:20:09.300Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified explicit terminal-result contract including incomplete streams; A01 suite passed 523 tests, changed-file Ruff and ty passed.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:21:13.412Z"
+    }
+  ],
+  "signature": "sig_feat-library-1c4859137b_fa52ab2a3f",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:51.620Z",
+  "updatedAt": "2026-09-12T19:21:13.411Z"
+}

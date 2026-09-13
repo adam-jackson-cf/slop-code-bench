@@ -140,7 +140,7 @@ def compute_solve_rates(
     checkpoints: list[dict[str, Any]],
     problems: dict[str, list[dict[str, Any]]],
     expected_checkpoints: int,
-) -> dict[str, float | None]:
+) -> dict[str, float | int]:
     """Compute solve rate percentages normalized to the benchmark total.
 
     The pct_checkpoints_* fields use ``expected_checkpoints`` as the
@@ -164,49 +164,77 @@ def compute_solve_rates(
             f"expected_checkpoints must be positive, got {expected_checkpoints}"
         )
 
-    pass_rates_list = extract_metric_values(checkpoints, "strict_pass_rate")
-    iso_pass_rates_list = extract_metric_values(
+    strict_pass_rates = extract_metric_values(checkpoints, "strict_pass_rate")
+    isolated_pass_rates = extract_metric_values(
         checkpoints, "isolated_pass_rate"
     )
-    core_pass_rates_list = extract_metric_values(checkpoints, "core_pass_rate")
+    core_pass_rates = extract_metric_values(checkpoints, "core_pass_rate")
 
-    if not pass_rates_list or not iso_pass_rates_list:
-        return {}
+    solve_rates: dict[str, float | int] = {}
+    if strict_pass_rates:
+        checkpoints_solved = sum(
+            1 for rate in strict_pass_rates if math.isclose(rate, 1.0)
+        )
+        fully_solved = sum(
+            1
+            for problem_checkpoints in problems.values()
+            if _is_problem_fully_solved(problem_checkpoints)
+        )
+        partially_solved = sum(
+            1
+            for problem_checkpoints in problems.values()
+            if (
+                rates := [
+                    checkpoint.get("strict_pass_rate", 0.0)
+                    for checkpoint in problem_checkpoints
+                ]
+            )
+            and any(math.isclose(rate, 1.0) for rate in rates)
+        )
+        num_problems = len(problems)
+        solve_rates.update(
+            {
+                "pct_checkpoints_solved": (
+                    checkpoints_solved / expected_checkpoints
+                )
+                * 100,
+                "pct_problems_solved": (fully_solved / num_problems) * 100,
+                "pct_problems_partial": (partially_solved / num_problems) * 100,
+                "problem_solved": fully_solved,
+                "problem_partial": partially_solved,
+                "checkpoints_solved": checkpoints_solved,
+            }
+        )
 
-    # Count checkpoints that fully pass (rate = 1.0)
-    checkpoints_solved = sum(
-        1 for pr in pass_rates_list if math.isclose(pr, 1.0)
-    )
-    iso_solved = sum(1 for pr in iso_pass_rates_list if math.isclose(pr, 1.0))
-    core_solved = sum(1 for pr in core_pass_rates_list if math.isclose(pr, 1.0))
+    if isolated_pass_rates:
+        checkpoints_iso_solved = sum(
+            1 for rate in isolated_pass_rates if math.isclose(rate, 1.0)
+        )
+        solve_rates.update(
+            {
+                "pct_checkpoints_iso_solved": (
+                    checkpoints_iso_solved / expected_checkpoints
+                )
+                * 100,
+                "checkpoints_iso_solved": checkpoints_iso_solved,
+            }
+        )
 
-    # Count problems fully vs partially solved
-    fully_solved = sum(
-        1 for chkpts in problems.values() if _is_problem_fully_solved(chkpts)
-    )
-    partially_solved = sum(
-        1
-        for chkpts in problems.values()
-        if (rates := [c.get("strict_pass_rate", 0.0) for c in chkpts])
-        and any(pr == 1.0 for pr in rates)
-    )
+    if core_pass_rates:
+        checkpoints_core_solved = sum(
+            1 for rate in core_pass_rates if math.isclose(rate, 1.0)
+        )
+        solve_rates.update(
+            {
+                "pct_checkpoints_core_solved": (
+                    checkpoints_core_solved / expected_checkpoints
+                )
+                * 100,
+                "checkpoints_core_solved": checkpoints_core_solved,
+            }
+        )
 
-    num_problems = len(problems)
-
-    return {
-        "pct_checkpoints_solved": (checkpoints_solved / expected_checkpoints)
-        * 100,
-        "pct_checkpoints_iso_solved": (iso_solved / expected_checkpoints) * 100,
-        "pct_checkpoints_core_solved": (core_solved / expected_checkpoints)
-        * 100,
-        "pct_problems_solved": (fully_solved / num_problems) * 100,
-        "pct_problems_partial": (partially_solved / num_problems) * 100,
-        "problem_solved": fully_solved,
-        "problem_partial": partially_solved,
-        "checkpoints_solved": checkpoints_solved,
-        "checkpoints_iso_solved": iso_solved,
-        "checkpoints_core_solved": core_solved,
-    }
+    return solve_rates
 
 
 def compute_pass_rates_stats(
@@ -250,16 +278,22 @@ def compute_pass_rates_stats(
         for test_type in test_types:
             checkpoint_pass_rates[test_type].append(checkpoint_rates[test_type])
 
-    # Collect problem-level pass rates (mean across checkpoints per problem, excluding None)
+    # Collect problem-level pass rates, preserving categories with no
+    # applicable tests until after filtering at the aggregate level.
     problem_pass_rates: dict[str, list[float]] = {t: [] for t in test_types}
     for problem_chkpts in problems.values():
         for test_type in test_types:
             rates_for_problem = [
-                compute_pass_rates_by_type(c)[test_type] for c in problem_chkpts
+                compute_pass_rates_by_type(checkpoint)[test_type]
+                for checkpoint in problem_chkpts
             ]
-            problem_pass_rates[test_type].append(
-                mean_excluding_none(rates_for_problem)
-            )
+            valid_rates = [
+                rate for rate in rates_for_problem if rate is not None
+            ]
+            if valid_rates:
+                problem_pass_rates[test_type].append(
+                    statistics.mean(valid_rates)
+                )
 
     return PassRatesStats(
         checkpoint=PassRatesByType(

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-94a87ca9bc-6910_5db5eb1991",
+  "featureId": "feat_library_94a87ca9bc",
+  "title": "Saving a trace once permanently excludes later appended events",
+  "category": "data-loss",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/agent.py",
+      "startLine": 514,
+      "endLine": 521,
+      "symbol": "CodexAgent._new_trace_files",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/agent.py",
+      "startLine": 648,
+      "endLine": 665,
+      "symbol": "CodexAgent._save_codex_traces",
+      "quote": null
+    }
+  ],
+  "reasoning": "Saved traces are tracked solely by pathname. If a resumed session appends events to an existing trace after save_artifacts, subsequent saves exclude that file regardless of its changed contents. The same exclusion also prevents reading its updated token totals. Consequently, later artifacts omit resumed trace events and usage accounting changes depending on whether artifacts were saved.",
+  "reproduction": "Save artifacts for a trace, append another token_count event to the same trace, and save to a second artifact directory. The updated trace is excluded, and _read_latest_trace_usage cannot see the appended usage.",
+  "recommendation": "Track trace changes or read offsets rather than treating saved paths as immutable. Keep usage discovery independent of artifact export bookkeeping.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included for saving artifacts between resumed invocations.",
+  "suggestedRegressionTest": "Exercise save, append, and save sequences for an existing trace, verifying updated events are exported and usage remains identical with and without intermediate artifact saves.",
+  "minimumFixScope": "CodexAgent trace discovery, export bookkeeping, and lifecycle coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193814-644748",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the original implementation changed: _new_trace_files is gone; _save_codex_traces at lines 680–698 tracks byte offsets and exports appended bytes. Usage discovery at lines 495–519 reads all trace files independently of export bookkeeping. An existing test at lines 844–888 covers exporting appended events. These support a repair, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts or validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/codex/agent.py | sed -n '470,530p;665,750p'",
+        "rg -n 'saved_trace|append|save_artifacts|trace_usage' tests/agent_runner -g '*codex*'",
+        "sed -n '840,955p' tests/agent_runner/agents/codex_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/codex_agent_test.py"
+      ],
+      "createdAt": "2026-09-12T19:38:42.040Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified trace append-save exports newly appended events without altering usage; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:20.434Z"
+    }
+  ],
+  "signature": "sig_feat-library-94a87ca9bc_69104d43ba",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:57.516Z",
+  "updatedAt": "2026-09-12T19:39:20.434Z"
+}

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bbf603cd2d-de09_4c0c4271d8",
+  "featureId": "feat_library_bbf603cd2d",
+  "title": "Failed reevaluations can leave a stale passing run summary",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/evaluation/driver.py",
+      "startLine": 420,
+      "endLine": 435,
+      "symbol": "evaluate",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/evaluation/driver.py",
+      "startLine": 456,
+      "endLine": 472,
+      "symbol": "evaluate",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/evaluation/utils.py",
+      "startLine": 126,
+      "endLine": 132,
+      "symbol": "_compute_aggregated_eval_results",
+      "quote": null
+    }
+  ],
+  "reasoning": "Only successful evaluations populate results, and only problems in results have their persisted summary updated. If every checkpoint evaluation for a previously passing problem fails, its run_info.yaml retains the old passing status. This also affects an entirely missing set of snapshots. The aggregation helper already treats missing checkpoints as failures when an expected count is supplied, but this path never calls it.",
+  "reproduction": "Start with a problem whose run_info.yaml records passed=true and checkpoint states. Make every checkpoint worker return success=false, then call evaluate. The batch reports failures while the persisted problem summary still reports passed=true.",
+  "recommendation": "Finalize every requested problem, including those with no successful results, using its expected checkpoints. Persist a non-passing status and clear stale pass-rate data when no current evaluation results exist.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied problem-runner tests cover missing evaluation artifacts in another entrypoint, but none invokes this evaluate function or verifies persisted summaries after failed reevaluation.",
+  "suggestedRegressionTest": "Cover complete, partially failed, entirely failed, and missing-snapshot reevaluations of previously passing problems; assert persisted summaries reflect only the current evaluation and account for every expected checkpoint.",
+  "minimumFixScope": "evaluate finalization and maybe_update_problem_report handling of empty current results.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201139-695517",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence paths still exist, but the relevant behavior changed: driver.py:463-469 now finalizes every requested problem with its expected checkpoint count, including empty results. utils.py:122-135 and 197-213 mark missing results non-passing and remove stale overall_pass_rate. Existing regression coverage includes complete, partial, all-failed, and missing-snapshot reevaluations. However, targeted pytest validation exited 1 before collection because the read-only environment provides no usable temporary directory. No linked patch attempts or successful validation results were supplied, so the apparent repair cannot be classified as verified fixed.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/evaluation/driver.py | sed -n '420,490p'",
+        "nl -ba src/slop_code/entrypoints/evaluation/utils.py | sed -n '118,220p'",
+        "rg --files tests/entrypoints | rg evaluation",
+        "cat tests/entrypoints/test_evaluation_driver.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/test_evaluation_driver.py -k replaces_prior_summary"
+      ],
+      "createdAt": "2026-09-12T20:12:14.082Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified every requested problem finalizes against current expected checkpoints and empty results clear stale passing rates; 15 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:13:21.319Z"
+    }
+  ],
+  "signature": "sig_feat-library-bbf603cd2d_de091d9c80",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:13.326Z",
+  "updatedAt": "2026-09-12T20:13:21.318Z"
+}

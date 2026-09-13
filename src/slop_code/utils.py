@@ -132,35 +132,31 @@ def get_next_experiment_dir(
     Returns:
         Absolute path of the created experiment directory as a string.
     """
-    # Check if the log directory already contains an experiment ID pattern (e.g., /exp_001/)
-    pattern = re.compile(rf"{exp_id_prefix}(\d+)")
+    pattern = re.compile(rf"{re.escape(exp_id_prefix)}(\d+)")
     next_exp_id = 1
 
     logger.info(
         f"Checking for existing experiment directories in {experiment_dir} with prefix {exp_id_prefix}"
     )
 
-    # Check for existing experiment directories
-    existing_dirs = list(experiment_dir.glob(f"{exp_id_prefix}*"))
-
-    if existing_dirs:
-        logger.debug(f"Existing experiment directories:\n{existing_dirs}")
-        # Extract experiment IDs and find the maximum
-        exp_ids = []
-        for dir_path in existing_dirs:
-            match = pattern.search(str(dir_path))
-            if match:
-                exp_ids.append(int(match.group(1)))
-
+    if experiment_dir.exists():
+        exp_ids = [
+            int(match.group(1))
+            for child in experiment_dir.iterdir()
+            if child.is_dir()
+            and (match := pattern.fullmatch(child.name)) is not None
+        ]
         if exp_ids:
-            # Increment the highest experiment ID
             next_exp_id = max(exp_ids) + 1
 
-    # Format the new log directory with the incremented experiment ID
-    new_log_dir = experiment_dir / f"{exp_id_prefix}{next_exp_id:03d}"
-    new_log_dir.mkdir(parents=True, exist_ok=True)
-
-    return str(new_log_dir)
+    while True:
+        new_log_dir = experiment_dir / f"{exp_id_prefix}{next_exp_id:03d}"
+        try:
+            new_log_dir.mkdir(parents=True)
+        except FileExistsError:
+            next_exp_id += 1
+        else:
+            return str(new_log_dir)
 
 
 def get_current_repo_hash():

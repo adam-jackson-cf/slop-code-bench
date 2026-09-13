@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-14b4e49324-5148_8fa9b3da96",
+  "featureId": "feat_library_14b4e49324",
+  "title": "InterpreterEvidence is advertised but missing from package exports",
+  "category": "api-contract",
+  "severity": "low",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/scoring/__init__.py",
+      "startLine": 64,
+      "endLine": 70,
+      "symbol": null,
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/__init__.py",
+      "startLine": 163,
+      "endLine": 170,
+      "symbol": "__all__",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/models.py",
+      "startLine": 100,
+      "endLine": 103,
+      "symbol": "InterpreterEvidence",
+      "quote": null
+    }
+  ],
+  "reasoning": "InterpreterEvidence exists in models.py and is listed in the package's __all__, but __init__.py never imports or defines it. Explicit package-level imports fail, and wildcard imports encounter the unresolved export.",
+  "reproduction": "Run from slop_code.metrics.scoring import InterpreterEvidence after package initialization.",
+  "recommendation": "Import InterpreterEvidence from .models alongside the other public evidence models.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests import slop_code.metrics.models rather than the scoring package and do not check its public exports.",
+  "suggestedRegressionTest": "Verify that every name in scoring.__all__ resolves to a package attribute.",
+  "minimumFixScope": "src/slop_code/metrics/scoring/__init__.py and a package export contract test.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T195847-bc6816",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. __init__.py now imports InterpreterEvidence at line 68 and advertises it in __all__ at line 169; models.py defines it at line 100. Runtime validation against the current repository passed: explicit import, wildcard import, model identity, and resolution of all 124 exports. The initial heredoc invocation was blocked by sandbox temporary-file restrictions; the equivalent inline validation succeeded. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/scoring/__init__.py | sed -n '60,75p;160,175p'",
+        "nl -ba src/slop_code/metrics/scoring/models.py | sed -n '96,108p'",
+        "rg -n '__all__|public_export|InterpreterEvidence' tests/metrics --glob '*.py'",
+        ".venv/bin/python -B -c 'from pathlib import Path; import slop_code.metrics.scoring as s; from slop_code.metrics.scoring import InterpreterEvidence; from slop_code.metrics.scoring.models import InterpreterEvidence as Model; assert Path(s.__file__).resolve() == Path(\"src/slop_code/metrics/scoring/__init__.py\").resolve(); assert InterpreterEvidence is Model; assert all(hasattr(s, name) for name in s.__all__); namespace = {}; exec(\"from slop_code.metrics.scoring import *\", namespace); assert namespace[\"InterpreterEvidence\"] is Model'"
+      ],
+      "createdAt": "2026-09-12T19:59:21.924Z"
+    }
+  ],
+  "signature": "sig_feat-library-14b4e49324_5148b4f019",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:05.163Z",
+  "updatedAt": "2026-09-12T19:59:21.924Z"
+}

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a779b6f7f0-d0aa_855ae9b5a4",
+  "featureId": "feat_library_a779b6f7f0",
+  "title": "Timeouts kill Docker clients while container workloads continue",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/docker_runtime/exec.py",
+      "startLine": 311,
+      "endLine": 316,
+      "symbol": "DockerExecRuntime.execute",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/docker_runtime/exec.py",
+      "startLine": 369,
+      "endLine": 386,
+      "symbol": "DockerExecRuntime.kill",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/docker_runtime/streaming.py",
+      "startLine": 406,
+      "endLine": 416,
+      "symbol": "DockerStreamingRuntime._stop_active_exec_process",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/docker_runtime/streaming.py",
+      "startLine": 451,
+      "endLine": 455,
+      "symbol": "DockerStreamingRuntime.stream",
+      "quote": null
+    }
+  ],
+  "reasoning": "Killing the local docker run or docker exec client does not terminate the daemon-managed workload. One-shot execution never records a container identity for removal, and --rm only removes a container after it exits. Streaming timeouts leave the command running inside the persistent container until a later container cleanup. Timed-out workloads can continue consuming resources and modifying mounted files after a timeout result is returned.",
+  "reproduction": "Run a command that waits beyond its timeout and then writes a workspace marker. Keep the streaming runtime alive, or call one-shot cleanup, and observe that the marker can still be written.",
+  "recommendation": "Track and explicitly terminate the daemon-side execution on timeout and cancellation. For one-shot runs, retain a unique container identity and force removal; for streaming runs, terminate the command process group or stop and recreate the container.",
+  "whyTestsDoNotAlreadyCoverThis": "Timeout tests only assert timed_out. Streaming tests immediately clean up the container and neither suite checks that workload side effects stop.",
+  "suggestedRegressionTest": "Extend timeout and cancellation scenarios to assert that delayed writes never occur and no timed-out workload remains running.",
+  "minimumFixScope": "Timeout and cancellation lifecycle in both runtimes.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170300-58b7dd",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files and original line ranges still exist, but the lifecycle changed. exec.py:268-270 now records a unique container name; timeout, finally, and kill paths force-remove it (311, 323, 383). streaming.py:460-470 now calls kill on cancellation and timeout, removing the persistent container at 518. These changes address the original client-only termination mechanism. However, removal failures are suppressed and container identities cleared without confirming termination. Existing timeout tests still only assert timed_out and immediately clean up; they do not verify delayed writes or cancellation. No linked patch attempts or validation results were supplied. Live workload validation was not performed under the read-only restrictions, so a verified fix cannot be concluded.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/execution/docker_runtime/exec.py | sed -n '239,411p'",
+        "nl -ba src/slop_code/execution/docker_runtime/streaming.py | sed -n '416,545p'",
+        "rg -n 'timeout|cancel|delayed|marker|force_remove' tests/execution/docker_runtime/{exec_test,streaming_test}.py",
+        "sed -n '679,697p' tests/execution/docker_runtime/exec_test.py",
+        "sed -n '662,682p' tests/execution/docker_runtime/streaming_test.py",
+        "sed -n '1,110p' tests/execution/docker_runtime/conftest.py",
+        "ls .venv/bin/python"
+      ],
+      "createdAt": "2026-09-11T17:03:24.213Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:03:24.819Z"
+    }
+  ],
+  "signature": "sig_feat-library-a779b6f7f0_d0aae1ca80",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:39.908Z",
+  "updatedAt": "2026-09-11T17:03:24.818Z"
+}

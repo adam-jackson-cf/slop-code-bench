@@ -255,6 +255,28 @@ class TestModelDefinitionThinking:
                 max_thinking_tokens=10000,
             )
 
+    @pytest.mark.parametrize(
+        "agent_specific",
+        [
+            {
+                "claude_code": {
+                    "thinking": "high",
+                    "max_thinking_tokens": 10000,
+                }
+            },
+            {"claude_code": {"thinking": "unsupported"}},
+            {"claude_code": {"max_thinking_tokens": "not-a-number"}},
+        ],
+    )
+    def test_agent_specific_thinking_validation(self, agent_specific):
+        with pytest.raises(ValueError, match="thinking"):
+            ModelDefinition(
+                internal_name="test-model",
+                provider="anthropic",
+                pricing=APIPricing(input=3, output=15),
+                agent_specific=agent_specific,
+            )
+
     def test_get_thinking_config_top_level(self):
         """Test get_thinking_config returns top-level values."""
         model = ModelDefinition(
@@ -567,10 +589,8 @@ pricing:
 """)
 
         ModelCatalog.ensure_loaded(tmp_path)
-        # Registered with filename "model"
         first_model = ModelCatalog._models.get("model")
 
-        # Modify file after first load
         model_file.write_text("""
 internal_name: loaded-once-internal
 provider: modified
@@ -579,18 +599,18 @@ pricing:
   output: 99
 """)
 
-        # Second call should not reload
         ModelCatalog.ensure_loaded(tmp_path)
         second_model = ModelCatalog._models.get("model")
 
         assert first_model is second_model
         assert second_model is not None
-        assert second_model.provider == "openai"  # Not modified
+        assert second_model.provider == "openai"
 
     def test_get_triggers_ensure_loaded(self, tmp_path: Path, monkeypatch):
-        """Test that get() triggers ensure_loaded()."""
-        model_file = tmp_path / "auto-load.yaml"
-        model_file.write_text("""
+        """Test that get() loads the default model directory lazily."""
+        models_dir = tmp_path / "configs" / "models"
+        models_dir.mkdir(parents=True)
+        (models_dir / "auto-load.yaml").write_text("""
 internal_name: auto-loaded-internal
 provider: google
 pricing:
@@ -598,17 +618,18 @@ pricing:
   output: 2
 """)
 
-        # Patch default path
+        class ModulePath:
+            parents = (None, None, None, tmp_path)
+
         monkeypatch.setattr(
             "slop_code.common.llms.Path",
-            lambda *args: tmp_path if not args else Path(*args),
+            lambda _: ModulePath(),
         )
 
-        # Force ensure_loaded to use our tmp_path
-        ModelCatalog.ensure_loaded(tmp_path)
-
-        # Model is registered with filename "auto-load"
+        assert ModelCatalog._loaded is False
         model = ModelCatalog.get("auto-load")
+
+        assert ModelCatalog._loaded is True
         assert model is not None
         assert model.provider == "google"
 

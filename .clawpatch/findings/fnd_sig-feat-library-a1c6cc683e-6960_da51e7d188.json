@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a1c6cc683e-6960_da51e7d188",
+  "featureId": "feat_library_a1c6cc683e",
+  "title": "Protocol loading can return an implementation from a different file",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/protocol_loader.py",
+      "startLine": 63,
+      "endLine": 81,
+      "symbol": "load_protocol_entrypoint",
+      "quote": null
+    },
+    {
+      "path": "tests/protocol_loader_test.py",
+      "startLine": 182,
+      "endLine": 204,
+      "symbol": "TestLoadProtocolEntrypoint.test_load_nested_directory",
+      "quote": null
+    }
+  ],
+  "reasoning": "The import identity contains only the immediate parent basename and file stem. Files such as /a/problem/main.py and /b/problem/main.py both become problem.main. After the first load, importlib returns its cached module for the second path, despite the sys.path change. This silently executes the wrong implementation when separate catalogs or snapshots reuse directory names.",
+  "reproduction": "Create two distinct roots containing problem/main.py with conforming classes that return different values. Load both sequentially in one process; the second load returns the first module's class.",
+  "recommendation": "Use a module/package identity derived from the resolved source location and load that exact file, preserving relative-import support without sharing cached packages across different roots.",
+  "whyTestsDoNotAlreadyCoverThis": "Most tests use unique temporary-directory basenames. The nested-directory test loads only one module under its fixed basename.",
+  "suggestedRegressionTest": "Extend nested loading coverage to load same-named packages from different roots sequentially, including relative dependencies, and verify each implementation and dependency comes from its requested root.",
+  "minimumFixScope": "load_protocol_entrypoint import identity and protocol-loader tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165612-a55b26",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. protocol_loader.py:64-129 now derives import identity from the resolved file path and loads that exact file, addressing the original basename collision. The original nested test remains at lines 182-204; new coverage at lines 206-253 checks distinct same-named packages and relative dependencies from separate roots. No linked patch attempts were supplied. Targeted validation exited 1 before running tests because the read-only environment had no usable temporary directory. The code supports the repair, but successful validation is unavailable, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/protocol_loader.py | sed -n '55,140p'",
+        "nl -ba tests/protocol_loader_test.py | sed -n '180,270p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/protocol_loader_test.py"
+      ],
+      "createdAt": "2026-09-11T16:56:32.387Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:56:32.995Z"
+    }
+  ],
+  "signature": "sig_feat-library-a1c6cc683e_69609aa98f",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:19.528Z",
+  "updatedAt": "2026-09-11T16:56:32.995Z"
+}

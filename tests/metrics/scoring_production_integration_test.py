@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from decimal import localcontext
 from hashlib import sha256
@@ -189,7 +190,9 @@ def test_canonical_producer_joins_once_and_raw_payloads_recompute(
         checkpoint_id: CheckpointConfig(
             name=checkpoint_id, version=1, order=order
         )
-        for order, checkpoint_id in enumerate(("one", "two", "three"), start=1)
+        for order, checkpoint_id in enumerate(
+            ("one", "two", "three", "four", "five"), start=1
+        )
     }
     problem = ProblemConfig(
         name="problem",
@@ -207,7 +210,10 @@ def test_canonical_producer_joins_once_and_raw_payloads_recompute(
             "def a():\n    return 1\n",
             "def a():\n    return 2\n",
             "def a():\n    return 3\n",
+            "def a():\n    return 4\n",
+            "def a():\n    return 5\n",
         ),
+        strict=True,
     ):
         snapshot = (
             tmp_path
@@ -228,29 +234,60 @@ def test_canonical_producer_joins_once_and_raw_payloads_recompute(
     rework, eligibility = _produce_rework_evidence(
         tmp_path, problem, checkpoint_raw
     )
-    transition_prefix = (
-        f"problems/{problem_key(problem.name)}/transitions"
-    )
+    transition_prefix = f"problems/{problem_key(problem.name)}/transitions"
     assert eligibility.eligible
-    assert (
-        rework[f"{transition_prefix}/one--two/rework.json"]
-        == b'{"rework":"1"}'
-    )
-    assert (
-        rework[f"{transition_prefix}/two--three/rework.json"]
-        == b'{"rework":"0"}'
-    )
+    assert [
+        rework[f"{transition_prefix}/{prior}--{current}/rework.json"]
+        for prior, current in (
+            ("one", "two"),
+            ("two", "three"),
+            ("three", "four"),
+            ("four", "five"),
+        )
+    ] == [
+        b'{"rework":"1"}',
+        b'{"rework":"0"}',
+        b'{"rework":"0"}',
+        b'{"rework":"0"}',
+    ]
 
     malformed = dict(checkpoint_raw)
     malformed[
-        f"problems/{problem_key(problem.name)}/checkpoints/two/"
+        f"problems/{problem_key(problem.name)}/checkpoints/three/"
         "production_quality.json"
     ] = b"{}"
-    rework, eligibility = _produce_rework_evidence(
-        tmp_path, problem, malformed
-    )
+    rework, eligibility = _produce_rework_evidence(tmp_path, problem, malformed)
     assert rework == {}
     assert eligibility.reasons == ("canonical_provenance_unavailable",)
+
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures" / "scoring_golden.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    for case in fixture["history_cases"]:
+        produced = tuple(case["produced"])
+        history_checkpoints = dict(tuple(checkpoints.items())[: len(produced)])
+        history_problem = problem.model_copy(
+            update={"checkpoints": history_checkpoints}
+        )
+        history_raw = dict(checkpoint_raw)
+        for checkpoint_id, is_produced in zip(
+            history_checkpoints, produced, strict=True
+        ):
+            if is_produced:
+                continue
+            history_prefix = (
+                f"problems/{problem_key(problem.name)}/checkpoints/"
+                f"{checkpoint_id}"
+            )
+            del history_raw[f"{history_prefix}/production_quality.json"]
+            history_raw[f"{history_prefix}.json"] = b'{"produced":false}'
+        history_rework, eligibility = _produce_rework_evidence(
+            tmp_path, history_problem, history_raw
+        )
+        assert history_rework == {}
+        assert eligibility.reasons == (case["expected_eligibility_reason"],)
 
 
 def test_duplicate_or_missing_file_joins_are_ineligible(tmp_path, monkeypatch):

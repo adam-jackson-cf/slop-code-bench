@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import importlib
+import hashlib
+import importlib.util
 import sys
 from collections.abc import Callable
 from contextlib import suppress
@@ -54,31 +55,83 @@ def load_protocol_entrypoint(
         protocol=protocol.__name__,
     )
 
-    # Convert file path to module import path
+    # Load through an identity derived from the exact resolved source file.
     if module_path.suffix != ".py":
         raise ProtocolLoadError(
             f"Module file {module_path} is not a Python file"
         )
 
-    module_name = module_path.stem
-    parent_dir = module_path.parent.absolute()
-    import_path = f"{parent_dir.name}.{module_name}"
+    resolved_path = module_path.resolve()
+    module_identity = hashlib.blake2b(
+        str(resolved_path).encode(),
+        digest_size=12,
+    ).hexdigest()
+    package_name = f"_slop_code_protocol_{module_identity}"
+    package_dirs: list[Path] = []
+    package_dir = resolved_path.parent
 
-    added = False
-    parent_root = str(parent_dir.parent.absolute())
+    while (package_dir / "__init__.py").is_file():
+        package_dirs.insert(0, package_dir)
+        package_dir = package_dir.parent
+
+    if package_dirs:
+        package_root = package_dirs[0]
+        relative_parts = resolved_path.relative_to(package_root).parts
+        if resolved_path.name == "__init__.py":
+            module_parts = relative_parts[:-1]
+        else:
+            module_parts = (*relative_parts[:-1], resolved_path.stem)
+
+        package_directories = (
+            package_dirs[:-1]
+            if resolved_path.name == "__init__.py"
+            else package_dirs
+        )
+        for index, directory in enumerate(package_directories):
+            package_parts = tuple(
+                path.name for path in package_dirs[: index + 1]
+            )
+            current_package_name = ".".join((package_name, *package_parts[1:]))
+            package_spec = importlib.util.spec_from_file_location(
+                current_package_name,
+                directory / "__init__.py",
+                submodule_search_locations=[str(directory)],
+            )
+            if package_spec is None or package_spec.loader is None:
+                raise ProtocolLoadError(
+                    f"Failed to create package spec for {directory}"
+                )
+            package_module = importlib.util.module_from_spec(package_spec)
+            sys.modules[current_package_name] = package_module
+            package_spec.loader.exec_module(package_module)
+
+        import_path = ".".join((package_name, *module_parts))
+    else:
+        import_path = package_name
+
+    module_spec = importlib.util.spec_from_file_location(
+        import_path,
+        resolved_path,
+        submodule_search_locations=(
+            [str(resolved_path.parent)]
+            if resolved_path.name == "__init__.py"
+            else None
+        ),
+    )
+    if module_spec is None or module_spec.loader is None:
+        raise ProtocolLoadError(
+            f"Failed to create module spec for {resolved_path}"
+        )
+
     try:
-        if parent_root not in sys.path:
-            sys.path.insert(0, parent_root)
-            added = True
-
-        module = importlib.import_module(import_path)
-    except ImportError as e:
+        module = importlib.util.module_from_spec(module_spec)
+        sys.modules[import_path] = module
+        module_spec.loader.exec_module(module)
+    except (ImportError, OSError) as e:
+        sys.modules.pop(import_path, None)
         raise ProtocolLoadError(
             f"Failed to import module '{import_path}' from {module_path}: {e}"
         ) from e
-    finally:
-        if added:
-            sys.path.remove(parent_root)
 
     try:
         entrypoint = getattr(module, entrypoint_name)

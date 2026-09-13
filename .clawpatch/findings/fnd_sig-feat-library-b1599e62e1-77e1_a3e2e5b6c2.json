@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-b1599e62e1-77e1_a3e2e5b6c2",
+  "featureId": "feat_library_b1599e62e1",
+  "title": "Runner cleanup is bypassed by setup and cleanup failures",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/runner.py",
+      "startLine": 550,
+      "endLine": 568,
+      "symbol": "AgentRunner.setup",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/runner.py",
+      "startLine": 629,
+      "endLine": 646,
+      "symbol": "AgentRunner.run",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/runner.py",
+      "startLine": 669,
+      "endLine": 683,
+      "symbol": "AgentRunner.finish",
+      "quote": null
+    }
+  ],
+  "reasoning": "setup() runs outside the try/finally even though it enters a session before restoring snapshots or materializing assets. A failure in those operations leaves the entered session unclosed. Separately, an exception from agent.cleanup() prevents session closure and final result persistence. Cleanup exceptions can also replace the original execution failure.",
+  "reproduction": "Have an entered session raise during restore_from_snapshot_dir or materialize_assets and call run(); its __exit__ is never called. Alternatively, make agent.cleanup raise and observe that finish skips session closure and saving results.",
+  "recommendation": "Protect setup with the run lifecycle cleanup boundary, track acquired resources, and independently attempt agent cleanup, session closure, and result persistence while preserving the primary failure.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied reporting and resume tests exercise helpers and serialized data, not runner resource ownership when setup or cleanup raises.",
+  "suggestedRegressionTest": "Exercise failures at each resource acquisition and teardown stage; verify every acquired resource is released exactly once and the original failure remains identifiable.",
+  "minimumFixScope": "AgentRunner.run, setup resource tracking, and finish teardown sequencing.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T191945-b78b9a",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The evidence file still exists, but its lifecycle code has changed. setup now tracks session acquisition at lines 559–564; run protects setup and preserves primary failures at 638–657; finish independently attempts agent cleanup, session exit, and result persistence at 732–773, with guards against repeated teardown. The targeted existing regression test passed when invoked directly without filesystem writes, confirming all teardown stages are attempted and the original setup exception survives simultaneous teardown failures. An initial here-document invocation was blocked by the read-only sandbox before execution; the equivalent direct invocation succeeded. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/runner.py | sed -n '630,920p'",
+        "rg -n 'teardown|cleanup|materialize|session_enter|restore' tests/agent_runner/*test*.py",
+        "sed -n '875,1100p' tests/agent_runner/test_runner_unit.py",
+        "nl -ba src/slop_code/agent_runner/runner.py | sed -n '545,580p'",
+        ".venv/bin/python -B -c \"import runpy; from pathlib import Path; scope = runpy.run_path('tests/agent_runner/test_runner_unit.py'); scope['test_run_preserves_setup_error_while_finishing_all_resources'](Path('.')); print('PASS: primary error preserved and all teardown stages attempted')\""
+      ],
+      "createdAt": "2026-09-12T19:20:22.943Z"
+    }
+  ],
+  "signature": "sig_feat-library-b1599e62e1_77e10cd2ee",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:56.856Z",
+  "updatedAt": "2026-09-12T19:20:22.943Z"
+}

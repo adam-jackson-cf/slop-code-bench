@@ -141,9 +141,7 @@ def test_popen_propagates_locked_coverage_context(
     plugin.pytest_runtest_call(
         SimpleNamespace(nodeid="test.py::test_process[param]")
     )
-    getattr(subprocess, "Popen")(
-        ["python"], env={"PYTHONPATH": "existing"}
-    )
+    getattr(subprocess, "Popen")(["python"], env={"PYTHONPATH": "existing"})
     plugin._restore_process_audit()
 
     startup = str((tmp_path / ".scbench/subprocess-coverage").resolve())

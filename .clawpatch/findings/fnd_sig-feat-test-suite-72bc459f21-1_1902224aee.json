@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-72bc459f21-1_1902224aee",
+  "featureId": "feat_test-suite_72bc459f21",
+  "title": "Checkpoint restoration tests do not distinguish core success from all-cases success",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/entrypoints/problem_runner/test_driver.py",
+      "startLine": 87,
+      "endLine": 123,
+      "symbol": "test_prepopulate_loads_cost_and_passed_counts",
+      "quote": null
+    },
+    {
+      "path": "tests/entrypoints/problem_runner/test_driver.py",
+      "startLine": 126,
+      "endLine": 148,
+      "symbol": "test_prepopulate_marks_partial_core_pass",
+      "quote": null
+    }
+  ],
+  "reasoning": "The successful scenarios pass every populated group, and the failure scenario fails a core test. Consequently, an implementation that computes checkpoints_passed using only core results would satisfy these assertions. The stated requirement that passed checkpoints include functionality and regression results is therefore unprotected, allowing restored benchmark results to overstate strict checkpoints solved.",
+  "reproduction": null,
+  "recommendation": "Expand the existing checkpoint restoration scenarios to cover all core tests passing while functionality or regression tests fail. Assert that strict checkpoints_passed remains zero while checkpoints_core_solved remains one.",
+  "whyTestsDoNotAlreadyCoverThis": "No included scenario separates core success from functionality or regression failure; regression totals are zero throughout.",
+  "suggestedRegressionTest": "Parameterize the existing restoration coverage across functionality and regression failures with fully passing core tests, checking strict passed counts separately from core-solved counts.",
+  "minimumFixScope": "tests/entrypoints/problem_runner/test_driver.py",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165304-234880",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists. The successful scenario is now at lines 96–134, and the former partial-core scenario has been replaced by test_prepopulate_distinguishes_core_from_strict_pass at lines 137–170. It covers functionality and regression failures separately with all core tests passing, asserting checkpoints_passed == 0 and checkpoints_core_solved == 1. Current reporting logic also computes strict success across all groups. This supports remediation, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory; fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "nl -ba tests/entrypoints/problem_runner/test_driver.py | sed -n '90,180p'",
+        "sed -n '231,280p' src/slop_code/entrypoints/problem_runner/driver.py",
+        "sed -n '235,290p' src/slop_code/agent_runner/reporting.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/problem_runner/test_driver.py -k prepopulate"
+      ],
+      "createdAt": "2026-09-11T16:53:30.079Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:53:30.652Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-72bc459f21_17b63b7695",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:21.307Z",
+  "updatedAt": "2026-09-11T16:53:30.652Z"
+}

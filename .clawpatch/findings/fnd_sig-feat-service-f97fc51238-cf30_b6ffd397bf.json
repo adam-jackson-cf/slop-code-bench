@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-service-f97fc51238-cf30_b6ffd397bf",
+  "featureId": "feat_service_f97fc51238",
+  "title": "Output-path cleanup rewrites literal user-specified names",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/config/loader.py",
+      "startLine": 291,
+      "endLine": 308,
+      "symbol": "_resolve_save_template",
+      "quote": null
+    },
+    {
+      "path": "tests/entrypoints/config/test_loader.py",
+      "startLine": 399,
+      "endLine": 414,
+      "symbol": "TestLoadRunConfig.test_agent_version_omitted_when_missing",
+      "quote": null
+    }
+  ],
+  "reasoning": "The cleanup applies unconditional string replacements across the entire resolved template, even when agent.version is present or the template contains no version interpolation. Legitimate literal directory names containing '-None', 'None_', double underscores, or trailing underscores are changed. Distinct requested output paths can therefore collapse to the same destination, and runs are routed to names the user did not specify.",
+  "reproduction": "Load with cli_overrides=['save_template=trial__A_']. The returned save_template is 'trial_A', although the template contains no interpolation or missing version.",
+  "recommendation": "Restrict missing-version cleanup to the version interpolation and its associated separators; preserve literal template text and unrelated interpolated values.",
+  "whyTestsDoNotAlreadyCoverThis": "The existing test requires cleanup for a missing version in the default template. Custom-template tests use simple paths without characters affected by the cleanup and do not verify literal preservation.",
+  "suggestedRegressionTest": "Extend custom-template coverage to assert exact preservation of literal path components and distinct destinations, both with and without an agent version, while retaining the default-template missing-version scenario.",
+  "minimumFixScope": "_resolve_save_template in loader.py and output-template scenarios in test_loader.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171444-0f577d",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence files still exist, but the symbols moved: _resolve_save_template is now around lines 271–287 and the missing-version test starts at line 445. Cleanup now targets only agent.version interpolation and adjacent separators when version is missing; unconditional replacement of resolved text is gone. Targeted execution passed 13 checks covering the original reproduction, affected literal characters, distinct destinations with and without versions, unrelated interpolated values, and default missing-version behavior. An initial heredoc invocation was blocked by read-only temporary-file restrictions; the same validation succeeded using python -c. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/config/loader.py | sed -n '275,310p'",
+        "rg -n 'test_agent_version_omitted|test_custom_template|replace\\(|rstrip' tests/entrypoints/config/test_loader.py src/slop_code/entrypoints/config/loader.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -c '<13 assertions exercising load_run_config literal preservation, distinct destinations, unrelated interpolation, and default missing-version behavior>'"
+      ],
+      "createdAt": "2026-09-11T17:15:19.278Z"
+    }
+  ],
+  "signature": "sig_feat-service-f97fc51238_cf30974fc5",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:06.876Z",
+  "updatedAt": "2026-09-11T17:15:19.278Z"
+}

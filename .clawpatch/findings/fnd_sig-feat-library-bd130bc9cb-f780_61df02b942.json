@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bd130bc9cb-f780_61df02b942",
+  "featureId": "feat_library_bd130bc9cb",
+  "title": "Stream timeout can block indefinitely while joining the pump",
+  "category": "concurrency",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/stream_processor.py",
+      "startLine": 58,
+      "endLine": 69,
+      "symbol": "start_stream_pump",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/stream_processor.py",
+      "startLine": 148,
+      "endLine": 195,
+      "symbol": "process_stream",
+      "quote": null
+    }
+  ],
+  "reasoning": "After the command deadline expires, process_stream sets the stop event and performs an unbounded thread.join(). The pump only checks that event after the stream iterator yields. A silent process or blocked transport can therefore keep the pump blocked indefinitely, preventing the timeout result from reaching the caller.",
+  "reproduction": "Consume process_stream with a short timeout, poll_fn returning None, and an iterator blocked waiting for an event. The consumer remains blocked past the deadline until the iterator is externally released.",
+  "recommendation": "Provide a cancellation mechanism that interrupts the underlying stream read, and bound pump shutdown by an explicit cleanup deadline.",
+  "whyTestsDoNotAlreadyCoverThis": "The included stream processor test only checks decoding invalid UTF-8; it does not exercise timeouts or blocked iterators.",
+  "suggestedRegressionTest": "Test silent and partially emitting blocked streams, asserting bounded timeout completion and pump termination. Release blocked test iterators in teardown.",
+  "minimumFixScope": "Stream pump cancellation and process_stream shutdown.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central E05 verification passed: 67 focused tests, Ruff, and ty are green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:48:17.700Z"
+    }
+  ],
+  "signature": "sig_feat-library-bd130bc9cb_f7807bc603",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:36.106Z",
+  "updatedAt": "2026-09-12T07:48:17.700Z"
+}

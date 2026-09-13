@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-566aaab053-f079_361c246197",
+  "featureId": "feat_library_566aaab053",
+  "title": "Comma-separated imports lose every module after the first",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/languages/python/imports.py",
+      "startLine": 36,
+      "endLine": 55,
+      "symbol": "_parse_import_statement",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/imports.py",
+      "startLine": 132,
+      "endLine": 142,
+      "symbol": "_extract_imports_from_node",
+      "quote": null
+    }
+  ],
+  "reasoning": "The parser returns immediately for the first module, and its caller does not traverse the remaining children of the import statement. Consequently, `import a, b` traces only a, omitting b and its transitive dependencies from the source graph.",
+  "reproduction": "Use an entrypoint containing `import a, b as other` with local a.py and b.py. extract_imports returns only a, and trace_source_files omits b.py.",
+  "recommendation": "Return and collect one ImportInfo per imported module, including aliased modules.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied test contains no import extraction or source tracing scenarios.",
+  "suggestedRegressionTest": "Assert equivalent tracing for separate import statements and comma-separated imports, including aliases and transitive dependencies.",
+  "minimumFixScope": "_parse_import_statement and its collection logic in imports.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171152-757165",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists. The implicated functions now span lines 27–51 and 121–136: the parser collects every dotted or aliased module and its caller extends the import list, supporting the intended repair. No linked patch attempts or validation results were supplied. Targeted validation exited 1 before test collection because the read-only environment provided no usable temporary directory. The code appears repaired, but fixed cannot be confirmed with failed validation.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/languages/python/imports.py | head -150",
+        "rg -n 'comma|trace_source_files|extract_imports' tests/metrics",
+        "sed -n '190,240p' tests/metrics/language/py_imports_test.py",
+        "sed -n '345,435p' tests/metrics/language/py_imports_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/language/py_imports_test.py"
+      ],
+      "createdAt": "2026-09-11T17:12:19.096Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:12:19.623Z"
+    }
+  ],
+  "signature": "sig_feat-library-566aaab053_f0791d29a8",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:01.548Z",
+  "updatedAt": "2026-09-11T17:12:19.622Z"
+}

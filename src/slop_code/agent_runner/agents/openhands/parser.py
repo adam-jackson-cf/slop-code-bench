@@ -67,17 +67,29 @@ class OpenHandsParser(TrajectoryParser):
         return False
 
     def _is_openhands_jsonl(self, path: Path) -> bool:
-        """Check if JSONL file is OpenHands format."""
+        """Check if JSONL file contains a supported OpenHands action."""
         try:
             with path.open() as f:
-                first_line = f.readline().strip()
-                if not first_line:
-                    return False
-                data = json.loads(first_line)
-                # OpenHands events have is_step or action fields
-                return "is_step" in data or "action" in data
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    event = json.loads(line)
+                    if not isinstance(event, dict):
+                        return False
+                    if event.get("is_step") or self._has_supported_action(
+                        event
+                    ):
+                        return True
         except (json.JSONDecodeError, OSError):
             return False
+        return False
+
+    @staticmethod
+    def _has_supported_action(event: dict[str, Any]) -> bool:
+        """Return whether an event declares an actionable OpenHands action."""
+        action = event.get("action")
+        return isinstance(action, str) and bool(action) and action != "system"
 
     def parse(self, artifact_dir: Path) -> Trajectory:
         """Parse OpenHands trajectory."""
@@ -126,15 +138,17 @@ class OpenHandsParser(TrajectoryParser):
             if not isinstance(entry, dict):
                 continue
 
-            # Extract metadata from llm_metrics
-            if "llm_metrics" in entry and "accumulated_cost" not in metadata:
-                llm_metrics = entry.get("llm_metrics", {})
+            # Use the last metrics record because values are cumulative.
+            llm_metrics = entry.get("llm_metrics")
+            if isinstance(llm_metrics, dict):
                 metadata["accumulated_cost"] = llm_metrics.get(
                     "accumulated_cost", 0.0
                 )
                 accumulated_tokens = llm_metrics.get(
                     "accumulated_token_usage", {}
                 )
+                if not isinstance(accumulated_tokens, dict):
+                    accumulated_tokens = {}
                 metadata["total_tokens"] = {
                     "input": accumulated_tokens.get("prompt_tokens", 0),
                     "output": accumulated_tokens.get("completion_tokens", 0),
@@ -247,16 +261,18 @@ class OpenHandsParser(TrajectoryParser):
         steps: list[TrajectoryStep],
     ) -> None:
         """Process a single event from events.jsonl."""
-        # Only process step events
-        if not event.get("is_step", False):
+        if not event.get("is_step") and not self._has_supported_action(event):
             return
 
         line = event.get("line", "")
         action = event.get("action", "")
+        args = event.get("args", {})
+        if not isinstance(args, dict):
+            args = {}
 
         # Detect command execution
-        if "**CmdRunAction**" in line or action == "run":
-            command = event.get("args", {}).get("command", line)
+        if "**CmdRunAction**" in line or action in ("run", "execute_bash"):
+            command = args.get("command", line)
             steps.append(
                 ToolUseStep(
                     type="bash",
@@ -266,17 +282,47 @@ class OpenHandsParser(TrajectoryParser):
             )
 
         # Detect file edit
-        elif "**FileEditAction**" in line or action in ("write", "edit"):
+        elif "**FileEditAction**" in line or action in (
+            "write",
+            "edit",
+            "str_replace_editor",
+        ):
             steps.append(
                 ToolUseStep(
                     type="edit",
-                    arguments=event.get("args", {}),
+                    arguments=args,
                     result=None,
                 )
             )
 
-        # Agent message
+        elif action == "read":
+            steps.append(
+                ToolUseStep(
+                    type="read",
+                    arguments=args,
+                    result=None,
+                )
+            )
+
+        elif action == "browse":
+            steps.append(
+                ToolUseStep(
+                    type="browse",
+                    arguments=args,
+                    result=None,
+                )
+            )
+
         elif action == "message":
-            content = event.get("args", {}).get("content", "")
+            content = args.get("content", "") or event.get("message", "")
             if content:
                 steps.append(AgentStep(content=content))
+
+        elif self._has_supported_action(event):
+            steps.append(
+                ToolUseStep(
+                    type=action,
+                    arguments=args,
+                    result=None,
+                )
+            )

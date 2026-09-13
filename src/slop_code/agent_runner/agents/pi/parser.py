@@ -30,6 +30,7 @@ class PiParser(TrajectoryParser):
         if not jsonl_file:
             return False
 
+        found_pi_event = False
         try:
             with jsonl_file.open() as handle:
                 for _, raw in zip(range(40), handle):
@@ -37,12 +38,14 @@ class PiParser(TrajectoryParser):
                     if not line:
                         continue
                     payload = json.loads(line)
+                    if not isinstance(payload, dict):
+                        return False
                     if payload.get("type") in _PI_EVENT_TYPES:
-                        return True
+                        found_pi_event = True
         except (json.JSONDecodeError, OSError):
             return False
 
-        return False
+        return found_pi_event
 
     def parse(self, artifact_dir: Path) -> Trajectory:
         jsonl_file = self._find_jsonl_file(artifact_dir)
@@ -62,6 +65,10 @@ class PiParser(TrajectoryParser):
                     event = json.loads(line)
                 except json.JSONDecodeError as e:
                     raise ParseError(f"Invalid JSON at line {line_num}: {e}")
+                if not isinstance(event, dict):
+                    raise ParseError(
+                        f"Invalid JSON record at line {line_num}: expected object"
+                    )
 
                 event_type = event.get("type")
                 if event_type == "message_end":
@@ -170,6 +177,15 @@ class PiParser(TrajectoryParser):
         steps: list[TrajectoryStep],
         pending_tools: dict[str, ToolUseStep],
     ) -> None:
+        tool_call_id = event.get("toolCallId")
+        step = (
+            pending_tools.get(tool_call_id)
+            if isinstance(tool_call_id, str) and tool_call_id
+            else None
+        )
+        if step is not None:
+            return
+
         args = event.get("args")
         step = ToolUseStep(
             type=str(event.get("toolName") or "unknown"),
@@ -178,7 +194,6 @@ class PiParser(TrajectoryParser):
         )
         steps.append(step)
 
-        tool_call_id = event.get("toolCallId")
         if isinstance(tool_call_id, str) and tool_call_id:
             pending_tools[tool_call_id] = step
 

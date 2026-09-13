@@ -65,6 +65,7 @@ from .models import GenerationManifest
 from .models import GraphEdge
 from .models import GraphNode
 from .models import GraphSccEvidence
+from .models import InterpreterEvidence
 from .models import InventoryFile
 from .models import LedgerTransitionEvidence
 from .models import LineageCandidate

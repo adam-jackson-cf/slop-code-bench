@@ -175,15 +175,18 @@ class TestWorkspace:
         workspace, initial_files = modified_workspace
         try:
             workspace.reset()
+            working_dir = workspace.working_dir
             assert not (
-                workspace.working_dir / "new_file.txt"
+                working_dir / "new_file.txt"
             ).exists(), "New file exists"
             for f, expected in initial_files.items():
-                assert (workspace.working_dir / f).exists(), f"File {f} exists"
-                if f.is_file():
+                restored_path = working_dir / f
+                assert restored_path.exists(), f"File {f} exists"
+                if expected is not None:
+                    assert restored_path.is_file(), f"File {f} is not a file"
                     assert (
-                        workspace.working_dir / f
-                    ).read_text() == expected, f"File {f} has incorrect content"
+                        restored_path.read_text() == expected
+                    ), f"File {f} has incorrect content"
 
         finally:
             workspace.cleanup()
@@ -196,12 +199,15 @@ class TestWorkspace:
         (workspace.working_dir / "file1.txt").unlink()
         try:
             workspace.reset()
+            working_dir = workspace.working_dir
             for f, expected in initial_files.items():
-                assert (workspace.working_dir / f).exists(), f"File {f} exists"
-                if f.is_file():
+                restored_path = working_dir / f
+                assert restored_path.exists(), f"File {f} exists"
+                if expected is not None:
+                    assert restored_path.is_file(), f"File {f} is not a file"
                     assert (
-                        workspace.working_dir / f
-                    ).read_text() == expected, f"File {f} has incorrect content"
+                        restored_path.read_text() == expected
+                    ), f"File {f} has incorrect content"
 
         finally:
             workspace.cleanup()
@@ -214,12 +220,15 @@ class TestWorkspace:
         (workspace.working_dir / "file1.txt").write_text("modified content")
         try:
             workspace.reset()
+            working_dir = workspace.working_dir
             for f, expected in initial_files.items():
-                assert (workspace.working_dir / f).exists(), f"File {f} exists"
-                if f.is_file():
+                restored_path = working_dir / f
+                assert restored_path.exists(), f"File {f} exists"
+                if expected is not None:
+                    assert restored_path.is_file(), f"File {f} is not a file"
                     assert (
-                        workspace.working_dir / f
-                    ).read_text() == expected, f"File {f} has incorrect content"
+                        restored_path.read_text() == expected
+                    ), f"File {f} has incorrect content"
 
         finally:
             workspace.cleanup()
@@ -433,6 +442,99 @@ class TestWorkspace:
             workspace.prepare()
             contents = workspace.get_file_contents([])
             assert contents == {}
+        finally:
+            workspace.cleanup()
+
+    def test_get_file_contents_preserves_hidden_paths_and_confinement(
+        self, workspace: Workspace, tmp_path: Path
+    ):
+        """Hidden paths are collected without following paths outside the workspace."""
+        try:
+            workspace.prepare()
+            hidden_dir = workspace.working_dir / ".hidden"
+            hidden_dir.mkdir()
+            (hidden_dir / "report.txt").write_text("hidden")
+            (workspace.working_dir / "hidden").mkdir()
+            (workspace.working_dir / "hidden" / "report.txt").write_text(
+                "visible"
+            )
+            outside = tmp_path / "outside.txt"
+            outside.write_text("secret")
+            (workspace.working_dir / "external.txt").symlink_to(outside)
+            external_dir = workspace.working_dir / "external-dir"
+            external_dir.symlink_to(tmp_path, target_is_directory=True)
+
+            contents = workspace.get_file_contents(
+                [
+                    "./.hidden/report.txt",
+                    "./.hidden/*.txt",
+                    ".hidden",
+                    "../outside.txt",
+                    "external.txt",
+                    "external-dir/*.txt",
+                ]
+            )
+
+            assert contents == {".hidden/report.txt": "hidden"}
+        finally:
+            workspace.cleanup()
+
+    def test_materialize_nested_file_asset(
+        self, workspace: Workspace, tmp_path: Path
+    ):
+        """File assets create missing parents and can be materialized repeatedly."""
+        source = tmp_path / "asset.txt"
+        source.write_text("asset contents")
+        workspace._is_agent_infer = True
+        workspace._static_assets = {
+            "nested": ResolvedStaticAsset(
+                name="nested",
+                absolute_path=source,
+                save_path=Path("nested/assets/asset.txt"),
+            )
+        }
+        try:
+            workspace.prepare()
+            workspace.materialize_assets()
+            workspace.materialize_assets()
+
+            assert (
+                workspace.working_dir / "nested" / "assets" / "asset.txt"
+            ).read_text() == "asset contents"
+        finally:
+            workspace.cleanup()
+
+    def test_workspace_reset_restores_executable_and_links(
+        self, tmp_path: Path
+    ):
+        """Workspace preparation and reset preserve snapshot filesystem metadata."""
+        source = tmp_path / "source"
+        source.mkdir()
+        executable = source / "run.sh"
+        executable.write_text("#!/bin/sh\nexit 0\n")
+        executable.chmod(0o755)
+        (source / "run-link").symlink_to("run.sh")
+        (source / "run-hard-link").hardlink_to(executable)
+        snapshot = Snapshot.from_directory(
+            cwd=source, env={}, save_path=tmp_path / "archives"
+        )
+        workspace = Workspace(
+            initial_snapshot=snapshot,
+            snapshot_fn=lambda path: Snapshot.from_directory(
+                cwd=path, env={}, save_path=tmp_path / "archives"
+            ),
+        )
+        try:
+            workspace.prepare()
+            (workspace.working_dir / "run.sh").unlink()
+            workspace.reset()
+
+            restored = workspace.working_dir
+            assert (restored / "run.sh").stat().st_mode & 0o111
+            assert (restored / "run-link").readlink() == Path("run.sh")
+            assert (restored / "run-hard-link").stat().st_ino == (
+                restored / "run.sh"
+            ).stat().st_ino
         finally:
             workspace.cleanup()
 

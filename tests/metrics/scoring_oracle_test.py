@@ -15,6 +15,7 @@ import pytest
 from slop_code.evaluation.config import ProblemConfig
 from slop_code.metrics.scoring.finalization import finalize_benchmark_score
 from slop_code.metrics.scoring.historical import capture_historical_provenance
+from slop_code.metrics.scoring.live_evidence import _committed_artifacts
 from slop_code.metrics.scoring.models import OracleBundle
 from slop_code.metrics.scoring.oracle import BASELINE_DIRECTORY_NAMES
 from slop_code.metrics.scoring.oracle import capture_baseline_oracle
@@ -137,9 +138,7 @@ def test_historical_baselines_are_immutable_and_path_independent(
         for baseline_name in BASELINE_DIRECTORY_NAMES:
             baseline = root.resolve() / "experiments" / baseline_name
             analysis = baseline / "measurement_analysis"
-            prior_pointer = json.loads(
-                (analysis / "current.json").read_bytes()
-            )
+            prior_pointer = json.loads((analysis / "current.json").read_bytes())
             capture_historical_provenance(
                 baseline, (cast("ProblemConfig", problem),)
             )
@@ -152,9 +151,7 @@ def test_historical_baselines_are_immutable_and_path_independent(
             pointer = json.loads((analysis / "current.json").read_bytes())
             assert pointer["generation_id"] != prior_pointer["generation_id"]
             assert (
-                analysis
-                / "generations"
-                / prior_pointer["generation_id"]
+                analysis / "generations" / prior_pointer["generation_id"]
             ).is_dir()
             generation = analysis / "generations" / pointer["generation_id"]
             statuses.append((generation / "eligibility.json").read_bytes())
@@ -391,3 +388,88 @@ def test_live_oracle_recovers_stale_temp_and_concurrent_identical_capture(
     candidates = tuple(oracle_dir.glob("*.json"))
     assert len(candidates) == 1
     assert json.loads(candidates[0].read_text())["checkpoint_id"] == "one"
+
+
+def test_committed_oracle_requires_complete_unmodified_artifacts(
+    tmp_path: Path,
+) -> None:
+    problem = cast("ProblemConfig", type("Problem", (), {"name": "problem"})())
+
+    def checkpoint(name: str) -> tuple[Path, Path]:
+        target = tmp_path / name / "problem" / "one"
+        _write_live_oracle_artifacts(target)
+        return target, capture_live_checkpoint_oracle(target, "problem", "one")
+
+    required = {
+        "evaluation.json",
+        "quality_analysis/overall_quality.json",
+        "quality_analysis/files.jsonl",
+        "quality_analysis/symbols.jsonl",
+    }
+    complete, _ = checkpoint("complete")
+    assert set(_committed_artifacts(complete, "one", problem)) == required
+
+    historical = tmp_path / "historical" / "problem" / "one"
+    _write_live_oracle_artifacts(historical)
+    historical_rows = []
+    for relative in sorted(required):
+        content = (historical / relative).read_bytes()
+        historical_rows.append(
+            {
+                "path": relative,
+                "presence": True,
+                "bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+        )
+    historical_bundle = {
+        "kind": "historical_provenance_bundle",
+        "source_type": "historical",
+        "problems": [
+            {
+                "problem_id": "problem",
+                "checkpoints": [
+                    {"checkpoint_id": "one", "artifacts": historical_rows}
+                ],
+            }
+        ],
+    }
+    content = json.dumps(
+        historical_bundle, sort_keys=True, separators=(",", ":")
+    ).encode()
+    bundle_dir = (
+        tmp_path
+        / "historical"
+        / "measurement_analysis"
+        / ("historical_provenance")
+    )
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / f"{hashlib.sha256(content).hexdigest()}.json").write_bytes(
+        content
+    )
+    assert set(_committed_artifacts(historical, "one", problem)) == required
+
+    omitted, oracle = checkpoint("omitted")
+    payload = json.loads(oracle.read_bytes())
+    payload["artifacts"].pop()
+    oracle.unlink()
+    content = json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    ).encode()
+    (oracle.parent / f"{hashlib.sha256(content).hexdigest()}.json").write_bytes(
+        content
+    )
+    with pytest.raises(ValueError, match="canonical_provenance_unavailable"):
+        _committed_artifacts(omitted, "one", problem)
+
+    missing, _ = checkpoint("missing")
+    (missing / "quality_analysis" / "files.jsonl").unlink()
+    with pytest.raises(ValueError, match="canonical_provenance_unavailable"):
+        _committed_artifacts(missing, "one", problem)
+
+    modified, _ = checkpoint("modified")
+    (modified / "quality_analysis" / "symbols.jsonl").write_text(
+        '{"symbol":"changed"}\n'
+    )
+    with pytest.raises(ValueError, match="canonical_artifact_invalid"):
+        _committed_artifacts(modified, "one", problem)

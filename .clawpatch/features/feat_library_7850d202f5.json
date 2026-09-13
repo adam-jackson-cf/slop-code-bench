@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_7850d202f5",
+  "title": "Python source src/slop_code/metrics/scoring/:live",
+  "summary": "Python source group src/slop_code/metrics/scoring/:live with 2 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/metrics/scoring/:live",
+      "symbol": "src/slop_code/metrics/scoring/:live",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/metrics/scoring/live_evidence.py",
+      "reason": "source group src/slop_code/metrics/scoring/:live"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/live_regression.py",
+      "reason": "source group src/slop_code/metrics/scoring/:live"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    }
+  ],
+  "tests": [],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-7850d202f5-d452_74bbabb116",
+    "fnd_sig-feat-library-7850d202f5-6ed3_e90ed9b748"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "2 finding(s); prompt=68019 bytes; approxTokens=17005; includedFiles=3; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:57:36.675Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:04:14.342Z"
+}

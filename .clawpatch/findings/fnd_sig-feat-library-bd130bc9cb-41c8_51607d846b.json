@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bd130bc9cb-41c8_51607d846b",
+  "featureId": "feat_library_bd130bc9cb",
+  "title": "Path normalization strips meaningful leading dots",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/workspace.py",
+      "startLine": 130,
+      "endLine": 140,
+      "symbol": "Workspace.get_file_contents",
+      "quote": null
+    }
+  ],
+  "reasoning": "str.lstrip('./') removes any sequence of dots and slashes rather than a literal './' prefix. Requests for .config/settings.json become config/settings.json, and hidden-file glob patterns are similarly changed. Collection silently omits the requested files or returns a different file.",
+  "reproduction": "Create .config/settings.json and config/settings.json with different contents, then request .config/settings.json. The non-hidden file is selected.",
+  "recommendation": "Remove only explicit current-directory prefixes while preserving hidden path components and glob syntax.",
+  "whyTestsDoNotAlreadyCoverThis": "Included collection tests cover ordinary names and nested paths but no leading-dot filenames or directories.",
+  "suggestedRegressionTest": "Extend literal and glob collection tests with hidden paths, optional './' prefixes, and similarly named non-hidden files.",
+  "minimumFixScope": "Workspace.get_file_contents normalization.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170813-130017",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original file and method still exist. workspace.py:133–140 now removes only literal './' prefixes, preserving meaningful leading dots; the reported lstrip bug appears repaired. Hidden-path coverage exists at workspace_test.py:448–478. No linked patch attempts or validation results were supplied. Targeted pytest validation exited 1 before collection because the read-only environment provides no usable temporary directory, so a fixed outcome cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/execution/workspace.py | sed -n '110,175p'",
+        "rg -n 'hidden|\\.config|prefix|file_contents' tests/execution/workspace_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/execution/workspace_test.py -k get_file_contents"
+      ],
+      "createdAt": "2026-09-11T17:08:38.267Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:08:38.858Z"
+    }
+  ],
+  "signature": "sig_feat-library-bd130bc9cb_41c8599179",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:36.106Z",
+  "updatedAt": "2026-09-11T17:08:38.858Z"
+}

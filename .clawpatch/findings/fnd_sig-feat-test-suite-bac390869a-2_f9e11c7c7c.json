@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-bac390869a-2_f9e11c7c7c",
+  "featureId": "feat_test-suite_bac390869a",
+  "title": "Concurrency test can pass when one evaluator caller fails",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/evaluation/locked_environment_test.py",
+      "startLine": 148,
+      "endLine": 168,
+      "symbol": "test_same_id_concurrency_builds_once",
+      "quote": null
+    }
+  ],
+  "reasoning": "The test checks that returned environment IDs have one distinct value, but never checks that both threads returned. If one caller succeeds and the other raises, the singleton results list satisfies both assertions. Thread.join() does not propagate worker exceptions, and the supplied pytest configuration does not promote thread-exception warnings to failures.",
+  "reproduction": "Make one concurrent invocation raise while the other successfully builds once. The assertions still pass, with pytest normally emitting a thread-exception warning.",
+  "recommendation": "Propagate worker exceptions to the test and assert that both callers receive the same environment. Use bounded waits so a locking deadlock fails instead of hanging.",
+  "whyTestsDoNotAlreadyCoverThis": "The assertions prove uniqueness and one build, but not successful completion of every caller.",
+  "suggestedRegressionTest": "Expand the existing concurrency scenario to retrieve every worker result with a timeout, assert two successful results, and verify identical environment identities and one build.",
+  "minimumFixScope": "tests/evaluation/locked_environment_test.py::test_same_id_concurrency_builds_once",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193938-f0aa5b",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists; the test moved to lines 163–182. It now retrieves both submitted futures with result(timeout=5), propagating worker exceptions, and compares both results while asserting one build. This supports repair of the original gap. However, targeted pytest validation exited 1 before collection because the read-only environment provides no usable temporary directory, so fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "nl -ba tests/evaluation/locked_environment_test.py | sed -n '145,195p'",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/evaluation/locked_environment_test.py::test_same_id_concurrency_builds_once"
+      ],
+      "createdAt": "2026-09-12T19:39:59.873Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified concurrency test awaits every worker with bounded timeout and asserts one shared build; evaluation gates pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:41:26.399Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-bac390869a_2d0282088e",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:58.592Z",
+  "updatedAt": "2026-09-12T19:41:26.398Z"
+}

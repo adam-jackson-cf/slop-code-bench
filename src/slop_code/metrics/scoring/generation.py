@@ -294,8 +294,8 @@ def calculate_scores_from_evidence(
 
 def load_verified_current_generation_state(
     run_directory: Path,
-) -> tuple[GenerationManifest, dict[str, bytes]]:
-    """Load any current generation after complete artifact checks."""
+) -> tuple[str, GenerationManifest, dict[str, bytes]]:
+    """Load current identity and artifacts from one verified snapshot."""
     analysis_directory = run_directory / MEASUREMENT_ANALYSIS_DIR
     pointer_path = analysis_directory / CURRENT_POINTER_FILENAME
     try:
@@ -327,14 +327,14 @@ def load_verified_current_generation_state(
         raise ScoreEvidenceError(
             {"current generation manifest is invalid"}
         ) from exc
-    return manifest, evidence
+    return generation_id, manifest, evidence
 
 
 def load_verified_current_generation(
     run_directory: Path,
 ) -> tuple[BenchmarkScore, tuple[CheckpointReportAddition, ...]]:
     """Load the current eligible generation after complete artifact checks."""
-    manifest, _ = load_verified_current_generation_state(run_directory)
+    _, manifest, _ = load_verified_current_generation_state(run_directory)
     if not manifest.eligibility.eligible or manifest.benchmark is None:
         raise ScoreEvidenceError(set(manifest.eligibility.reasons))
     return manifest.benchmark, manifest.report_additions
@@ -432,13 +432,10 @@ def _verify_published(
         if score_source is not None
         else None
     )
-    if (
-        manifest.parser_tokenizer_schema_id != parser_tokenizer_schema_id
-        or (
-            not allow_obsolete_formula
-            and manifest.formula_id
-            != generation_formula_id(parser_tokenizer_schema_id)
-        )
+    if manifest.parser_tokenizer_schema_id != parser_tokenizer_schema_id or (
+        not allow_obsolete_formula
+        and manifest.formula_id
+        != generation_formula_id(parser_tokenizer_schema_id)
     ):
         raise ValueError("published generation formula identity is invalid")
     expected_paths = {
@@ -746,7 +743,7 @@ def publish_generation(
                     current_directory = generations / current_id
                     if current_directory.is_dir():
                         try:
-                            current_manifest, _ = (
+                            _, current_manifest, _ = (
                                 load_verified_current_generation_state(
                                     run_directory
                                 )

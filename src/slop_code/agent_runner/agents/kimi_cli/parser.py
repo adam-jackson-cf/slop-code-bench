@@ -57,56 +57,141 @@ class _WireStep:
         self.pending_tool = None
 
 
-def _iter_jsonrpc_messages(raw_text: str) -> list[str]:
-    messages: list[str] = []
-    buffer = ""
+class JsonRpcMessageFramer:
+    """Incrementally extract complete JSON-RPC objects from noisy wire output."""
 
-    for line in raw_text.splitlines():
-        if line.lstrip().startswith('{"jsonrpc"'):
-            if buffer:
-                messages.append(buffer)
-            buffer = line
-            continue
-        if buffer:
-            buffer += "\n" + line
+    def __init__(self) -> None:
+        self._buffer = ""
 
-    if buffer:
-        messages.append(buffer)
+    def feed(self, text: str) -> list[dict[str, Any]]:
+        """Return complete JSON object messages found in ``text``."""
+        self._buffer += text
+        messages: list[dict[str, Any]] = []
 
-    return messages
+        while True:
+            start = self._buffer.find("{")
+            if start < 0:
+                self._buffer = ""
+                break
+            if start > 0:
+                self._buffer = self._buffer[start:]
+
+            end = self._complete_object_end()
+            if end is None:
+                restart = self._next_message_start()
+                if restart is None:
+                    break
+                self._buffer = self._buffer[restart:]
+                continue
+
+            raw_message = self._buffer[:end]
+            self._buffer = self._buffer[end:]
+            try:
+                message = json.loads(raw_message, strict=False)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(message, dict):
+                messages.append(message)
+
+        return messages
+
+    def _complete_object_end(self) -> int | None:
+        depth = 0
+        in_string = False
+        escaped = False
+
+        for index, character in enumerate(self._buffer):
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+
+            if character == '"':
+                in_string = True
+            elif character == "{":
+                depth += 1
+            elif character == "}":
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+
+        return None
+
+    def _next_message_start(self) -> int | None:
+        """Find a new root object after an incomplete malformed message."""
+        depth = 0
+        in_string = False
+        escaped = False
+        previous_non_whitespace = ""
+
+        for index, character in enumerate(self._buffer):
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif character == "\\":
+                    escaped = True
+                elif character == '"':
+                    in_string = False
+                continue
+
+            if character == '"':
+                in_string = True
+                previous_non_whitespace = character
+            elif character == "{":
+                if depth == 1 and previous_non_whitespace == "}":
+                    return index
+                depth += 1
+                previous_non_whitespace = character
+            elif character == "}":
+                depth -= 1
+                previous_non_whitespace = character
+            elif not character.isspace():
+                previous_non_whitespace = character
+
+        return None
+
+
+def iter_jsonrpc_messages(raw_text: str) -> list[dict[str, Any]]:
+    """Return complete JSON-RPC objects from a wire-output snapshot."""
+    return JsonRpcMessageFramer().feed(raw_text)
+
+
+def wire_event_params(message: dict[str, Any]) -> dict[str, Any] | None:
+    """Return an event's params payload, excluding terminal responses."""
+    if message.get("method") != "event":
+        return None
+    params = message.get("params")
+    return params if isinstance(params, dict) else None
+
+
+def is_final_result(message: dict[str, Any]) -> bool:
+    """Return whether ``message`` is Kimi's terminal JSON-RPC result."""
+    return message.get("id") in {"1", 1} and "result" in message
 
 
 def parse_wire_events(raw_text: str) -> list[dict[str, Any]]:
     """Parse Kimi --wire output into event payloads.
 
     ToolResult payloads can include unescaped tab/newline control characters,
-    so we reconstruct full JSON-RPC messages first, then decode with
-    ``strict=False``.
+    so JSON-RPC objects are framed before decoding with ``strict=False``.
     """
     events: list[dict[str, Any]] = []
-    for raw in _iter_jsonrpc_messages(raw_text):
-        try:
-            message = json.loads(raw, strict=False)
-        except json.JSONDecodeError:
-            continue
-        if message.get("method") != "event":
-            continue
-        params = message.get("params")
-        if isinstance(params, dict):
+    for message in iter_jsonrpc_messages(raw_text):
+        params = wire_event_params(message)
+        if params is not None:
             events.append(params)
     return events
 
 
 def has_final_result(raw_text: str) -> bool:
     """Return whether wire output contains the final JSON-RPC result."""
-    for raw in _iter_jsonrpc_messages(raw_text):
-        try:
-            message = json.loads(raw, strict=False)
-        except json.JSONDecodeError:
-            continue
-        if message.get("id") in {"1", 1} and "result" in message:
-            return True
-    return False
+    return any(
+        is_final_result(message) for message in iter_jsonrpc_messages(raw_text)
+    )
 
 
 def group_events_into_steps(events: list[dict[str, Any]]) -> list[_WireStep]:

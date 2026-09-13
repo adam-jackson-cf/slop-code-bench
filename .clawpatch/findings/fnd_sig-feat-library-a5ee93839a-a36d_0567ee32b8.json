@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a5ee93839a-a36d_0567ee32b8",
+  "featureId": "feat_library_a5ee93839a",
+  "title": "Replacing a language leaves stale extension mappings",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/languages/registry.py",
+      "startLine": 24,
+      "endLine": 26,
+      "symbol": "register_language",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/languages/registry.py",
+      "startLine": 53,
+      "endLine": 56,
+      "symbol": "get_language_by_extension",
+      "quote": null
+    }
+  ],
+  "reasoning": "Registration overwrites an existing language specification but only adds extension mappings. If the replacement removes an extension, that extension still resolves to the replacement specification even though it no longer supports it. The name and extension registries consequently disagree.",
+  "reproduction": "Register a language with extensions ['.foo', '.bar'], then register the same name with a specification supporting only ['.foo']. Looking up '.bar' still returns the replacement specification.",
+  "recommendation": "Define duplicate registration behavior explicitly: reject duplicate names before mutation, or remove mappings owned by the replaced language before installing its new extensions.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests exercise slop_code.agent_runner.registry, a different registry; they do not exercise language registration or extension lookup.",
+  "suggestedRegressionTest": "Test registry consistency across repeated registration: either assert duplicate registration fails without changing either mapping, or assert replacement removes obsolete extensions, retains current extensions, and preserves mappings owned by other languages.",
+  "minimumFixScope": "Update register_language and add behavioral coverage for language registry consistency.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200113-e55d32",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists. register_language now removes previous extensions owned by the replaced language at lines 24–28 before installing its replacement; extension lookup moved to lines 59–62. This supports the intended repair. tests/metrics/models_test.py also contains replacement coverage. No linked patch attempts were supplied. Targeted validation exited 1 before collection because the read-only environment provided no usable temporary directory, so the repair cannot be marked fixed.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/languages/registry.py",
+        "rg -n 'register_language|obsolete|EXT_TO_LANGUAGE' tests/metrics",
+        "sed -n '450,565p' tests/metrics/models_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/models_test.py"
+      ],
+      "createdAt": "2026-09-12T20:01:42.097Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified replacement removes stale owned extensions and preserves unrelated registrations; 123 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:59.407Z"
+    }
+  ],
+  "signature": "sig_feat-library-a5ee93839a_a36da8a184",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:10.433Z",
+  "updatedAt": "2026-09-12T20:03:59.407Z"
+}

@@ -685,7 +685,7 @@ def _render_problem_cv_summary(
         console.print("[yellow]No CV summary to display.[/yellow]")
         return
 
-    def _table(title: str) -> Table:
+    def _table(title: str, *, include_final: bool = False) -> Table:
         table = Table(
             box=box.SIMPLE_HEAVY, header_style="bold", show_lines=False
         )
@@ -694,14 +694,14 @@ def _render_problem_cv_summary(
             table.add_column(
                 title.format(label=label), justify="right", style="yellow"
             )
+            if include_final:
+                table.add_column(
+                    f"{label} final CV", justify="right", style="yellow"
+                )
         return table
 
     overall_table = _table("{label} overall CV")
-    first_final_table = _table("{label} first CV")
-    for label in CV_SUMMARY_METRICS:
-        first_final_table.add_column(
-            f"{label} final CV", justify="right", style="yellow"
-        )
+    first_final_table = _table("{label} first CV", include_final=True)
 
     for problem in sorted(overall):
         per_problem = overall[problem]

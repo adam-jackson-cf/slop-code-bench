@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-7307b3db19-8f4e_8334cbfbad",
+  "featureId": "feat_library_7307b3db19",
+  "title": "First/final variance values appear beneath incorrect column headers",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/variance.py",
+      "startLine": 688,
+      "endLine": 704,
+      "symbol": "_render_problem_cv_summary",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/variance.py",
+      "startLine": 713,
+      "endLine": 728,
+      "symbol": "_render_problem_cv_summary",
+      "quote": null
+    },
+    {
+      "path": "tests/entrypoints/commands/test_variance.py",
+      "startLine": 55,
+      "endLine": 85,
+      "symbol": "test_render_problem_cv_summary_splits_tables",
+      "quote": null
+    }
+  ],
+  "reasoning": "Headers contain all first-checkpoint metrics followed by all final-checkpoint metrics, but row values alternate first and final for each metric. Consequently, most values are labeled as the wrong metric or checkpoint boundary, misleading comparisons.",
+  "reproduction": "Render a summary with distinct first and final values for every metric. The second numeric cell contains final Pass rate but is headed Lint first CV.",
+  "recommendation": "Construct headers and row values in the same order, either both interleaved or both grouped.",
+  "whyTestsDoNotAlreadyCoverThis": "The existing rendering test checks titles and header presence only; it also uses identical first and final dictionaries and never validates cell-to-header correspondence.",
+  "suggestedRegressionTest": "Expand the rendering scenario to use unique values for each metric and boundary, then assert their correspondence to the table columns.",
+  "minimumFixScope": "Align column ordering in _render_problem_cv_summary and strengthen its existing test.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201140-213000",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. variance.py:693-700 now interleaves first/final headers per metric, matching row values at 713-724. The original test was replaced by test_render_problem_cv_summary_interleaves_first_final_values at test_variance.py:55-120, using distinct values and checking header/value ordering. This supports a repair, but targeted pytest validation exited 1 before running because the read-only environment provided no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/entrypoints/commands/variance.py | sed -n '673,738p'",
+        "nl -ba tests/entrypoints/commands/test_variance.py | sed -n '55,120p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/commands/test_variance.py::test_render_problem_cv_summary_interleaves_first_final_values"
+      ],
+      "createdAt": "2026-09-12T20:12:08.327Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified each metric renders adjacent first/final headers and values in matching order; 14 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:13:21.678Z"
+    }
+  ],
+  "signature": "sig_feat-library-7307b3db19_8f4ea58b0a",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:33.678Z",
+  "updatedAt": "2026-09-12T20:13:21.677Z"
+}

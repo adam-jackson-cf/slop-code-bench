@@ -29,6 +29,13 @@ uv run ruff check --fix .
 formatting, linting, type-checking, security hardening, or test repair. They
 include intentional challenges and issues to support the benchmark
 experiment.
+- **NEVER** modify checkpoint problem content unless the user explicitly
+authorizes that modification in the current conversation. This includes
+checkpoint prompts, problem configuration, tests, fixtures, solutions,
+reference solutions, and problem-specific supporting assets, whether stored
+in this repository, a separate problem repository, or a copied snapshot.
+- A request to change the benchmark harness, evaluation, scoring, remediation,
+or quality tooling does not implicitly authorize checkpoint problem changes.
 - Experiment snapshots include `tests/agent_runner/resources/**`,
 `tests/mining/fixtures/**`, `tests/evaluation/fixtures/**`,
 `examples/**/submission/**`, `examples/**/submissions/**`,

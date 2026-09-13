@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_b487360049",
+  "title": "Python source src/slop_code/common",
+  "summary": "Python source group src/slop_code/common with 6 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/common",
+      "symbol": "src/slop_code/common",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/common/__init__.py",
+      "reason": "source group src/slop_code/common"
+    },
+    {
+      "path": "src/slop_code/common/common.py",
+      "reason": "source group src/slop_code/common"
+    },
+    {
+      "path": "src/slop_code/common/constants.py",
+      "reason": "source group src/slop_code/common"
+    },
+    {
+      "path": "src/slop_code/common/llms.py",
+      "reason": "source group src/slop_code/common"
+    },
+    {
+      "path": "src/slop_code/common/paths.py",
+      "reason": "source group src/slop_code/common"
+    },
+    {
+      "path": "src/slop_code/common/render.py",
+      "reason": "source group src/slop_code/common"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/agent_runner/llms_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/common/paths_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/common/render_test.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/agent_runner/llms_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/common/paths_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/common/render_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-b487360049-a404_3d2d4e3a67",
+    "fnd_sig-feat-library-b487360049-0548_049163a0e5",
+    "fnd_sig-feat-library-b487360049-8bbe_aaf48788fa"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "3 finding(s); prompt=94948 bytes; approxTokens=23737; includedFiles=10; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:59:11.871Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-11T17:14:20.262Z"
+}

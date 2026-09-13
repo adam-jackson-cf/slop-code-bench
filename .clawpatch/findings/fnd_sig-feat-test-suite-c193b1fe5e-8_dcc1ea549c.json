@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-c193b1fe5e-8_dcc1ea549c",
+  "featureId": "feat_test-suite_c193b1fe5e",
+  "title": "Registry fixtures discard pre-existing language registrations",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 28,
+      "endLine": 32,
+      "symbol": "TestCalculateFileMetrics.setup_test_language",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 77,
+      "endLine": 80,
+      "symbol": "TestCalculateFileMetrics.setup_test_language",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 150,
+      "endLine": 153,
+      "symbol": "TestMeasureFiles.setup_test_language",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 401,
+      "endLine": 404,
+      "symbol": "TestMeasureSnapshotQuality.setup_test_language",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/models_test.py",
+      "startLine": 448,
+      "endLine": 455,
+      "symbol": "TestLanguageRegistry.clear_registry",
+      "quote": null
+    }
+  ],
+  "reasoning": "These fixtures clear shared module dictionaries before testing and leave them empty afterward instead of restoring their original contents. Any registrations present before fixture setup are lost, making subsequent tests that use those registrations dependent on execution order.",
+  "reproduction": "Populate both registries before invoking one of these fixtures; after teardown, verify that the original registrations have disappeared.",
+  "recommendation": "Snapshot both dictionaries before clearing them and restore their contents in a finally block after each test.",
+  "whyTestsDoNotAlreadyCoverThis": "Each affected test installs its own registrations or expects an empty registry. None checks preservation of the state that existed before fixture setup.",
+  "suggestedRegressionTest": "Verify fixture isolation with pre-existing language and extension entries, checking that both dictionaries are restored after normal execution and an exception.",
+  "minimumFixScope": "The four registry-mutating fixtures in driver_test.py and models_test.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200116-307f8d",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence files and all four fixtures still exist, with shifted lines. Each now snapshots both registries and restores their contents in finally blocks: driver_test.py:29–85, 120–164, 390–448; models_test.py:453–465. Direct execution verified preservation of pre-existing entries and removal of temporary entries after normal completion and injected exceptions for all four fixtures (8 checks passed). The initial heredoc command was blocked by sandbox temporary-file restrictions; rerunning with python -c succeeded. No linked patch attempts were supplied.",
+      "commands": [
+        "rg -n 'original_languages|original_extensions|def setup_test_language|def clear_registry|restor|preserv' tests/metrics/driver_test.py tests/metrics/models_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -c '<runpy-load both test modules; execute all four unwrapped fixtures with pre-existing registrations; assert both dictionaries restored after normal completion and injected RuntimeError>'"
+      ],
+      "createdAt": "2026-09-12T20:01:53.819Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-c193b1fe5e_8381916502",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:01:06.751Z",
+  "updatedAt": "2026-09-12T20:01:53.819Z"
+}

@@ -98,9 +98,11 @@ class TestCalculateLintMetrics:
 
         metrics = calculate_lint_metrics(test_file)
 
-        assert metrics.errors == 0
-        assert metrics.fixable == 0
+        assert metrics.errors is None
+        assert metrics.fixable is None
         assert metrics.counts == {}
+        assert metrics.available is False
+        assert metrics.unavailable_reason == "checker_malformed_output"
 
     def test_calculate_lint_metrics_with_prefix(self, tmp_path, lint_execution):
         test_file = tmp_path / "test.py"
@@ -124,9 +126,37 @@ class TestCalculateLintMetrics:
 
         metrics = calculate_lint_metrics(test_file)
 
-        assert metrics.errors == 0
-        assert metrics.fixable == 0
+        assert metrics.errors is None
+        assert metrics.fixable is None
         assert metrics.counts == {}
+        assert metrics.available is False
+        assert metrics.unavailable_reason == "checker_launch_failed"
+
+    def test_operational_exit_is_unavailable(self, tmp_path, lint_execution):
+        """Checker operational failures never appear as zero findings."""
+        source = tmp_path / "test.py"
+        source.write_text("x = 1\n")
+        lint_execution(exit_status=2, stderr="invalid configuration")
+
+        metrics = calculate_lint_metrics(source)
+
+        assert metrics.errors is None
+        assert metrics.available is False
+        assert metrics.unavailable_reason == "checker_operational_failure"
+
+    def test_unavailable_executable_is_explicit(self, tmp_path, monkeypatch):
+        """Missing checker availability remains distinct from clean lint."""
+        source = tmp_path / "test.py"
+        source.write_text("x = 1\n")
+        monkeypatch.setattr(
+            lint_metrics, "_resolve_uv_executable", lambda: None
+        )
+
+        metrics = calculate_lint_metrics(source)
+
+        assert metrics.errors is None
+        assert metrics.available is False
+        assert metrics.unavailable_reason == "checker_unavailable"
 
 
 class TestErrorCodes:
@@ -206,15 +236,19 @@ class TestLintMetricsEdgeCases:
             {"code": "E501", "count": 1},
         ],
     )
-    def test_missing_required_fields_raise_key_error(
+    def test_missing_required_fields_are_unavailable(
         self, tmp_path, lint_execution, stat
     ):
+        """Malformed checker records are unavailable rather than clean."""
         test_file = tmp_path / "test.py"
         test_file.write_text("code")
         lint_execution(json.dumps([stat]))
 
-        with pytest.raises(KeyError):
-            calculate_lint_metrics(test_file)
+        metrics = calculate_lint_metrics(test_file)
+
+        assert metrics.errors is None
+        assert metrics.available is False
+        assert metrics.unavailable_reason == "checker_malformed_output"
 
     def test_extra_fields_are_ignored(self, tmp_path, lint_execution):
         test_file = tmp_path / "test.py"
@@ -274,4 +308,6 @@ class TestLintMetricsModel:
             "errors": 3,
             "fixable": 2,
             "counts": {"E501": 2, "W503": 1},
+            "available": True,
+            "unavailable_reason": None,
         }

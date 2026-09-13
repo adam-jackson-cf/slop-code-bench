@@ -358,7 +358,7 @@ class ProgressLineChartBuilder:
             )
 
         fig.update_xaxes(
-            title_text="Progress (%)", ticksuffix="%", range=[15, 105]
+            title_text="Progress (%)", ticksuffix="%", range=[0, 105]
         )
         fig.update_yaxes(title_text=self.config.y_title)
 

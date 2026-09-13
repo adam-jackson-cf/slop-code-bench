@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-cli-command-f2682fcc7e-_5b52309309",
+  "featureId": "feat_cli-command_f2682fcc7e",
+  "title": "Configured arguments are interpolated into shell code without quoting",
+  "category": "security",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/cursor_cli/agent.py",
+      "startLine": 306,
+      "endLine": 319,
+      "symbol": "CursorCliAgent._run_invocation",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/cursor_cli/agent.py",
+      "startLine": 400,
+      "endLine": 416,
+      "symbol": "CursorCliAgent._build_command",
+      "quote": null
+    }
+  ],
+  "reasoning": "The command is executed as shell text, but only the prompt is quoted. The configured binary, model, and extra_args are joined verbatim. Arguments containing spaces lose their boundaries, and shell metacharacters or command substitutions execute as code in the agent runtime. Exploitability depends on who controls configuration; ordinary arguments containing whitespace already cause incorrect execution.",
+  "reproduction": "Configure an extra argument containing a literal command substitution, such as --example=$(printf injected). The generated shell command evaluates the substitution instead of passing the configured argument literally.",
+  "recommendation": "Build a literal argv list and apply shlex.join to the entire invocation. Keep the fixed PATH export separate from the quoted invocation, or pass PATH through the runtime environment.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were supplied or linked for this feature, so argument-boundary and shell-literal coverage cannot be verified.",
+  "suggestedRegressionTest": "Test that binary paths, model values, and extra arguments containing whitespace, quotes, dollar signs, and shell metacharacters reach a test executable unchanged and cause no shell side effects.",
+  "minimumFixScope": "CursorCliAgent._build_command and _run_invocation command serialization.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193625-bf0efd",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and symbols still exist, but the implementation changed: _build_command at lines 406–421 builds literal argv, and _run_invocation at line 312 applies shlex.join to the entire invocation. stream_cli_command forwards that text unchanged. This supports the proposed repair. No linked patch attempts or validation results were supplied. Targeted shell-literal validation could not execute because the read-only sandbox rejected the heredoc temporary file, so a verified fixed outcome is not established.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md /Users/adamjackson/.agents/skills/codegraph/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/agent_runner/agents/cursor_cli/agent.py | sed -n '300,435p'",
+        "rg -n 'quot|literal|shell|build_command|extra_args' tests/agent_runner/*cursor* tests/agent_runner/agents/*cursor* (failed: unmatched shell glob)",
+        "sed -n '1,210p' src/slop_code/agent_runner/agents/cli_utils.py",
+        "python3 heredoc: AST-extracted command construction and shell argument round-trip validation (blocked: cannot create temporary file)"
+      ],
+      "createdAt": "2026-09-12T19:37:07.241Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified argv quoting and adapter regression coverage; 284 adapter tests pass, Ruff and ty pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:37:37.965Z"
+    }
+  ],
+  "signature": "sig_feat-cli-command-f2682fcc7e_5c25a2d3ba",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105427-40c416",
+  "createdAt": "2026-09-11T10:55:02.764Z",
+  "updatedAt": "2026-09-12T19:37:37.964Z"
+}

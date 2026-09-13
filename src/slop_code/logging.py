@@ -179,6 +179,17 @@ class StdlibLoggerAdapter:
             *args: Positional arguments for string formatting.
             **kwargs: Keyword arguments, some passed to logger, others formatted.
         """
+        # Convert verbose DEBUG messages before filtering so the decision uses
+        # the level that will be recorded.
+        if kwargs.get("verbose", False) and level == logging.DEBUG:
+            level = VERBOSE
+
+        # Logger._log bypasses the public API's enabled-state check. Check
+        # before mutating or formatting kwargs so suppressed events incur no
+        # serialization work.
+        if not self.logger.isEnabledFor(level):
+            return
+
         # Extract special kwargs that stdlib logger understands
         exc_info = kwargs.pop("exc_info", None)
         stack_info = kwargs.pop("stack_info", None)
@@ -188,17 +199,12 @@ class StdlibLoggerAdapter:
         extra = kwargs.pop("extra", None)
 
         # Handle the special 'verbose' kwarg used by VerboseFilter
-        verbose = kwargs.pop("verbose", False)
+        kwargs.pop("verbose", None)
 
         # Format remaining kwargs into the message
         kwargs_str = self._format_kwargs(kwargs)
         if kwargs_str:
             msg = f"{msg}{kwargs_str}"
-
-        # Create the log record with the appropriate level
-        if verbose and level == logging.DEBUG:
-            # For verbose messages at DEBUG level, use VERBOSE level
-            level = VERBOSE
 
         # Pass through to the underlying logger
         # Use _log instead of log to maintain compatibility with pytest's caplog

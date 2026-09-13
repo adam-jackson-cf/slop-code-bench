@@ -17,6 +17,7 @@ from slop_code.agent_runner.agent import Agent
 from slop_code.agent_runner.agent import AgentConfigBase
 from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
+from slop_code.agent_runner.models import AgentSetupError
 from slop_code.agent_runner.registry import register_agent
 from slop_code.agent_runner.trajectory import AgentStep
 from slop_code.agent_runner.trajectory import ThinkingStep
@@ -598,7 +599,12 @@ class MiniSWEAgent(Agent):
             )
         self._env = self.build_environment(session.working_dir, spec)
         for command in spec.setup.commands:
-            self._env.execute(command)
+            result = self.env.execute(command)
+            if result["returncode"] != 0:
+                raise AgentSetupError(
+                    "MiniSWE setup command failed with exit code "
+                    f"{result['returncode']}: {command}"
+                )
 
     @staticmethod
     def build_environment(

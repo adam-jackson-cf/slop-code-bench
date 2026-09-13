@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_test-suite_553e2630dd",
+  "title": "Python test suite tests/execution",
+  "summary": "Python pytest files in tests/execution.",
+  "kind": "test-suite",
+  "source": "python-test-suite",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "tests/execution",
+      "symbol": "tests/execution",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "tests/execution/docker_runtime/exec_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/docker_runtime/images_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/docker_runtime/streaming_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/file_ops_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/local_exec_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/local_streaming_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/placeholders_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/session_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/shared_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/snapshot_diff_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/stream_processor_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/execution/workspace_test.py",
+      "reason": "pytest file"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/execution/docker_runtime/exec_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/docker_runtime/images_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/docker_runtime/streaming_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/file_ops_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/local_exec_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/local_streaming_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/placeholders_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/session_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/shared_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/snapshot_diff_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/stream_processor_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/execution/workspace_test.py",
+      "reason": "nearby test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/execution/docker_runtime/exec_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/docker_runtime/images_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/docker_runtime/streaming_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/file_ops_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/local_exec_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/local_streaming_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/placeholders_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/session_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/shared_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/snapshot_diff_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/stream_processor_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/workspace_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "test"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-test-suite-553e2630dd-e_4e82a2d109",
+    "fnd_sig-feat-test-suite-553e2630dd-b_8830adaa68",
+    "fnd_sig-feat-test-suite-553e2630dd-e_2d09288998"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "3 finding(s); prompt=227617 bytes; approxTokens=56903; includedFiles=13; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T11:00:31.926Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T07:35:13.390Z"
+}

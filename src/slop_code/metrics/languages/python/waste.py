@@ -21,29 +21,81 @@ if TYPE_CHECKING:
     from tree_sitter import Node
 
 
-def _find_call_sites(root: Node) -> dict[str, list[int]]:
-    """Find all function call sites in the file."""
-    call_sites: dict[str, list[int]] = {}
-    stack = [root]
-    while stack:
-        current = stack.pop()
-        if current.type == "call":
-            func = current.child_by_field_name("function")
-            if func is None and current.named_children:
-                func = current.named_children[0]
+def _find_call_sites(
+    root: Node,
+) -> tuple[dict[str, list[int]], dict[str, list[int]]]:
+    """Find direct function and attribute method call sites in the file."""
+    direct_calls: dict[str, list[int]] = {}
+    method_calls: dict[str, list[int]] = {}
+
+    def assignment_bindings(node: Node) -> set[str]:
+        bindings: set[str] = set()
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            if current.type == "identifier":
+                bindings.add(_decode_node_text(current))
+            else:
+                stack.extend(current.children)
+        return bindings
+
+    def scope_bindings(node: Node) -> set[str]:
+        bindings = _extract_parameter_names(node)
+        body = node.child_by_field_name("body")
+        stack = [body] if body else []
+        while stack:
+            current = stack.pop()
+            if current.type in {"function_definition", "class_definition"}:
+                name = _get_name_from_node(current)
+                if name:
+                    bindings.add(name)
+                continue
+            if current.type in _ASSIGNMENT_TYPES:
+                target = current.child_by_field_name("left")
+                if target is None:
+                    target = current.child_by_field_name("target")
+                if target:
+                    bindings.update(assignment_bindings(target))
+                continue
+            stack.extend(current.children)
+        return bindings
+
+    module_bindings: set[str] = set()
+    for child in root.children:
+        if child.type in _ASSIGNMENT_TYPES:
+            target = child.child_by_field_name("left")
+            if target is None:
+                target = child.child_by_field_name("target")
+            if target:
+                module_bindings.update(assignment_bindings(target))
+
+    def visit(node: Node, shadowed: set[str]) -> None:
+        if node.type == "function_definition":
+            body = node.child_by_field_name("body")
+            if body:
+                visit(body, shadowed | scope_bindings(node))
+            return
+        if node.type == "call":
+            func = node.child_by_field_name("function")
+            if func is None and node.named_children:
+                func = node.named_children[0]
             name: str | None = None
+            calls: dict[str, list[int]] | None = None
             if func and func.type == "identifier":
                 name = _decode_node_text(func)
+                calls = direct_calls if name not in shadowed else None
             elif func and func.type == "attribute":
                 attr_child = func.child_by_field_name("attribute")
                 if attr_child and attr_child.type == "identifier":
                     name = _decode_node_text(attr_child)
-            if name:
-                call_sites.setdefault(name, []).append(
-                    current.start_point[0] + 1
-                )
-        stack.extend(current.children)
-    return call_sites
+                    calls = method_calls
+            if name and calls is not None:
+                calls.setdefault(name, []).append(node.start_point[0] + 1)
+        for child in node.children:
+            visit(child, shadowed)
+
+    visit(root, module_bindings)
+    return direct_calls, method_calls
 
 
 def _is_docstring_statement(node: Node) -> bool:
@@ -223,6 +275,195 @@ def _count_variable_occurrences(
     return {n: (c[0], c[1], c[2]) for n, c in counts.items()}
 
 
+def _module_variable_occurrences(root: Node) -> dict[str, tuple[int, int, int]]:
+    """Count module bindings and references that resolve to them."""
+    counts: dict[str, list[int]] = {}
+
+    def record(node: Node, *, in_target: bool) -> None:
+        if node.type != "identifier":
+            return
+        name = _decode_node_text(node)
+        if name not in counts:
+            counts[name] = [0, 0, node.start_point[0] + 1]
+        if in_target:
+            counts[name][0] += 1
+            counts[name][2] = node.start_point[0] + 1
+        else:
+            counts[name][1] += 1
+
+    def visit(node: Node, *, in_target: bool = False) -> None:
+        if node.type in _ASSIGNMENT_TYPES:
+            target = node.child_by_field_name("left")
+            if target is None:
+                target = node.child_by_field_name("target")
+            value = node.child_by_field_name("right")
+            if value is None:
+                value = node.child_by_field_name("value")
+            if target:
+                visit(target, in_target=True)
+            if value:
+                visit(value, in_target=False)
+            return
+        if node.type == "identifier":
+            record(node, in_target=in_target)
+            return
+        for child in node.children:
+            visit(child, in_target=in_target)
+
+    for child in root.children:
+        if child.type not in {
+            "function_definition",
+            "class_definition",
+            "decorated_definition",
+        }:
+            visit(child)
+
+    module_names = set(counts)
+
+    def declared_names(node: Node, declaration_type: str) -> set[str]:
+        names: set[str] = set()
+        stack = [node.child_by_field_name("body")]
+        while stack:
+            current = stack.pop()
+            if current is None:
+                continue
+            if current.type in {"function_definition", "class_definition"}:
+                continue
+            if current.type == declaration_type:
+                names.update(
+                    _decode_node_text(child)
+                    for child in current.named_children
+                    if child.type == "identifier"
+                )
+                continue
+            stack.extend(current.children)
+        return names
+
+    def local_bindings(node: Node) -> set[str]:
+        bindings = _extract_parameter_names(node)
+        stack = [node.child_by_field_name("body")]
+        while stack:
+            current = stack.pop()
+            if current is None:
+                continue
+            if current.type in {"function_definition", "class_definition"}:
+                continue
+            if current.type in _ASSIGNMENT_TYPES:
+                target = current.child_by_field_name("left")
+                if target is None:
+                    target = current.child_by_field_name("target")
+                if target:
+                    target_stack = [target]
+                    while target_stack:
+                        target_node = target_stack.pop()
+                        if target_node.type == "identifier":
+                            bindings.add(_decode_node_text(target_node))
+                        else:
+                            target_stack.extend(target_node.children)
+                continue
+            stack.extend(current.children)
+        if node.type == "function_definition":
+            bindings.difference_update(declared_names(node, "global_statement"))
+            bindings.difference_update(
+                declared_names(node, "nonlocal_statement")
+            )
+        return bindings
+
+    def count_references(node: Node, shadowed: set[str]) -> None:
+        stack: list[tuple[Node, bool]] = [(node, False)]
+        while stack:
+            current, in_target = stack.pop()
+            if current.type in {"function_definition", "class_definition"}:
+                continue
+            if current.type in {"global_statement", "nonlocal_statement"}:
+                continue
+            if current.type in _ASSIGNMENT_TYPES:
+                target = current.child_by_field_name("left")
+                if target is None:
+                    target = current.child_by_field_name("target")
+                value = current.child_by_field_name("right")
+                if value is None:
+                    value = current.child_by_field_name("value")
+                if target:
+                    stack.append((target, True))
+                if value:
+                    stack.append((value, False))
+                continue
+            if current.type == "identifier":
+                name = _decode_node_text(current)
+                if (
+                    not in_target
+                    and name in module_names
+                    and name not in shadowed
+                ):
+                    counts[name][1] += 1
+                continue
+            for child in current.children:
+                stack.append((child, in_target))
+
+    def count_default_references(node: Node, shadowed: set[str]) -> None:
+        params = node.child_by_field_name("parameters")
+        if params is None:
+            return
+        for parameter in params.named_children:
+            if parameter.type in {
+                "default_parameter",
+                "typed_default_parameter",
+            }:
+                value = parameter.child_by_field_name("value")
+                if value:
+                    count_references(value, shadowed)
+
+    def count_scope_references(
+        node: Node,
+        enclosing_bindings: set[str],
+        default_bindings: set[str] | None = None,
+    ) -> None:
+        scope_bindings = local_bindings(node)
+        body_shadowed = enclosing_bindings | scope_bindings
+        if node.type == "function_definition":
+            count_default_references(
+                node,
+                default_bindings
+                if default_bindings is not None
+                else enclosing_bindings,
+            )
+        scope_body = node.child_by_field_name("body")
+        if scope_body:
+            count_references(scope_body, body_shadowed)
+        nested_scopes: list[Node] = []
+        if scope_body:
+            stack = [scope_body]
+            while stack:
+                current = stack.pop()
+                if current.type in {"function_definition", "class_definition"}:
+                    nested_scopes.append(current)
+                    continue
+                stack.extend(current.children)
+        for nested_scope in nested_scopes:
+            if node.type == "class_definition":
+                count_scope_references(
+                    nested_scope, enclosing_bindings, body_shadowed
+                )
+            else:
+                count_scope_references(nested_scope, body_shadowed)
+
+    root_scopes: list[Node] = []
+    stack = list(root.children)
+    while stack:
+        current = stack.pop()
+        if current.type in {"function_definition", "class_definition"}:
+            root_scopes.append(current)
+            continue
+        stack.extend(current.children)
+    for root_scope in root_scopes:
+        count_scope_references(root_scope, set())
+
+    return {
+        name: (value[0], value[1], value[2]) for name, value in counts.items()
+    }
+
+
 def _find_single_use_variables(
     root: Node, symbols: list[SymbolMetrics]
 ) -> list[SingleUseVariable]:
@@ -262,53 +503,7 @@ def _find_single_use_variables(
                     )
                 )
 
-    # --- Module-level detection ---
-    module_counts: dict[
-        str, list[int]
-    ] = {}  # {name: [def_count, use_count, def_line]}
-
-    for child in root.children:
-        # Only look at top-level statements, skip function/class definitions
-        if child.type in {
-            "function_definition",
-            "class_definition",
-            "decorated_definition",
-        }:
-            continue
-
-        sub_stack: list[tuple[Node, bool]] = [(child, False)]
-        while sub_stack:
-            current, in_target = sub_stack.pop()
-
-            if current.type in _ASSIGNMENT_TYPES:
-                target = current.child_by_field_name("left")
-                if target is None:
-                    target = current.child_by_field_name("target")
-                if target:
-                    sub_stack.append((target, True))
-                value = current.child_by_field_name("right")
-                if value is None:
-                    value = current.child_by_field_name("value")
-                if value:
-                    sub_stack.append((value, False))
-                type_node = current.child_by_field_name("type")
-                if type_node:
-                    sub_stack.append((type_node, False))
-                continue
-
-            if current.type == "identifier":
-                name = _decode_node_text(current)
-                if name not in module_counts:
-                    module_counts[name] = [0, 0, current.start_point[0] + 1]
-                if in_target:
-                    module_counts[name][0] += 1
-                    module_counts[name][2] = current.start_point[0] + 1
-                else:
-                    module_counts[name][1] += 1
-            else:
-                for ch in reversed(current.children):
-                    sub_stack.append((ch, in_target))
-
+    module_counts = _module_variable_occurrences(root)
     for var_name, (defs, uses, def_line) in module_counts.items():
         if var_name in _IGNORED_VARIABLE_NAMES:
             continue
@@ -353,50 +548,7 @@ def _find_unused_variables(
                     )
                 )
 
-    # --- Module-level detection ---
-    module_counts: dict[str, list[int]] = {}
-
-    for child in root.children:
-        if child.type in {
-            "function_definition",
-            "class_definition",
-            "decorated_definition",
-        }:
-            continue
-
-        sub_stack: list[tuple[Node, bool]] = [(child, False)]
-        while sub_stack:
-            current, in_target = sub_stack.pop()
-
-            if current.type in _ASSIGNMENT_TYPES:
-                target = current.child_by_field_name("left")
-                if target is None:
-                    target = current.child_by_field_name("target")
-                if target:
-                    sub_stack.append((target, True))
-                value = current.child_by_field_name("right")
-                if value is None:
-                    value = current.child_by_field_name("value")
-                if value:
-                    sub_stack.append((value, False))
-                type_node = current.child_by_field_name("type")
-                if type_node:
-                    sub_stack.append((type_node, False))
-                continue
-
-            if current.type == "identifier":
-                name = _decode_node_text(current)
-                if name not in module_counts:
-                    module_counts[name] = [0, 0, current.start_point[0] + 1]
-                if in_target:
-                    module_counts[name][0] += 1
-                    module_counts[name][2] = current.start_point[0] + 1
-                else:
-                    module_counts[name][1] += 1
-            else:
-                for ch in reversed(current.children):
-                    sub_stack.append((ch, in_target))
-
+    module_counts = _module_variable_occurrences(root)
     for var_name, (defs, uses, def_line) in module_counts.items():
         if var_name in _IGNORED_VARIABLE_NAMES:
             continue
@@ -424,13 +576,16 @@ def detect_waste(source: Path, symbols: list[SymbolMetrics]) -> WasteMetrics:
     parser = get_python_parser()
     tree = parser.parse(code.encode("utf-8"))
 
-    call_sites = _find_call_sites(tree.root_node)
+    direct_calls, method_calls = _find_call_sites(tree.root_node)
 
     single_use_functions: list[SingleUseFunction] = []
     for symbol in symbols:
-        if symbol.type != "function":
+        if symbol.type == "function":
+            calls = direct_calls.get(symbol.name, [])
+        elif symbol.type == "method":
+            calls = method_calls.get(symbol.name, [])
+        else:
             continue
-        calls = call_sites.get(symbol.name, [])
         # Exclude self-calls (recursion) — calls within the function's own body
         external_calls = [
             ln for ln in calls if not (symbol.start <= ln <= symbol.end)

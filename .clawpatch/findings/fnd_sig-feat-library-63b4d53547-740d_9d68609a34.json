@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-63b4d53547-740d_9d68609a34",
+  "featureId": "feat_library_63b4d53547",
+  "title": "Compression and migration return success despite per-file failures",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/compress_artifacts.py",
+      "startLine": 279,
+      "endLine": 287,
+      "symbol": "compress_artifacts",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/migrate_evaluation_format.py",
+      "startLine": 298,
+      "endLine": 314,
+      "symbol": "migrate_evaluation_format",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both commands count and display failures but return normally afterward. Automation receives exit status zero even when compression fails or evaluation files cannot be read or written, allowing dependent steps to proceed with incomplete artifacts.",
+  "reproduction": "Run migration against a directory containing malformed evaluation.json, or compression with an archive-write failure. Each command reports failures but exits successfully.",
+  "recommendation": "After displaying the summary, exit nonzero when any file failed. Keep intentional skips and successful dry runs distinct from failures.",
+  "whyTestsDoNotAlreadyCoverThis": "The migration tests cover conversion, already-migrated files, and dry-run preservation at helper level; they do not assert CLI exit status. No compression tests are supplied.",
+  "suggestedRegressionTest": "Test all-success, intentional-skip, mixed-success/failure, and all-failure command runs, asserting a nonzero exit whenever an operation fails.",
+  "minimumFixScope": "Final failure-status handling in both command entrypoints.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200512-046a2d",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both original paths and line ranges still exist, but current code adds nonzero exits after the summaries: compress_artifacts.py:297-298 raises typer.Exit(1) when total_errors is nonempty; migrate_evaluation_format.py:316-317 does likewise when total_failed is nonzero. Targeted failure-status tests now exist for both commands. No linked patch attempts were supplied. The repair appears present, but targeted pytest validation exited 1 before running tests because the read-only environment provided no usable temporary directory. Therefore fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md; nl -ba src/slop_code/entrypoints/commands/compress_artifacts.py | tail -45; nl -ba src/slop_code/entrypoints/commands/migrate_evaluation_format.py | tail -40; rg -n 'exit|failure|failed|parametrize' tests/entrypoints/commands/test_compress_artifacts.py tests/entrypoints/commands/test_migrate_evaluation_format.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q tests/entrypoints/commands/test_compress_artifacts.py tests/entrypoints/commands/test_migrate_evaluation_format.py"
+      ],
+      "createdAt": "2026-09-12T20:05:37.859Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified compression and migration return nonzero on mixed or all failures while preserving skips/dry runs; 35 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:06:29.377Z"
+    }
+  ],
+  "signature": "sig_feat-library-63b4d53547_740d9fe59e",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:26.300Z",
+  "updatedAt": "2026-09-12T20:06:29.377Z"
+}

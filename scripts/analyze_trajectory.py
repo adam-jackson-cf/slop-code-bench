@@ -189,6 +189,7 @@ class BugFixMetrics(BaseModel):
     # Efficiency metrics
     total_test_runs: int = 0
     failed_test_runs: int = 0
+    unknown_test_runs: int = 0
     edits_after_failure: int = 0  # Edits that followed a failure
 
 
@@ -273,6 +274,20 @@ def has_error_indicators(output: str) -> bool:
     return any(re.search(p, output) for p in ERROR_OUTPUT_PATTERNS)
 
 
+def is_failure(event: ToolEvent) -> bool:
+    """Return whether a command has conclusive failure evidence."""
+    return (
+        event.exit_code is not None
+        and event.exit_code != 0
+        or (event.has_error_output)
+    )
+
+
+def is_unknown_outcome(event: ToolEvent) -> bool:
+    """Return whether a command has neither result code nor error evidence."""
+    return event.exit_code is None and not event.has_error_output
+
+
 def detect_bug_fix_cycles(events: list[ToolEvent]) -> BugFixMetrics:
     """Detect test→fix→retest cycles with validation."""
     metrics = BugFixMetrics()
@@ -281,8 +296,10 @@ def detect_bug_fix_cycles(events: list[ToolEvent]) -> BugFixMetrics:
         # Track test/lint runs
         if event.name == "Bash" and event.is_test_command:
             metrics.total_test_runs += 1
-            if event.exit_code != 0 or event.has_error_output:
+            if is_failure(event):
                 metrics.failed_test_runs += 1
+            elif is_unknown_outcome(event):
+                metrics.unknown_test_runs += 1
 
     for i in range(len(events) - 2):
         e1, e2, e3 = events[i], events[i + 1], events[i + 2]
@@ -291,7 +308,7 @@ def detect_bug_fix_cycles(events: list[ToolEvent]) -> BugFixMetrics:
         if (
             e1.name == "Bash"
             and e1.is_test_command
-            and (e1.exit_code != 0 or e1.has_error_output)
+            and is_failure(e1)
             and e2.name in ("Edit", "Write")
             and e3.name == "Bash"
             and e3.is_test_command
@@ -304,7 +321,7 @@ def detect_bug_fix_cycles(events: list[ToolEvent]) -> BugFixMetrics:
             and e1.command
             and "python" in e1.command.lower()
             and not e1.is_test_command
-            and (e1.exit_code != 0 or e1.has_error_output)
+            and is_failure(e1)
             and e2.name in ("Edit", "Write")
             and e3.name == "Bash"
             and e3.command
@@ -316,7 +333,7 @@ def detect_bug_fix_cycles(events: list[ToolEvent]) -> BugFixMetrics:
         if (
             e1.name == "Bash"
             and e1.is_lint_command
-            and (e1.exit_code != 0 or e1.has_error_output)
+            and is_failure(e1)
             and e2.name in ("Edit", "Write")
             and e3.name == "Bash"
             and e3.is_lint_command
@@ -326,9 +343,7 @@ def detect_bug_fix_cycles(events: list[ToolEvent]) -> BugFixMetrics:
     # Count edits after any failure
     last_was_failure = False
     for event in events:
-        if event.name == "Bash" and (
-            event.exit_code != 0 or event.has_error_output
-        ):
+        if event.name == "Bash" and is_failure(event):
             last_was_failure = True
         elif event.name in ("Edit", "Write") and last_was_failure:
             metrics.edits_after_failure += 1

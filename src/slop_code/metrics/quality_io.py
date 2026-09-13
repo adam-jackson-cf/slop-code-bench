@@ -68,6 +68,8 @@ def save_quality_metrics(
                 "single_comment": fm.lines.single_comment,
                 "lint_errors": fm.lint.errors,
                 "lint_fixable": fm.lint.fixable,
+                "lint_available": fm.lint.available,
+                "lint_unavailable_reason": fm.lint.unavailable_reason,
                 "mi": fm.mi,
                 "depth": fm.depth,
                 "is_entry_language": fm.is_entry_language,

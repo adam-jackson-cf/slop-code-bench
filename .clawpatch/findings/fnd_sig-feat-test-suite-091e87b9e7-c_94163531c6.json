@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-091e87b9e7-c_94163531c6",
+  "featureId": "feat_test-suite_091e87b9e7",
+  "title": "Rate-limit test bypasses HTTP response error detection",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/metrics/rubric/grade_test.py",
+      "startLine": 248,
+      "endLine": 265,
+      "symbol": "test_grade_file_retries_on_rate_limit",
+      "quote": null
+    }
+  ],
+  "reasoning": "The mocked post call raises HTTPStatusError directly. An HTTP 429 normally arrives as an httpx.Response; status validation raises the exception. This test therefore verifies retry handling only after detection and would still pass if the grader stopped checking response status, leaving actual rate-limit responses unretried.",
+  "reproduction": null,
+  "recommendation": "Extend the existing retry scenario so post returns the 429 response followed by the successful response, exercising status detection and retry together.",
+  "whyTestsDoNotAlreadyCoverThis": "The only included rate-limit scenario injects the exception at the transport call instead of returning an error response.",
+  "suggestedRegressionTest": "Return a 429 response followed by a successful grading response, then assert two awaited requests and the expected parsed grades.",
+  "minimumFixScope": "tests/metrics/rubric/grade_test.py::test_grade_file_retries_on_rate_limit",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201349-d9cfac",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file exists, but lines 248–265 now contain parsing tests. The retry test moved to lines 304–334 and now uses MockTransport to return HTTP 429 followed by 200, asserting two requests and parsed grades. The grader calls raise_for_status() and retries 429 errors, supporting the intended repair. No linked patch attempts were provided. Targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba tests/metrics/rubric/grade_test.py | sed -n '240,350p'",
+        "rg -n 'raise_for_status|429|retry|async def grade_file' src/slop_code/metrics/rubric/llm_grade.py",
+        "sed -n '255,315p' src/slop_code/metrics/rubric/llm_grade.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/rubric/grade_test.py::test_grade_file_retries_on_rate_limit"
+      ],
+      "createdAt": "2026-09-12T20:14:13.834Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified actual 429 response error detection retries and parses the second successful response with two awaited requests; 59 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:14:52.402Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-091e87b9e7_c3c1f58905",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:00.227Z",
+  "updatedAt": "2026-09-12T20:14:52.401Z"
+}

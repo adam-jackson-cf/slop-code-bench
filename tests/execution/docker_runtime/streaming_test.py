@@ -213,6 +213,116 @@ class TestDockerStreamingRuntimeContainer:
                 _ = runtime.container
 
 
+class TestDockerStreamingRuntimePortsAndStartup:
+    """Tests Docker SDK port conversion and startup cleanup."""
+
+    def test_translates_public_ports_for_docker_sdk(
+        self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Docker SDK receives container-to-host bindings."""
+        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+            runtime = DockerStreamingRuntime(
+                spec=docker_spec,
+                working_dir=tmp_path,
+                static_assets={},
+                is_evaluation=False,
+                ports={8080: 80},
+                mounts={},
+                env_vars={},
+                setup_command=None,
+            )
+
+        assert runtime._resolve_ports(None) == {"80/tcp": 8080}
+
+    def test_omits_ports_for_host_network(
+        self, docker_spec_host_network: DockerEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Host networking retains its lack of Docker port bindings."""
+        with (
+            patch("slop_code.execution.docker_runtime.streaming.docker"),
+            patch("platform.system", return_value="Linux"),
+        ):
+            runtime = DockerStreamingRuntime(
+                spec=docker_spec_host_network,
+                working_dir=tmp_path,
+                static_assets={},
+                is_evaluation=False,
+                ports={8080: 80},
+                mounts={},
+                env_vars={},
+                setup_command=None,
+            )
+
+        assert runtime._resolve_ports(None) is None
+
+    def test_environment_value_reaches_exec_command_but_not_log(
+        self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Exec command logs metadata without environment values."""
+        synthetic_value = "synthetic-sensitive-value"
+        container = MagicMock()
+        container.id = "a" * 12
+        with (
+            patch("slop_code.execution.docker_runtime.streaming.docker"),
+            patch(
+                "slop_code.execution.docker_runtime.streaming.logger.debug"
+            ) as log,
+        ):
+            runtime = DockerStreamingRuntime(
+                spec=docker_spec,
+                working_dir=tmp_path,
+                static_assets={},
+                is_evaluation=False,
+                ports={},
+                mounts={},
+                env_vars={},
+                setup_command=None,
+            )
+            with patch.object(
+                runtime,
+                "_ensure_container_running",
+                return_value=container,
+            ):
+                args = runtime._build_exec_command(
+                    "echo $TOKEN", {"TOKEN": synthetic_value}
+                )
+
+        assert f"TOKEN={synthetic_value}" in args
+        assert all(
+            synthetic_value not in str(call) for call in log.call_args_list
+        )
+
+    def test_removes_created_container_when_start_fails(
+        self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Startup errors retain and remove the created container."""
+        client = MagicMock()
+        container = client.containers.create.return_value
+        container.id = "a" * 12
+        container.start.side_effect = RuntimeError("start failed")
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker.from_env",
+            return_value=client,
+        ):
+            runtime = DockerStreamingRuntime(
+                spec=docker_spec,
+                working_dir=tmp_path,
+                static_assets={},
+                is_evaluation=False,
+                ports={},
+                mounts={},
+                env_vars={},
+                setup_command=None,
+            )
+            with pytest.raises(RuntimeError, match="start failed"):
+                runtime._create_base_container()
+
+        container.remove.assert_called_once_with(force=True)
+        assert runtime._container is None
+        runtime.cleanup()
+        client.close.assert_called_once()
+
+
 class TestDockerStreamingRuntimeEnsureContainerRunning:
     """Tests for _ensure_container_running method."""
 
@@ -469,7 +579,9 @@ class TestDockerStreamingRuntimeIntegration:
         try:
             events = list(runtime.stream("exit 42", env={}, timeout=30))
             finished = events[-1]
-            assert finished.result.exit_code == 42
+            result = finished.result
+            assert result is not None
+            assert result.exit_code == 42
         finally:
             runtime.cleanup()
 
@@ -559,7 +671,9 @@ class TestDockerStreamingRuntimeIntegration:
         try:
             events = list(runtime.stream("sleep 60", env={}, timeout=1))
             finished = events[-1]
-            assert finished.result.timed_out is True
+            result = finished.result
+            assert result is not None
+            assert result.timed_out is True
         finally:
             runtime.cleanup()
 

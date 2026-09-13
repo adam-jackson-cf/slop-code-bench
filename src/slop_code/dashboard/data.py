@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import colorsys
 import json
+import math
 import re
 from collections import defaultdict
 from collections.abc import Hashable
@@ -418,23 +419,29 @@ def get_dynamic_variant_annotation(
 
 
 def process_checkpoint_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Pass through raw checkpoint row with minimal processing."""
+    """Mark only complete strict all-cases evidence as a solved checkpoint."""
 
-    def _full_pass(value: Any) -> bool:
+    def _complete_strict_pass() -> bool:
         try:
-            return float(value) >= 1.0
-        except (TypeError, ValueError):
+            strict_pass_rate = float(row["strict_pass_rate"])
+            tests_total = int(row["total_tests"])
+            tests_passed = int(row["passed_tests"])
+        except (KeyError, TypeError, ValueError):
             return False
 
-    tests_total = row.get("total_tests", 0)
-    tests_passed = row.get("passed_tests", 0)
+        if isinstance(row["total_tests"], bool) or isinstance(
+            row["passed_tests"], bool
+        ):
+            return False
+
+        return (
+            tests_total > 0
+            and tests_passed == tests_total
+            and math.isclose(strict_pass_rate, 1.0)
+        )
 
     processed = dict(row)
-    processed["passed_chkpt"] = (
-        _full_pass(row.get("strict_pass_rate"))
-        or _full_pass(row.get("isolated_pass_rate"))
-        or (tests_total == tests_passed)
-    )
+    processed["passed_chkpt"] = _complete_strict_pass()
     return processed
 
 
@@ -467,13 +474,38 @@ def load_result_summary(run_dir: Path) -> dict[str, Any] | None:
 
 
 def load_config_metadata(run_dir: Path) -> dict[str, Any]:
-    """Load model/prompt metadata from config.yaml and stats from result.json."""
+    """Load validated model/prompt metadata from config.yaml and result.json."""
     config_file = run_dir / "config.yaml"
     with config_file.open() as f:
-        config = yaml.unsafe_load(f)
-    agent_cfg = config["agent"]
-    model = config["model"]["name"]
-    thinking = config["thinking"]
+        config = yaml.safe_load(f)
+
+    if not isinstance(config, dict):
+        raise ValueError("config.yaml must decode to a mapping")
+
+    agent_cfg = config.get("agent")
+    model_cfg = config.get("model")
+    if not isinstance(agent_cfg, dict) or not isinstance(model_cfg, dict):
+        raise ValueError("config.yaml agent and model must be mappings")
+
+    agent_type = agent_cfg.get("type")
+    model = model_cfg.get("name")
+    thinking = config.get("thinking")
+    prompt_path = config.get("prompt_path", "unknown")
+    if (
+        not isinstance(agent_type, str)
+        or not agent_type
+        or not isinstance(model, str)
+        or not model
+        or not isinstance(thinking, str)
+        or not thinking
+        or not isinstance(prompt_path, str)
+        or not prompt_path
+    ):
+        raise ValueError(
+            "config.yaml agent.type, model.name, thinking, and prompt_path "
+            "must be non-empty strings"
+        )
+
     run_date = _extract_date_from_run_name(run_dir.name)
     run_timestamp = _extract_full_timestamp_from_run_name(run_dir.name)
 
@@ -489,11 +521,11 @@ def load_config_metadata(run_dir: Path) -> dict[str, Any]:
         model_display = f"{model_display} v{agent_version}"
 
     return {
-        "agent_type": agent_cfg["type"],
+        "agent_type": agent_type,
         "agent_version": agent_version,
         "model_name": model_display,
-        "thinking": str(thinking),
-        "prompt_template": Path(config.get("prompt_path", "unknown")).stem,
+        "thinking": thinking,
+        "prompt_template": Path(prompt_path).stem,
         "run_date": run_date,
         "run_timestamp": run_timestamp,
         "num_problems": num_problems,

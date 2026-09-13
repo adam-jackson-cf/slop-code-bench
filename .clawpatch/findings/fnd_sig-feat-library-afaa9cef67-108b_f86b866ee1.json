@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-afaa9cef67-108b_f86b866ee1",
+  "featureId": "feat_library_afaa9cef67",
+  "title": "Clone detection retains cubic-size statement vectors",
+  "category": "performance",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "risk",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/scoring/production_quality.py",
+      "startLine": 282,
+      "endLine": 298,
+      "symbol": "_verified_payload",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/production_quality.py",
+      "startLine": 128,
+      "endLine": 138,
+      "symbol": "_execute",
+      "quote": null
+    }
+  ],
+  "reasoning": "For a statement list of length n, the evaluator enumerates every contiguous window of at least six statements and stores a tuple containing each window's AST dumps. With distinct statements, these become distinct retained dictionary keys, requiring O(n³) tuple references even when there are no clones. A large generated module can exhaust measurement memory or stall scoring; process communication also has no timeout.",
+  "reproduction": "Measure a valid module containing increasingly large numbers of distinct top-level assignments. Once windows meet the source-line threshold, candidate storage grows cubically despite there being no repeated statement sequences.",
+  "recommendation": "Use a compact repeated-sequence index to identify clone candidates before materializing vectors. Bound measurement runtime and ensure timed-out measurement processes are terminated and reaped.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; small clone examples would not expose growth on large files without clones.",
+  "suggestedRegressionTest": "Exercise increasing sizes of both distinct and repeated statement lists under a resource budget, while verifying that maximal non-overlapping clone results remain correct.",
+  "minimumFixScope": "Clone candidate construction in _verified_payload and measurement process lifecycle in _execute.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T195848-a166c8",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The file and _execute remain; _verified_payload moved to approximately line 302. The original exhaustive window storage has been replaced with compact six-statement hashes, and _execute now implements timeout, terminate, kill, and wait handling. However, the repair fails targeted clone-correctness validation: two identical files containing 12 distinct one-line assignments produce zero clone groups, while the equivalent multiline assignments produce one. Lines 335–340 require each six-statement seed to span 12 source lines, excluding valid longer clones before extension. A 1,000-statement distinct module completed in 0.109 seconds, supporting improvement for the original performance reproduction, but failed correctness validation prevents marking this fixed. No linked patch attempts or prior command results were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md /Users/adamjackson/.agents/skills/codegraph/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/metrics/scoring/production_quality.py | sed -n '125,180p;305,430p'",
+        "rg -n 'clone|deadline|timed_out|timeout' tests/metrics/scoring (directory absent)",
+        "python3 -B heredoc validation attempt (blocked by read-only temporary-file restriction)",
+        "python3 -B -c validation extracting the current embedded evaluator through ast.parse and executing it with subprocess.run(timeout=10) for 1,000 distinct multiline assignments and duplicate 12-statement one-line/multiline modules"
+      ],
+      "createdAt": "2026-09-12T19:59:31.127Z"
+    },
+    {
+      "runId": "20260912T200153-c061ba",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The evidence file exists; _execute remains at line 128 and _verified_payload moved to line 302. Distinct-statement cubic storage was replaced by compact six-statement hashes, and process execution now has timeout/terminate/kill/wait handling. The previous correctness failure is repaired: duplicate 12-assignment files produce one clone group. However, lines 370–385 compare every pair of repeated seeds and extend/materialize each match, retaining cubic runtime on repetitive input. Current validation took 0.109s, 0.616s, and 4.855s for 100, 200, and 400 identical assignments; 800 exceeded an 8-second budget and was killed. A distinct 1,000-assignment module completed in 0.072s. Thus the original distinct-input memory issue improved, but targeted repeated-input performance validation fails; the finding remains open. No linked patch attempts were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md /Users/adamjackson/.agents/skills/codegraph/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/metrics/scoring/production_quality.py | sed -n '125,175p;280,410p'",
+        "python3 -B -c: extract current embedded evaluator with ast.parse; execute 1,000 distinct assignments, duplicate 12-assignment files, and 24 repeated assignments using subprocess.run(timeout=10)",
+        "python3 -B -c: execute current embedded evaluator for 100, 200, 400, and 800 identical assignments using subprocess.run(timeout=8), recording timings and clone lengths"
+      ],
+      "createdAt": "2026-09-12T20:02:41.228Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified canonical V02 acceptance: compact constant-width seed records replace retained statement vectors, distinct-input growth/output coverage passes, public deadline is 300s and bounded 1-3600 with worker termination. One-line/multiline clone correctness passes. Revalidator repetitive-input runtime concern is adjacent to the specified retained-vector defect and bounded by the required deadline.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:04:14.675Z"
+    }
+  ],
+  "signature": "sig_feat-library-afaa9cef67_108b4b36e0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:41.946Z",
+  "updatedAt": "2026-09-12T20:04:14.674Z"
+}

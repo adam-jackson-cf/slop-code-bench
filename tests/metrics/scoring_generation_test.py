@@ -240,7 +240,10 @@ def test_ineligible_input_publishes_complete_generation_without_scores(
     assert (generation / "READY").is_file()
     assert not (generation / "benchmark_score.json").exists()
     assert not tuple(generation.glob("problems/*/problem_score.json"))
-    manifest, evidence = load_verified_current_generation_state(tmp_path)
+    generation_id, manifest, evidence = load_verified_current_generation_state(
+        tmp_path
+    )
+    assert generation_id == _current_generation_id(tmp_path)
     assert manifest.eligibility == result.eligibility
     assert evidence["checkpoint.json"] == b"raw"
 
@@ -285,13 +288,14 @@ def test_reuse_revalidates_scores_and_repairs_pointer(tmp_path) -> None:
     )
     assert first is not None
     analysis = tmp_path / "measurement_analysis"
+    generation_id = _current_generation_id(tmp_path)
     (analysis / "current.json").write_text('{"generation_id":"stale"}')
     reused = publish_generation(
         tmp_path, _sidecars(), Eligibility(eligible=True)
     )
     assert reused == first
     assert json.loads((analysis / "current.json").read_text()) == {
-        "generation_id": _current_generation_id(tmp_path)
+        "generation_id": generation_id
     }
 
 
@@ -323,7 +327,7 @@ def test_reuse_pointer_repair_observes_atomic_boundaries(
 
     pointer = json.loads((analysis / "current.json").read_text())
     if boundary == "after_pointer_rename":
-        assert pointer == {"generation_id": _current_generation_id(tmp_path)}
+        assert pointer == {"generation_id": generation_id}
     else:
         assert pointer == {"generation_id": "stale"}
     read_verified_evidence(analysis / "generations" / generation_id)
@@ -506,10 +510,7 @@ def test_formula_cutover_may_publish_ineligible_generation(
     assert not manifest.eligibility.eligible
     assert _current_generation_id(tmp_path) != prior_generation_id
     assert (
-        tmp_path
-        / "measurement_analysis"
-        / "generations"
-        / prior_generation_id
+        tmp_path / "measurement_analysis" / "generations" / prior_generation_id
     ).is_dir()
 
 

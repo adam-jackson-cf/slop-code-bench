@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-afaa9cef67-bdf8_ac14f9dbca",
+  "featureId": "feat_library_afaa9cef67",
+  "title": "Parser launch errors bypass independent graph evidence production",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/scoring/production_quality.py",
+      "startLine": 313,
+      "endLine": 328,
+      "symbol": "_verified_payload",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/production.py",
+      "startLine": 90,
+      "endLine": 109,
+      "symbol": "produce_production_evidence",
+      "quote": null
+    }
+  ],
+  "reasoning": "When the default executor cannot launch the evaluator, FileNotFoundError or PermissionError escapes _verified_payload. The orchestrator catches only ProductionQualityError and ValueError, so it aborts before producing graph evidence instead of recording a measurement-environment eligibility reason. This contradicts the explicitly stated independence of quality and graph production. Ruff launch errors already receive the appropriate translation.",
+  "reproduction": "Provide valid production inventory, readable sources, successful file rows, and a nonexistent or non-executable evaluator path with executor=None. The call raises OSError rather than returning eligibility reasons alongside graph evidence.",
+  "recommendation": "Translate parser process launch OSError into ProductionQualityError with the measurement_environment_mismatch code, matching the Ruff launch handling.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; executors returning nonzero process results do not exercise launch exceptions.",
+  "suggestedRegressionTest": "Cover evaluator launch failures across missing and non-executable paths, asserting an environment-mismatch eligibility reason and continued graph evidence production.",
+  "minimumFixScope": "Exception translation around the process executor call in _verified_payload.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T195848-031d66",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence files still exist. The original production_quality.py lines 313–328 now contain embedded parser code; the launch call moved to lines 403–420 and catches OSError, translating it into ProductionQualityError with measurement_environment_mismatch. production.py lines 100–107 catch that error and continue graph production. Direct validation with executor=None passed for actual FileNotFoundError and PermissionError: both returned the environment-mismatch eligibility reason and retained graph evidence. No linked patch attempts were supplied. An initial heredoc was blocked by read-only permissions; rerunning validation with python -c succeeded.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/scoring/production_quality.py | sed -n '310,330p;405,450p'",
+        "nl -ba src/slop_code/metrics/scoring/production.py | sed -n '85,120p'",
+        "rg -n 'launch|unavailable|PermissionError|FileNotFoundError' tests/metrics -g '*production*'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c '<direct assertions for missing and non-executable evaluator paths, exception translation, eligibility reasons, and retained graph evidence>'"
+      ],
+      "createdAt": "2026-09-12T19:59:32.450Z"
+    }
+  ],
+  "signature": "sig_feat-library-afaa9cef67_bdf8f5398a",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:41.946Z",
+  "updatedAt": "2026-09-12T19:59:32.450Z"
+}

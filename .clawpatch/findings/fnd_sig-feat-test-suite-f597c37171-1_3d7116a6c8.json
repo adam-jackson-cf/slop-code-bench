@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-f597c37171-1_3d7116a6c8",
+  "featureId": "feat_test-suite_f597c37171",
+  "title": "Default-language assertion passes from the filename alone",
+  "category": "test-gap",
+  "severity": "low",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/common/render_test.py",
+      "startLine": 122,
+      "endLine": 136,
+      "symbol": "TestRenderMultiFilePrefix.test_default_language_resolver",
+      "quote": null
+    }
+  ],
+  "reasoning": "The test requires \"main.py\" in the result, then checks for \"py\" or \"python\" anywhere in that same result. The filename already satisfies the language assertion, so the test passes even when the rendered language annotation is missing or incorrect.",
+  "reproduction": "Remove the language annotation from otherwise valid rendered output that includes main.py; both assertions still pass.",
+  "recommendation": "Assert the language annotation in its structural location, independently of the filename.",
+  "whyTestsDoNotAlreadyCoverThis": "The other supplied rendering tests do not assert language annotations, and this assertion is guaranteed by the preceding filename assertion.",
+  "suggestedRegressionTest": "Expand the existing default-resolver scenario to verify the annotation for multiple file extensions and ensure missing or incorrect annotations fail.",
+  "minimumFixScope": "tests/common/render_test.py: TestRenderMultiFilePrefix.test_default_language_resolver",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165807-c62fd4",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The file still exists; the scenario moved to lines 136–158 and now checks the language fence immediately after the filename header for both .py and .ts files. This removes the filename-only assertion weakness, and the renderer supports extension-based annotations. However, targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md\nnl -ba tests/common/render_test.py | sed -n '130,166p'\nsed -n '1,240p' src/slop_code/common/render.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/common/render_test.py::TestRenderMultiFilePrefix::test_default_language_resolver",
+        "nl -ba configs/rubrics/templates/prefix_multi_file.j2 | head -65"
+      ],
+      "createdAt": "2026-09-11T16:58:31.915Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:58:32.502Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-f597c37171_1c4c364bbf",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:01:10.810Z",
+  "updatedAt": "2026-09-11T16:58:32.502Z"
+}

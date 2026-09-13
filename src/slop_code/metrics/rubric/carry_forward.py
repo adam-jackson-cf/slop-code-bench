@@ -176,6 +176,14 @@ def compute_line_offset(
     cumulative_delta = 0
 
     for hunk in hunks:
+        if hunk.old_count == 0:
+            # A zero-context hunk is an insertion after old_start. The
+            # boundary line itself remains before the insertion.
+            if old_line <= hunk.old_start:
+                return old_line + cumulative_delta, False
+            cumulative_delta += hunk.delta
+            continue
+
         if old_line < hunk.old_start:
             # Line is before this hunk - apply cumulative delta so far
             return old_line + cumulative_delta, False
@@ -189,7 +197,6 @@ def compute_line_offset(
 
         # Line is after this hunk - accumulate the delta
         cumulative_delta += hunk.delta
-
     # Line is after all hunks
     return old_line + cumulative_delta, False
 
@@ -223,8 +230,18 @@ def is_span_unchanged(
     if start_changed or end_changed:
         return False, new_start, new_end_val if end is not None else None
 
-    # Check if any hunk falls entirely within the span
     for hunk in hunks:
+        if hunk.old_count == 0:
+            # An insertion changes a span only when it falls between its
+            # inclusive endpoints, not at either external boundary.
+            if start <= hunk.old_start < effective_end:
+                return (
+                    False,
+                    new_start,
+                    new_end_val if end is not None else None,
+                )
+            continue
+
         if hunk.old_start >= start and hunk.old_end <= effective_end + 1:
             return False, new_start, new_end_val if end is not None else None
 
@@ -520,11 +537,13 @@ def process_problem_carry_forward(
             prev_checkpoint_name=prev_checkpoint_name,
         )
 
-        if carried:
-            # Merge carried grades with current (non-carried) grades
-            merged = current_non_carried + carried
+        # Recompute the persisted rubric from current grades, so stale
+        # carried grades are removed when they no longer qualify.
+        merged = current_non_carried + carried
+        if merged != current_grades:
             _save_rubric(rubric_path, merged)
 
+        if carried:
             logger.info(
                 "Carried forward grades",
                 checkpoint=checkpoint_name,

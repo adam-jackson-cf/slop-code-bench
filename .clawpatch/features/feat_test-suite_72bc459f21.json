@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_test-suite_72bc459f21",
+  "title": "Python test suite tests/entrypoints/problem_runner",
+  "summary": "Python pytest files in tests/entrypoints/problem_runner.",
+  "kind": "test-suite",
+  "source": "python-test-suite",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "tests/entrypoints/problem_runner",
+      "symbol": "tests/entrypoints/problem_runner",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "tests/entrypoints/problem_runner/test_driver.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/problem_runner/test_one_shot.py",
+      "reason": "pytest file"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/entrypoints/problem_runner/test_driver.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/problem_runner/test_one_shot.py",
+      "reason": "nearby test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/entrypoints/problem_runner/test_driver.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/problem_runner/test_one_shot.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "test"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-test-suite-72bc459f21-1_1902224aee"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "1 finding(s); prompt=24776 bytes; approxTokens=6194; includedFiles=3; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T11:00:21.308Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-11T16:53:30.676Z"
+}

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-2852349fd3-9eb2_4402ee7b29",
+  "featureId": "feat_library_2852349fd3",
+  "title": "Interrupted solution copies are permanently skipped on retry",
+  "category": "data-loss",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "scripts/migrate_specs_solutions.py",
+      "startLine": 60,
+      "endLine": 67,
+      "symbol": "migrate_problem",
+      "quote": null
+    }
+  ],
+  "reasoning": "copytree creates the final destination before copying all files. An interruption or copy error can leave an incomplete directory. A subsequent invocation treats its existence as sufficient to skip migration, leaving the destination incomplete while the retry can finish successfully. Originals remain intact, but the migrated solution is not reliable.",
+  "reproduction": "Interrupt copying after the destination directory and one file have been created, then rerun migration. The incomplete destination is reported as already existing and missing files are never copied.",
+  "recommendation": "Copy into a temporary sibling directory and publish the destination only after successful completion. Validate existing destinations or report an explicit conflict rather than assuming existence means completion.",
+  "whyTestsDoNotAlreadyCoverThis": "No migration tests were included, particularly failure-and-retry coverage.",
+  "suggestedRegressionTest": "Inject copy failures at multiple stages, retry, and verify that no incomplete final destination is accepted and all source files remain unchanged.",
+  "minimumFixScope": "Solution-copy publication and existing-destination validation in migrate_problem.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central behavioral verification passed for this implemented fix, with focused pytest plus changed-path Ruff and ty green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked until 2026-09-17; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:41:45.999Z"
+    }
+  ],
+  "signature": "sig_feat-library-2852349fd3_9eb2d67d44",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:59.952Z",
+  "updatedAt": "2026-09-12T07:41:45.999Z"
+}

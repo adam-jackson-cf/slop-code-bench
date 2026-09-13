@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-566aaab053-8e6a_1b43651504",
+  "featureId": "feat_library_566aaab053",
+  "title": "Module variables referenced by functions are marked unused",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/languages/python/waste.py",
+      "startLine": 359,
+      "endLine": 365,
+      "symbol": "_find_unused_variables",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/waste.py",
+      "startLine": 400,
+      "endLine": 406,
+      "symbol": "_find_unused_variables",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/waste.py",
+      "startLine": 270,
+      "endLine": 277,
+      "symbol": "_find_single_use_variables",
+      "quote": null
+    }
+  ],
+  "reasoning": "Module scans skip function and class definitions entirely, dropping references to module bindings from those scopes. A module constant used by a function is therefore reported as unused. The same omission can classify a variable as single-use even when functions reference it repeatedly.",
+  "reproduction": "Analyze `LIMIT = 10\\ndef limit():\\n    return LIMIT\\n`. The module scan records one definition and zero uses of LIMIT and emits an UnusedVariable.",
+  "recommendation": "Resolve references across lexical scopes: count references to module bindings inside functions and classes while excluding locally shadowed names. Share this accounting between unused and single-use detection.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied test covers dictionary merging and has no variable-use or lexical-scope assertions.",
+  "suggestedRegressionTest": "Cover globals referenced from functions and methods, multiple references, local shadowing, and truly unused module bindings.",
+  "minimumFixScope": "Module binding and reference accounting in waste.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171022-60407a",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the original line references now point to changed code. Both detectors share _module_variable_occurrences (calls at lines 443 and 488), and the original reproduction now passes. However, targeted execution confirms module LIMIT is still incorrectly reported unused when a class defines its own LIMIT and a method reads the module LIMIT twice. Lines 351 and 385–386 incorrectly propagate class bindings into methods. Function default-argument references are also omitted. No linked patch attempts were supplied. The repair is partial, so this finding remains open.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/languages/python/waste.py | sed -n '280,530p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -c 'from slop_code.metrics.languages.python.parser import get_python_parser; from slop_code.metrics.languages.python.waste import _find_unused_variables; code=\"LIMIT = 10\\nclass C:\\n    LIMIT = 20\\n    def limit(self):\\n        return LIMIT + LIMIT\\n\"; root=get_python_parser().parse(code.encode()).root_node; print([(v.name,v.scope) for v in _find_unused_variables(root,[])])'"
+      ],
+      "createdAt": "2026-09-11T17:10:52.251Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central behavioral verification passed for this implemented fix, with focused pytest plus changed-path Ruff and ty green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked until 2026-09-17; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:41:42.824Z"
+    }
+  ],
+  "signature": "sig_feat-library-566aaab053_8e6a74539f",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:01.548Z",
+  "updatedAt": "2026-09-12T07:41:42.823Z"
+}

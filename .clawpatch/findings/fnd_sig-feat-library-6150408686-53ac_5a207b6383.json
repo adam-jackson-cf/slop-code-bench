@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-6150408686-53ac_5a207b6383",
+  "featureId": "feat_library_6150408686",
+  "title": "Inventory reconciliation changes the documented skipped-test counting contract",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/evaluation/collection.py",
+      "startLine": 522,
+      "endLine": 531,
+      "symbol": "apply_collection_inventory",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/evaluation/report.py",
+      "startLine": 323,
+      "endLine": 343,
+      "symbol": "CorrectnessResults.add_test_result",
+      "quote": null
+    },
+    {
+      "path": "tests/evaluation/report_test.py",
+      "startLine": 195,
+      "endLine": 267,
+      "symbol": "TestCorrectnessResults",
+      "quote": null
+    }
+  ],
+  "reasoning": "CorrectnessResults explicitly excludes skipped tests from aggregate totals, and tests assert that skips do not fail core-cases. Inventory reconciliation instead counts every merged test, including skips. Consequently, applying a complete inventory can change an otherwise identical report's policy result without any missing tests or infrastructure failure.",
+  "reproduction": "Create results containing one passed Core test and one skipped Core test using add_test_result. core-cases passes initially; apply a matching collection inventory and it fails because the Core total changes from one to two.",
+  "recommendation": "Centralize aggregate counting so reconciliation preserves the established skipped-test semantics. If strict assessment requires different semantics, express that explicitly in the policy rather than making it depend on the execution path.",
+  "whyTestsDoNotAlreadyCoverThis": "The report tests verify skip semantics before reconciliation; the supplied collection tests do not apply an inventory to mixed-status results.",
+  "suggestedRegressionTest": "Extend mixed-status report scenarios to apply a complete collection inventory and assert unchanged aggregate counts and policy outcomes across all groups.",
+  "minimumFixScope": "Inventory aggregate recomputation and report/collection integration coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193939-6842b6",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "All original evidence paths still exist. collection.py:522-528 now excludes skipped tests from aggregate counts, matching report.py:323-347. collection_test.py:129-136 also asserts that a reconciled skipped test contributes zero counts. The code supports an apparent repair, but targeted pytest validation failed before collection because the read-only environment has no writable temporary directory; the mixed-status reproduction also could not start. Therefore fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/evaluation/collection.py | sed -n '480,550p'",
+        "sed -n '1,190p' tests/evaluation/collection_test.py",
+        "nl -ba src/slop_code/evaluation/report.py | sed -n '323,355p'",
+        "rg -n 'skipped|all_cases_counts' tests/evaluation/report_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/evaluation/collection_test.py::test_collection_preserves_parameterized_nodeids_with_whitespace tests/evaluation/report_test.py::TestCorrectnessResults::test_skipped_tests_not_counted_in_totals tests/evaluation/report_test.py::TestCorrectnessResults::test_all_cases_counts_only_executed_cases tests/evaluation/report_test.py::TestCorrectnessResults::test_passes_policy_core_cases_skipped_not_failed",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python - <<'PY' (attempted mixed-status inventory validation; shell rejected heredoc temporary-file creation)"
+      ],
+      "createdAt": "2026-09-12T19:40:15.397Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified skipped cases appear in detail but are excluded from every numerator and denominator; 46 focused and 175 evaluation tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:41:26.692Z"
+    }
+  ],
+  "signature": "sig_feat-library-6150408686_53acad4b0d",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:21.383Z",
+  "updatedAt": "2026-09-12T19:41:26.691Z"
+}

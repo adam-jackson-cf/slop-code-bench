@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_test-suite_71f66ecf7b",
+  "title": "Python test suite tests/agent_runner/parsers",
+  "summary": "Python pytest files in tests/agent_runner/parsers.",
+  "kind": "test-suite",
+  "source": "python-test-suite",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "tests/agent_runner/parsers",
+      "symbol": "tests/agent_runner/parsers",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "tests/agent_runner/parsers/test_fixtures.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/parsers/test_new_parsers.py",
+      "reason": "pytest file"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/agent_runner/parsers/test_fixtures.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/parsers/test_new_parsers.py",
+      "reason": "nearby test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/agent_runner/parsers/test_fixtures.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/parsers/test_new_parsers.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "test"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-test-suite-71f66ecf7b-0_4e430f7a92"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "1 finding(s); prompt=47649 bytes; approxTokens=11913; includedFiles=3; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T11:00:26.527Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:52:56.006Z"
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_5d40a328d5",
+  "title": "Python project slop-code-bench",
+  "summary": "Python project metadata in pyproject.toml.",
+  "kind": "library",
+  "source": "python-project",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "pyproject.toml",
+      "symbol": "slop-code-bench",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python project metadata"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "README.md",
+      "reason": "python project context"
+    }
+  ],
+  "tests": [],
+  "tags": [
+    "python",
+    "package"
+  ],
+  "trustBoundaries": [],
+  "status": "reviewed",
+  "lock": null,
+  "findingIds": [],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "0 finding(s); prompt=22020 bytes; approxTokens=5496; includedFiles=2; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:56:44.820Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-11T10:56:44.820Z"
+}

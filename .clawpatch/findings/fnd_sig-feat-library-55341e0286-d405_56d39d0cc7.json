@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-55341e0286-d405_56d39d0cc7",
+  "featureId": "feat_library_55341e0286",
+  "title": "Timed-out runs lose usage already recorded in the trajectory",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/openhands/agent.py",
+      "startLine": 408,
+      "endLine": 433,
+      "symbol": "OpenHandsAgent.run",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/openhands/agent.py",
+      "startLine": 191,
+      "endLine": 210,
+      "symbol": "OpenHandsAgent.parse_line",
+      "quote": null
+    }
+  ],
+  "reasoning": "A timed-out invocation raises before extracting trajectory usage. Streaming parsing supplies neither cost nor tokens, so even when the interrupted process left a valid trajectory with billable usage, that usage never reaches self.usage. Failed runs consequently underreport consumption or retain earlier values.",
+  "reproduction": "Have an invocation return timed_out=true while its output directory contains a valid trajectory with nonzero accumulated usage. Catch AgentError and inspect self.usage; the trajectory totals were not applied.",
+  "recommendation": "Account for available trajectory usage before raising the timeout error, while preserving the timeout failure.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included for usage accounting when an invocation terminates with a timeout.",
+  "suggestedRegressionTest": "Cover successful and timed-out invocations with recorded usage, asserting identical extraction of available totals and continued error propagation for timeouts.",
+  "minimumFixScope": "OpenHandsAgent.run termination and usage-accounting order.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193623-df93f8",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original evidence path and lines still exist. Current agent.py:410-415 extracts trajectory usage and updates cost, net_tokens, and current_tokens before the timeout raises AgentError at line 428, supporting the intended repair. parse_line still supplies no usage. A parameterized test at tests/agent_runner/agents/openhands_agent_test.py:329 covers completed and timed-out runs, checking final cumulative usage and timeout propagation. However, targeted validation exited 1 before executing tests because the read-only environment has no usable temporary directory. No linked patch attempts or prior validation results were provided, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/openhands/agent.py | sed -n '190,212p;390,450p'",
+        "rg -n 'timeout|timed_out|trajectory_usage' tests/agent_runner -g '*openhands*'",
+        "sed -n '315,440p' tests/agent_runner/agents/openhands_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/openhands_agent_test.py -k test_run_records_final_trajectory_usage_before_timeout"
+      ],
+      "createdAt": "2026-09-12T19:36:57.338Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified timed-out runs retain usage already recorded in trajectory; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:37:37.170Z"
+    }
+  ],
+  "signature": "sig_feat-library-55341e0286_d4059cb455",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:33.029Z",
+  "updatedAt": "2026-09-12T19:37:37.169Z"
+}

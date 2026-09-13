@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-5f1fe93632-f7c7_9514b0429b",
+  "featureId": "feat_library_5f1fe93632",
+  "title": "Completed resume skips are returned as failed tasks",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/problem_runner/worker.py",
+      "startLine": 136,
+      "endLine": 155,
+      "symbol": "run_agent_on_problem",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/problem_runner/driver.py",
+      "startLine": 86,
+      "endLine": 112,
+      "symbol": "_run_problem_worker",
+      "quote": null
+    }
+  ],
+  "reasoning": "The worker explicitly handles fully completed resumes by publishing COMPLETED progress and returning state='skipped'. Its caller recognizes only 'completed' as success, so this legitimate no-op becomes TaskResult(success=False, error_type='skipped'). Prepopulating completed_problems avoids this branch for callers that supply that list, but the exported run_problems API also permits resumed problems in problem_names.",
+  "reproduction": "Run a problem with resume enabled and resume detection indicating all checkpoints are completed. The worker skips execution, but _run_problem_worker returns a failed TaskResult.",
+  "recommendation": "Use a consistent successful completion contract for fully completed resume skips between the worker and driver, without conflating execution completion with strict evaluation success.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied resume-related tests exercise prepopulation directly; none tests the result returned through _run_problem_worker for a completed resume.",
+  "suggestedRegressionTest": "Cover normal completion, completed resume skips, and actual failures through the worker-to-driver boundary, asserting consistent TaskResult outcomes.",
+  "minimumFixScope": "worker.py completion summary or driver.py outcome classification, plus driver tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165240-389b2a",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. The completed-resume branch now returns state='completed' at worker.py:159-162, matching driver.py:91-93 and keeping passed_policy separate from execution success. This supports a repair, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory. The driver regression test mocks worker summaries rather than exercising the actual resume branch. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/entrypoints/problem_runner/worker.py | sed -n '130,175p'",
+        "nl -ba src/slop_code/entrypoints/problem_runner/driver.py | sed -n '85,115p'",
+        "rg -n 'resume|completed|policy' tests/entrypoints/problem_runner/test_worker.py tests/entrypoints/problem_runner/test_driver.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/problem_runner/test_driver.py -k test_run_problem_worker_separates_execution_from_policy_success"
+      ],
+      "createdAt": "2026-09-11T16:53:03.038Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:53:03.599Z"
+    }
+  ],
+  "signature": "sig_feat-library-5f1fe93632_f7c7a8ff98",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:08.843Z",
+  "updatedAt": "2026-09-11T16:53:03.599Z"
+}

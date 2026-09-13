@@ -186,3 +186,70 @@ def test_consolidate_runs_excludes_malformed_checkpoint_identifiers(
         assert len(rows) == 1
         assert rows.loc[0, "problem"] == "valid-problem"
         assert rows.loc[0, "checkpoint"] == "valid-checkpoint"
+
+
+def test_consolidate_runs_replaces_owned_outputs_without_deleting_unrelated_files(
+    tmp_path, monkeypatch
+):
+    run_dir = tmp_path / "20260101T0000"
+    result = {
+        "model": "model",
+        "agent_type": "agent",
+        "thinking": "minimal",
+        "prompt": "prompt",
+    }
+    records = iter(
+        [
+            [
+                {
+                    "problem": "problem",
+                    "checkpoint": "checkpoint",
+                    "mass.cc": 1.0,
+                }
+            ],
+            [],
+        ]
+    )
+    monkeypatch.setattr(
+        command,
+        "discover_runs",
+        lambda _: iter([(run_dir, result, cast("BenchmarkScore", object()))]),
+    )
+    monkeypatch.setattr(
+        command,
+        "load_checkpoint_results",
+        lambda _: iter(next(records)),
+    )
+    monkeypatch.setattr(
+        command,
+        "flatten_result",
+        lambda *_: {"run_id": "run", "num_checkpoints": 1},
+    )
+
+    output_dir = tmp_path / "consolidated"
+    ctx = cast(Any, SimpleNamespace(obj=SimpleNamespace(verbosity=0)))
+    command.consolidate_runs(
+        ctx,
+        tmp_path,
+        output_dir,
+        skip_quality=True,
+        skip_rubric=True,
+        skip_evaluations=True,
+    )
+    assert (output_dir / "checkpoints_mass.csv").exists()
+    unrelated = output_dir / "unrelated.csv"
+    unrelated.write_text("keep")
+
+    command.consolidate_runs(
+        ctx,
+        tmp_path,
+        output_dir,
+        force=True,
+        skip_quality=True,
+        skip_rubric=True,
+        skip_evaluations=True,
+    )
+
+    assert (output_dir / "runs.csv").exists()
+    assert not (output_dir / "checkpoints_mass.csv").exists()
+    assert unrelated.read_text() == "keep"

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import yaml
 
+from slop_code.agent_runner.agent import build_prompt_context
 from slop_code.agent_runner.models import UsageTracker
 from slop_code.agent_runner.reporting import CheckpointState
 from slop_code.common import INFERENCE_RESULT_FILENAME
@@ -80,22 +81,19 @@ def _generate_expected_prompt(
     entry_file: str,
     *,
     is_first_checkpoint: bool,
+    agent_type: str | None = None,
+    agent_version: str | None = None,
+    model_name: str | None = None,
 ) -> str:
-    """Generate what the prompt SHOULD be for a checkpoint.
-
-    Args:
-        checkpoint: Checkpoint configuration
-        prompt_template: Jinja2 template string for prompts
-        environment: Environment specification
-        entry_file: Entry file path
-        is_first_checkpoint: Whether this is the first checkpoint
-
-    Returns:
-        Rendered prompt string
-    """
+    """Generate the prompt expected for a checkpoint during resume."""
     return render_prompt(
         spec_text=problem_config.get_checkpoint_spec(checkpoint.name),
-        context={"is_continuation": not is_first_checkpoint},
+        context=build_prompt_context(
+            is_first_checkpoint=is_first_checkpoint,
+            agent_type=agent_type,
+            agent_version=agent_version,
+            model_name=model_name,
+        ),
         prompt_template=prompt_template,
         entry_file=environment.format_entry_file(entry_file),
         entry_command=environment.get_command(entry_file, is_agent_run=True),
@@ -124,6 +122,10 @@ def _check_prompt_mismatch(
     environment: EnvironmentSpec,
     entry_file: str,
     checkpoints: list[CheckpointConfig],
+    *,
+    agent_type: str | None = None,
+    agent_version: str | None = None,
+    model_name: str | None = None,
 ) -> bool:
     """Check if saved prompt matches expected prompt for a checkpoint.
 
@@ -158,6 +160,7 @@ def _check_prompt_mismatch(
         return False
 
     is_first = checkpoint_name == checkpoint_names[0]
+
     expected = _generate_expected_prompt(
         problem_config,
         checkpoint_config,
@@ -165,6 +168,9 @@ def _check_prompt_mismatch(
         environment,
         entry_file,
         is_first_checkpoint=is_first,
+        agent_type=agent_type,
+        agent_version=agent_version,
+        model_name=model_name,
     )
 
     if not _prompts_match(saved_prompt, expected):
@@ -185,6 +191,10 @@ def _detect_resume_from_artifacts(
     environment: EnvironmentSpec | None = None,
     entry_file: str | None = None,
     checkpoints: list[CheckpointConfig] | None = None,
+    *,
+    agent_type: str | None = None,
+    agent_version: str | None = None,
+    model_name: str | None = None,
 ) -> ResumeInfo | None:
     """Fallback resume detection when run_info.yaml is missing.
 
@@ -307,6 +317,9 @@ def _detect_resume_from_artifacts(
                 environment,
                 entry_file,
                 checkpoints,
+                agent_type=agent_type,
+                agent_version=agent_version,
+                model_name=model_name,
             )
         ):
             first_invalid_reason = InvalidationReason.SPEC_CHANGED
@@ -381,6 +394,10 @@ def detect_resume_point(
     environment: EnvironmentSpec | None = None,
     entry_file: str | None = None,
     checkpoints: list[CheckpointConfig] | None = None,
+    *,
+    agent_type: str | None = None,
+    agent_version: str | None = None,
+    model_name: str | None = None,
 ) -> ResumeInfo | None:
     """Detect where to resume from based on existing output.
 
@@ -413,6 +430,9 @@ def detect_resume_point(
             environment=environment,
             entry_file=entry_file,
             checkpoints=checkpoints,
+            agent_type=agent_type,
+            agent_version=agent_version,
+            model_name=model_name,
         )
 
     try:
@@ -494,6 +514,9 @@ def detect_resume_point(
                     environment,
                     entry_file,
                     checkpoints,
+                    agent_type=agent_type,
+                    agent_version=agent_version,
+                    model_name=model_name,
                 )
             ):
                 # Prompt mismatch - invalidate this and all subsequent

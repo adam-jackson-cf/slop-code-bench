@@ -125,10 +125,12 @@ def update_evolution(run_a_path, run_b_path):
     combined_df = pd.concat([df_a_raw, df_b_raw])
     max_indices = combined_df.groupby("problem")[idx_col].max()
 
-    # Define state columns (all metrics here are state)
-    state_cols = ["loc", "cc_high_count"]
-    if "lint_errors" in df_a_raw.columns:
-        state_cols.append("lint_errors")
+    # Keep metrics independent: missing lint data must not hide complexity.
+    state_cols = [
+        column
+        for column in ("loc", "cc_high_count", "lint_errors")
+        if column in df_chk.columns
+    ]
 
     # 1. Add Progress (Create Scatter Data)
     def add_progress(df):
@@ -149,26 +151,25 @@ def update_evolution(run_a_path, run_b_path):
         bins: list[int] = list(range(0, 105, 5))
         results: list[pd.DataFrame] = []
 
-        for problem, prob_df in df.groupby("problem"):
-            # Mean aggregation for bins having multiple checkpoints
-            prob_binned = prob_df.groupby("bin")[state_cols].mean()
-
-            # Reindex to standard bins
-            prob_binned = prob_binned.reindex(bins)
-
-            # Forward Fill ALL state metrics
+        for _, prob_df in df.groupby("problem"):
+            chronological = prob_df.sort_values(idx_col, kind="stable")
+            prob_binned = (
+                chronological.groupby("bin", sort=True)
+                .tail(1)
+                .set_index("bin")[state_cols]
+                .reindex(bins)
+            )
             prob_binned[state_cols] = prob_binned[state_cols].ffill()
-
             results.append(prob_binned)
 
         if not results:
             return pd.DataFrame(
-                {metric: 0.0 for metric in state_cols},
                 index=pd.RangeIndex(0, 105, 5),
+                columns=pd.Index(state_cols),
+                dtype=float,
             )
 
-        final = pd.concat(results)
-        return final.groupby(level=0).mean()
+        return pd.concat(results).groupby(level=0).mean()
 
     df_a_trend = process_for_trend(df_a_scatter)
     df_b_trend = process_for_trend(df_b_scatter)
@@ -208,7 +209,6 @@ def update_evolution(run_a_path, run_b_path):
 
         # Trend Line (A)
         series_a = df_a_trend[col]
-        series_a = series_a.rolling(window=3, min_periods=1, center=True).mean()
         fig.add_trace(
             go.Scatter(
                 x=series_a.index,
@@ -223,7 +223,6 @@ def update_evolution(run_a_path, run_b_path):
 
         # Trend Line (B)
         series_b = df_b_trend[col]
-        series_b = series_b.rolling(window=3, min_periods=1, center=True).mean()
         fig.add_trace(
             go.Scatter(
                 x=series_b.index,

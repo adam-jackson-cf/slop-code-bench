@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-11ced79257-6_c606653a88",
+  "featureId": "feat_test-suite_11ced79257",
+  "title": "Golden benchmark cost cases test a local aggregation implementation",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/metrics/scoring_models_test.py",
+      "startLine": 108,
+      "endLine": 171,
+      "symbol": "_benchmark_fixture",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/scoring_models_test.py",
+      "startLine": 336,
+      "endLine": 374,
+      "symbol": "test_missing_checkpoint_costs_are_zero_and_produced_missing_cost_is_null",
+      "quote": null
+    }
+  ],
+  "reasoning": "The cost test calls a helper that independently computes missing-cost detection, total cost, denominators, and benchmark averages before constructing BenchmarkScore. It therefore verifies test-local arithmetic rather than production aggregation. A production regression that converts a produced checkpoint's missing cost to zero can escape this golden scenario.",
+  "reproduction": "A change to production calculate_scores cost handling cannot affect this test because it never calls that function.",
+  "recommendation": "Build ProblemScoreInput and BenchmarkScoreInput from these golden cases and obtain the actual result through calculate_scores. Keep the fixture values as independent expected outputs.",
+  "whyTestsDoNotAlreadyCoverThis": "Included production aggregation tests cover raw rounding and unproduced zero-cost checkpoints, but the explicit produced-with-missing-cost golden case uses only the local helper.",
+  "suggestedRegressionTest": "Route the existing parameterized cost scenarios through production aggregation and assert null propagation, zero contribution from unproduced checkpoints, and the configured checkpoint denominator.",
+  "minimumFixScope": "Golden aggregation scenarios in scoring_models_test.py; retain the helper only where constructing ranking inputs is intentional.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T205221-dfc6eb",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "Both original evidence ranges still exist unchanged. tests/metrics/scoring_models_test.py:108–171 independently aggregates costs and constructs BenchmarkScore; the golden cost test at lines 336–374 still calls that helper rather than calculate_scores. Production null propagation resides separately in src/slop_code/metrics/scoring/schema.py:280–313 and is invoked at line 339, so a regression there would not affect this golden test. Nearby production coverage asserts unproduced zero-cost behavior but does not repair this scenario's disconnected aggregation. No linked patch attempts or validation results were supplied. Assessment is based on current source inspection; tests were not run.",
+      "commands": [
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '108,174p;336,377p'",
+        "rg -n 'missing_cost|cost_per_configured_checkpoint|invalid_cost|def calculate_scores' src/slop_code/metrics/scoring/schema.py tests/metrics/scoring*test.py",
+        "sed -n '280,365p' src/slop_code/metrics/scoring/schema.py",
+        "sed -n '710,850p' tests/metrics/scoring_models_test.py"
+      ],
+      "createdAt": "2026-09-12T20:52:47.040Z"
+    },
+    {
+      "runId": "20260912T205850-05c489",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file exists, but the symbols moved. _benchmark_fixture is now at lines 176–239 and is used only for ranking inputs. The golden cost test at lines 404–447 now constructs ProblemScoreInput and BenchmarkScoreInput and calls production calculate_scores, asserting both unproduced zero cost and produced missing-cost null propagation against fixture expectations. Production schema.py:280–313 supports that behavior. This supports the intended repair, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory; therefore fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "codegraph --version; codegraph status",
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '108,250p;415,475p'",
+        "nl -ba src/slop_code/metrics/scoring/schema.py | sed -n '280,355p'",
+        "rg -n 'unproduced_checkpoint_zero_cost|produced_checkpoint_missing_cost' tests/metrics/fixtures/scoring_golden.json",
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '399,417p'",
+        "rg -n '_benchmark_fixture\\(' tests/metrics/scoring_models_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/scoring_models_test.py::test_missing_checkpoint_costs_are_zero_and_produced_missing_cost_is_null"
+      ],
+      "createdAt": "2026-09-12T20:59:27.317Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified golden cases construct production score inputs and obtain outputs through calculate_scores while fixtures remain independent expected values; 56 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:59:57.456Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-11ced79257_618f9ea75e",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:10.908Z",
+  "updatedAt": "2026-09-12T20:59:57.455Z"
+}

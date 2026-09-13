@@ -166,11 +166,10 @@ def update_efficiency(run_a_path, run_b_path):
     combined_df = pd.concat([df_a_raw, df_b_raw])
     max_indices = combined_df.groupby("problem")[idx_col].max()
 
-    # Pre-calculate cumulative cost per problem
-    df_a_raw = df_a_raw.sort_values([idx_col])
+    # Preserve each problem's chronological cumulative cost.
+    df_a_raw = df_a_raw.sort_values(["problem", idx_col]).copy()
     df_a_raw["cumulative_cost"] = df_a_raw.groupby("problem")["cost"].cumsum()
-
-    df_b_raw = df_b_raw.sort_values([idx_col])
+    df_b_raw = df_b_raw.sort_values(["problem", idx_col]).copy()
     df_b_raw["cumulative_cost"] = df_b_raw.groupby("problem")["cost"].cumsum()
 
     # Define columns
@@ -208,30 +207,26 @@ def update_efficiency(run_a_path, run_b_path):
         bins: list[int] = list(range(0, 105, 5))
         results: list[pd.DataFrame] = []
 
-        # Process per problem
-        for problem, prob_df in df.groupby("problem"):
-            # Mean aggregation for bins having multiple checkpoints
-            prob_binned = prob_df.groupby("bin")[state_cols + rate_cols].mean()
-
-            # Reindex to standard bins
-            prob_binned = prob_binned.reindex(bins)
-
-            # State metrics: Forward Fill
+        for _, prob_df in df.groupby("problem"):
+            chronological = prob_df.sort_values(idx_col, kind="stable")
+            last_states = (
+                chronological.groupby("bin", sort=True)
+                .tail(1)
+                .set_index("bin")[state_cols]
+            )
+            rates = chronological.groupby("bin", sort=True)[rate_cols].mean()
+            prob_binned = last_states.join(rates, how="outer").reindex(bins)
             prob_binned[state_cols] = prob_binned[state_cols].ffill()
-
-            # Rate metrics: Zero Fill
-            prob_binned[rate_cols] = prob_binned[rate_cols].fillna(0)
-
             results.append(prob_binned)
 
         if not results:
             return pd.DataFrame(
-                {metric: 0.0 for metric in [*state_cols, *rate_cols]},
                 index=pd.RangeIndex(0, 105, 5),
+                columns=pd.Index([*state_cols, *rate_cols]),
+                dtype=float,
             )
-        # Average across problems
-        final = pd.concat(results)
-        return final.groupby(level=0).mean()
+        # Means ignore unavailable measurements; bins remain unavailable if none.
+        return pd.concat(results).groupby(level=0).mean()
 
     df_a_trend = process_for_trend(df_a_scatter)
     df_b_trend = process_for_trend(df_b_scatter)
@@ -271,7 +266,10 @@ def update_efficiency(run_a_path, run_b_path):
 
         # Trend Line (A)
         series_a = df_a_trend[col]
-        series_a = series_a.rolling(window=3, min_periods=1, center=True).mean()
+        if col not in state_cols:
+            series_a = series_a.rolling(
+                window=3, min_periods=1, center=True
+            ).mean()
         fig.add_trace(
             go.Scatter(
                 x=series_a.index,
@@ -286,7 +284,10 @@ def update_efficiency(run_a_path, run_b_path):
 
         # Trend Line (B)
         series_b = df_b_trend[col]
-        series_b = series_b.rolling(window=3, min_periods=1, center=True).mean()
+        if col not in state_cols:
+            series_b = series_b.rolling(
+                window=3, min_periods=1, center=True
+            ).mean()
         fig.add_trace(
             go.Scatter(
                 x=series_b.index,

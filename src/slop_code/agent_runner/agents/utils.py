@@ -4,7 +4,7 @@ import os
 from collections.abc import Iterable
 from pathlib import Path
 
-HOME_PATH = "/tmp/agent_home"
+HOME_PATH = f"{os.sep}tmp{os.sep}agent_home"
 
 
 def resolve_env_vars(config):

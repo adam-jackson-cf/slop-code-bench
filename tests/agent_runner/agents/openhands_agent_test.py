@@ -2,20 +2,29 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
+
+import pytest
 
 from slop_code.agent_runner.agents.cli_utils import AgentCommandResult
 from slop_code.agent_runner.agents.openhands import OpenHandsAgent
 from slop_code.agent_runner.agents.openhands import OpenHandsConfig
+from slop_code.agent_runner.agents.openhands import OpenHandsParser
 from slop_code.agent_runner.agents.utils import HOME_PATH
 from slop_code.agent_runner.credentials import CredentialType
 from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
+from slop_code.agent_runner.models import AgentError
+from slop_code.agent_runner.trajectory import AgentStep
+from slop_code.agent_runner.trajectory import ToolUseStep
 from slop_code.common.llms import APIPricing
 from slop_code.common.llms import ModelDefinition
 from slop_code.execution import Session
+from slop_code.execution.runtime import RuntimeResult
 
 
 class FakeRuntime:
@@ -239,3 +248,167 @@ def test_setup_passes_home_override_and_mounts(tmp_path: Path) -> None:
         for mapping in session.last_spawn_mounts.values()
     )
     agent.cleanup()
+
+
+def test_parser_uses_last_cumulative_metrics_entry(tmp_path: Path) -> None:
+    trajectory_file = tmp_path / "trajectory.json"
+    trajectory_file.write_text(
+        json.dumps(
+            [
+                {
+                    "llm_metrics": {
+                        "accumulated_cost": 0.10,
+                        "accumulated_token_usage": {
+                            "prompt_tokens": 100,
+                            "completion_tokens": 20,
+                        },
+                    },
+                },
+                {
+                    "llm_metrics": {
+                        "accumulated_cost": 0.25,
+                        "accumulated_token_usage": {
+                            "prompt_tokens": 250,
+                            "completion_tokens": 50,
+                        },
+                    },
+                },
+            ]
+        )
+    )
+
+    trajectory = OpenHandsParser().parse(tmp_path)
+
+    assert trajectory.metadata["accumulated_cost"] == 0.25
+    assert trajectory.metadata["total_tokens"] == {
+        "input": 250,
+        "output": 50,
+    }
+
+
+def test_parser_processes_action_events_without_is_step(
+    tmp_path: Path,
+) -> None:
+    events_file = tmp_path / "events.jsonl"
+    events = [
+        {"action": "message", "args": {"content": "Working on it."}},
+        {"action": "run", "args": {"command": "pwd"}},
+        {"action": "execute_bash", "args": {"command": "ls"}},
+        {"action": "write", "args": {"path": "a.py", "content": "x = 1"}},
+        {"action": "str_replace_editor", "args": {"path": "a.py"}},
+        {"action": "read", "args": {"path": "a.py"}},
+        {"action": "browse", "args": {"url": "https://example.com"}},
+        {"action": "custom_tool", "args": {"key": "value"}},
+    ]
+    events_file.write_text(
+        "".join(f"{json.dumps(event)}\n" for event in events)
+    )
+
+    parser = OpenHandsParser()
+
+    assert parser.can_parse(tmp_path)
+    trajectory = parser.parse(tmp_path)
+    assert len(trajectory.steps) == 8
+    assert isinstance(trajectory.steps[0], AgentStep)
+    assert trajectory.steps[0].content == "Working on it."
+    tool_steps = [
+        step for step in trajectory.steps[1:] if isinstance(step, ToolUseStep)
+    ]
+    assert len(tool_steps) == 7
+    assert [step.type for step in tool_steps] == [
+        "bash",
+        "bash",
+        "edit",
+        "edit",
+        "read",
+        "browse",
+        "custom_tool",
+    ]
+
+
+@pytest.mark.parametrize("outcome", ["completed", "timed_out"])
+def test_run_records_final_trajectory_usage_before_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+) -> None:
+    timed_out = outcome == "timed_out"
+    runtime = FakeRuntime()
+    session = FakeSession(
+        runtime=runtime,
+        working_dir=tmp_path,
+        spec=SimpleNamespace(type="docker"),
+    )
+    agent = OpenHandsAgent(
+        problem_name="p",
+        verbose=False,
+        image="img",
+        cost_limits=AgentCostLimits(
+            step_limit=0,
+            cost_limit=10.0,
+            net_cost_limit=0.0,
+        ),
+        pricing=APIPricing(input=1.0, output=1.0),
+        credential=_make_credential("openai", "OPENAI_API_KEY"),
+        model="gpt-5",
+        base_url=None,
+        timeout=30,
+        env={},
+    )
+    agent.setup(cast("Session", session))
+
+    def fake_run_invocation(_: str) -> AgentCommandResult:
+        trajectory = [
+            {
+                "llm_metrics": {
+                    "accumulated_cost": 0.10,
+                    "accumulated_token_usage": {
+                        "prompt_tokens": 100,
+                        "completion_tokens": 20,
+                    },
+                },
+            },
+            {
+                "llm_metrics": {
+                    "accumulated_cost": 0.25,
+                    "accumulated_token_usage": {
+                        "prompt_tokens": 250,
+                        "completion_tokens": 50,
+                    },
+                },
+            },
+        ]
+        (agent._get_output_dir() / "trajectory.json").write_text(
+            json.dumps(trajectory)
+        )
+        return AgentCommandResult(
+            result=RuntimeResult(
+                exit_code=1 if timed_out else 0,
+                stdout="",
+                stderr="",
+                setup_stdout="",
+                setup_stderr="",
+                elapsed=1.0,
+                timed_out=timed_out,
+            ),
+            steps=[],
+            usage_totals={},
+            stdout="",
+            stderr="",
+        )
+
+    monkeypatch.setattr(agent, "_run_invocation", fake_run_invocation)
+
+    try:
+        if timed_out:
+            with pytest.raises(AgentError, match="timed out"):
+                agent.run("solve this task")
+        else:
+            agent.run("solve this task")
+
+        assert agent.usage.cost == 0.25
+        assert agent.usage.net_tokens.input == 250
+        assert agent.usage.net_tokens.output == 50
+        assert agent.usage.current_tokens == agent.usage.net_tokens
+    finally:
+        agent.cleanup()

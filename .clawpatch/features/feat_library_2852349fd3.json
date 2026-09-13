@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_2852349fd3",
+  "title": "Python source scripts",
+  "summary": "Python source group scripts with 3 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "scripts",
+      "symbol": "scripts",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "scripts/analyze_trajectory.py",
+      "reason": "source group scripts"
+    },
+    {
+      "path": "scripts/mass_delta_analysis.py",
+      "reason": "source group scripts"
+    },
+    {
+      "path": "scripts/migrate_specs_solutions.py",
+      "reason": "source group scripts"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    }
+  ],
+  "tests": [],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-2852349fd3-46ac_15429c4f95",
+    "fnd_sig-feat-library-2852349fd3-d010_6bfa82740e",
+    "fnd_sig-feat-library-2852349fd3-9eb2_4402ee7b29",
+    "fnd_sig-feat-library-2852349fd3-6886_40c9fc0cc8"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "4 finding(s); prompt=74921 bytes; approxTokens=18719; includedFiles=4; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:55:59.954Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T07:41:46.699Z"
+}

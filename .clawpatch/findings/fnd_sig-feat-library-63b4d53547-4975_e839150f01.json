@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-63b4d53547-4975_e839150f01",
+  "featureId": "feat_library_63b4d53547",
+  "title": "An unchecked problem name can redirect inference overwrite outside the output directory",
+  "category": "data-loss",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/infer_problem.py",
+      "startLine": 197,
+      "endLine": 219,
+      "symbol": "infer_problem",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/infer_problem.py",
+      "startLine": 227,
+      "endLine": 234,
+      "symbol": "infer_problem",
+      "quote": null
+    }
+  ],
+  "reasoning": "problem_name is joined directly to output_path and recursively deleted when overwrite is enabled. Absolute paths discard output_path, and parent-directory components can escape it. Catalog lookup and problem validation happen only after deletion, so even an invalid problem argument can destroy an unrelated directory.",
+  "reproduction": "With otherwise valid inference arguments and overwrite enabled, supply an existing disposable directory's absolute path as problem_name. That directory is removed before ProblemConfig.from_yaml validates the problem.",
+  "recommendation": "Validate the problem against the catalog before modifying output, reject names containing path components, and enforce that the resolved destination lies beneath the resolved output directory.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied tests do not exercise infer_problem or its overwrite destination validation.",
+  "suggestedRegressionTest": "Parameterize absolute paths, parent traversal, and symlink escapes; assert rejection before any output mutation. Also verify that a valid catalog name can overwrite only its intended output directory.",
+  "minimumFixScope": "Problem resolution and save_dir validation before the destructive overwrite branch.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200510-c6c7f0",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the original lines now contain model/configuration handling. Validation at lines 36–79 rejects absolute paths, traversal, and external symlink destinations; ProblemConfig validation now precedes deletion. However, confinement remains incomplete: output/safe-problem symlinked to output itself resolves to the output root, which passes is_relative_to at line 69. Overwrite then recursively deletes the entire output directory at line 257, including unrelated results. Existing tests cover external symlink escapes but not this case. A read-only pathlib check confirmed equality passes containment. An isolated helper validation attempt was blocked by sandbox temporary-file restrictions; no destructive reproduction was executed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba tests/entrypoints/commands/test_infer_problem.py",
+        "nl -ba src/slop_code/entrypoints/commands/infer_problem.py | sed -n '36,80p;190,275p'",
+        "python3 -B - <<'PY' ... PY (isolated helper check; blocked by read-only sandbox)",
+        "python3 -B -c 'from pathlib import Path; root=Path(\"/output\"); assert root.is_relative_to(root); print(\"A destination resolving to the output root passes is_relative_to; rmtree(save_dir) would delete the entire output root.\")'"
+      ],
+      "createdAt": "2026-09-12T20:05:48.587Z"
+    },
+    {
+      "runId": "20260912T200658-1e7952",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file exists, but original lines 197–219 and 227–234 now handle validation/configuration. Current lines 36–81 reject path components, unknown catalog entries, external symlink destinations, and destinations equal to the output root, addressing the prior revalidation's remaining case. ProblemConfig validation at line 249 precedes deletion at line 259. Tests now include the output-root symlink case. However, targeted validation could not execute because the read-only sandbox rejected the heredoc temporary file; therefore fixed is not verified. No linked patch attempts were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/entrypoints/commands/infer_problem.py | sed -n '36,82p;190,275p'",
+        "nl -ba tests/entrypoints/commands/test_infer_problem.py",
+        "python3 -B - <<'PY' ... PY (in-memory destination and validation-order checks; blocked before execution: can't create temp file for here document)"
+      ],
+      "createdAt": "2026-09-12T20:07:27.858Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified catalog/name validation and strict descendant confinement reject absolute, traversal, external, and output-root symlink destinations before mutation; 5 focused tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:07:37.201Z"
+    }
+  ],
+  "signature": "sig_feat-library-63b4d53547_497525744a",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:26.300Z",
+  "updatedAt": "2026-09-12T20:07:37.198Z"
+}

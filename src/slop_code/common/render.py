@@ -25,7 +25,7 @@ ENTRYPOINT_PLACEHOLDER_PATTERN = re.compile(r"%%%ENTRYPOINT:entry_file%%%")
 ENTRYPOINT_COMMAND_PLACEHOLDER_PATTERN = re.compile(
     r"%%%ENTRYPOINT:entry_command%%%"
 )
-CANARY_HTML_COMMENT_PATTERN = re.compile(r"^<!-- [\s\S]+ -->\n?")
+CANARY_HTML_COMMENT_PATTERN = re.compile(r"^<!-- [\s\S]*? -->\n?")
 
 
 def strip_canary_string(text: str) -> str:
@@ -166,8 +166,12 @@ def render_multi_file_prefix(
 def replace_spec_placeholders(
     spec_text: str, entry_file: str, entry_command: str
 ) -> str:
-    spec_text = ENTRYPOINT_PLACEHOLDER_PATTERN.sub(entry_file, spec_text)
-    return ENTRYPOINT_COMMAND_PLACEHOLDER_PATTERN.sub(entry_command, spec_text)
+    spec_text = ENTRYPOINT_PLACEHOLDER_PATTERN.sub(
+        lambda _: entry_file, spec_text
+    )
+    return ENTRYPOINT_COMMAND_PLACEHOLDER_PATTERN.sub(
+        lambda _: entry_command, spec_text
+    )
 
 
 def render_prompt(

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-94a87ca9bc-f8de_907ae763b2",
+  "featureId": "feat_library_94a87ca9bc",
+  "title": "Shell command construction does not preserve configured arguments",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/agent.py",
+      "startLine": 399,
+      "endLine": 406,
+      "symbol": "CodexAgent._run_invocation",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/agent.py",
+      "startLine": 579,
+      "endLine": 618,
+      "symbol": "CodexAgent._build_command",
+      "quote": null
+    }
+  ],
+  "reasoning": "Only the prompt is shell-quoted before the argument list is joined with spaces. A binary path containing spaces or an extra_args element containing whitespace is split into multiple arguments; shell metacharacters in configured values can also become executable shell syntax. This violates the list-of-arguments configuration contract.",
+  "reproduction": "Configure extra_args as [\"--config\", \"example='hello world'\"]. Joining and shell parsing strips the literal TOML quotes, so the CLI receives a different configuration expression from the supplied argument.",
+  "recommendation": "Build raw argument values and shell-quote every element once at the execution boundary using shlex.join, or pass an argv list directly if the runtime supports it.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included that verify argument preservation through shell parsing.",
+  "suggestedRegressionTest": "Verify round-trip argument preservation for spaces, embedded quotes, dollar signs, and shell metacharacters across prompts, binary paths, and extra_args.",
+  "minimumFixScope": "CodexAgent command construction and execution-boundary tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193814-379b3b",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and _run_invocation still exist; _build_command moved to line 595. Current code supports the proposed repair: _build_command retains raw arguments, and _run_invocation uses shlex.join(command) at line 413. An argument-preservation test now exists around lines 408–429. However, targeted pytest validation exited 1 before running tests because the read-only environment provided no usable temporary directory. Therefore the repair cannot be reported as fixed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "rg -n 'shlex.join|def _build_command|def _run_invocation' src/slop_code/agent_runner/agents/codex/agent.py",
+        "rg --files tests/agent_runner | rg codex",
+        "sed -n '390,415p' src/slop_code/agent_runner/agents/codex/agent.py",
+        "sed -n '595,615p' src/slop_code/agent_runner/agents/codex/agent.py",
+        "sed -n '609,664p' src/slop_code/agent_runner/agents/codex/agent.py",
+        "rg -n 'quote|shell|preserv|extra_args|shlex|invocation' tests/agent_runner/agents/codex_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/codex_agent_test.py"
+      ],
+      "createdAt": "2026-09-12T19:38:46.286Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified Codex command arguments preserve spaces, quotes, dollars, and shell metacharacters; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:21.585Z"
+    }
+  ],
+  "signature": "sig_feat-library-94a87ca9bc_f8de5f86db",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:57.516Z",
+  "updatedAt": "2026-09-12T19:39:21.584Z"
+}

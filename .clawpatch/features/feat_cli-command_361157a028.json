@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_cli-command_361157a028",
+  "title": "Python CLI command slop-code",
+  "summary": "Python console script 'slop-code' targets slop_code.entrypoints.cli:app, source src/slop_code/entrypoints/cli.py.",
+  "kind": "cli-command",
+  "source": "python-console-script",
+  "confidence": "high",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/entrypoints/cli.py",
+      "symbol": "app",
+      "route": null,
+      "command": "slop-code"
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/entrypoints/cli.py",
+      "reason": "console script source"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    }
+  ],
+  "tests": [],
+  "tags": [
+    "python",
+    "cli"
+  ],
+  "trustBoundaries": [
+    "user-input",
+    "filesystem",
+    "process-exec"
+  ],
+  "status": "reviewed",
+  "lock": null,
+  "findingIds": [],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105427-40c416",
+      "kind": "review",
+      "summary": "0 finding(s); prompt=16597 bytes; approxTokens=4150; includedFiles=2; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:54:40.126Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-11T10:54:40.126Z"
+}

@@ -1,8 +1,11 @@
 """Behavioral coverage for typed MiniSWE trajectory artifacts."""
 
+import json
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
+
+import pytest
 
 from slop_code.agent_runner.agents.miniswe.parser import MinisweParser
 from slop_code.agent_runner.trajectory import AgentStep
@@ -41,3 +44,29 @@ def test_typed_miniswe_artifact_round_trips(tmp_path: Path) -> None:
     assert trajectory.steps == emitted_steps
     assert trajectory.metadata == {}
     assert all("role" not in line for line in artifact.read_text().splitlines())
+
+
+@pytest.mark.parametrize("step_type", ("user", "agent", "thinking", "tool_use"))
+def test_can_parse_recognizes_supported_string_step_types(
+    tmp_path: Path, step_type: str
+) -> None:
+    """Supported string step types identify MiniSWE artifacts."""
+    (tmp_path / "trajectory.jsonl").write_text(
+        json.dumps({"step_type": step_type}) + "\n",
+        encoding="utf-8",
+    )
+
+    assert MinisweParser().can_parse(tmp_path)
+
+
+@pytest.mark.parametrize("step_type", (None, 1, [], {}))
+def test_can_parse_rejects_non_string_step_types(
+    tmp_path: Path, step_type: object
+) -> None:
+    """Non-string step types cannot identify MiniSWE artifacts."""
+    (tmp_path / "trajectory.jsonl").write_text(
+        json.dumps({"step_type": step_type}) + "\n",
+        encoding="utf-8",
+    )
+
+    assert not MinisweParser().can_parse(tmp_path)

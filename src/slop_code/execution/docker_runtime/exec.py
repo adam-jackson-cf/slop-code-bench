@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 import docker
@@ -23,10 +24,6 @@ from slop_code.execution.shared import HANDLE_ENTRY_NAME
 from slop_code.execution.shared import split_setup_output
 from slop_code.execution.shared import write_entry_script
 from slop_code.logging import get_logger
-
-# Docker commands are constructed from fixed CLI flags and validated runtime
-# configuration; never from shell-interpreted input.
-_spawn_trusted_docker_process = subprocess.Popen
 
 logger = get_logger(__name__)
 
@@ -92,6 +89,7 @@ class DockerExecRuntime(ExecRuntime):
         self._image = image or spec.get_base_image()
         self._disable_setup = disable_setup
         self._network_mode = self.spec.effective_network_mode()
+        self._active_container_name: str | None = None
         self._process: subprocess.Popen[bytes] | None = None
 
     @property
@@ -223,36 +221,32 @@ class DockerExecRuntime(ExecRuntime):
 
         logger.debug(
             "Built docker run command",
-            args=args,
+            docker_binary=self.spec.docker.binary,
+            image=self._image,
+            environment_count=len(full_env),
+            port_count=len(resolved_ports or {}),
             verbose=True,
         )
         return args
 
-    def _write_stdin(
-        self,
-        proc: subprocess.Popen[bytes],
-        stdin: str | list[str],
-    ) -> None:
-        """Write stdin data to process."""
+    @staticmethod
+    def _encode_stdin(stdin: str | list[str]) -> bytes:
+        """Encode stdin for communicate to drain output while writing."""
         payloads = stdin if isinstance(stdin, list) else [stdin]
-        pipe = proc.stdin
-        if pipe is None:
-            raise SolutionRuntimeError("stdin requested but pipe is missing")
+        return "".join(payloads).encode("utf-8")
 
-        try:
-            for payload in payloads:
-                data = payload.encode("utf-8")
-                pipe.write(data)
-            if payloads:
-                pipe.flush()
-        except OSError as exc:
-            raise SolutionRuntimeError(
-                "Failed to write stdin to docker run"
-            ) from exc
-        finally:
-            with contextlib.suppress(Exception):
-                pipe.close()
-            proc.stdin = None
+    def _force_remove_container(self, container_name: str) -> None:
+        """Force removal of a one-shot container after client termination."""
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            # Invoke the configured Docker CLI to clean up the container.
+            subprocess.run(  # noqa: S603
+                [self.spec.docker.binary, "rm", "--force", container_name],
+                check=False,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+            )
 
     def execute(
         self,
@@ -271,12 +265,16 @@ class DockerExecRuntime(ExecRuntime):
             RuntimeResult with execution details
         """
         run_args = self._build_docker_run_command(env)
+        container_name = f"slop-code-exec-{uuid.uuid4().hex}"
+        run_args[2:2] = ["--name", container_name]
+        self._active_container_name = container_name
 
         # Add -i flag for stdin support (must be before the image name)
+        input_bytes = None
         if stdin is not None:
-            # Find the image position and insert -i before it
             image_idx = run_args.index(self._image)
             run_args.insert(image_idx, "-i")
+            input_bytes = self._encode_stdin(stdin)
 
         logger.debug(
             "Executing single-shot docker run",
@@ -290,7 +288,7 @@ class DockerExecRuntime(ExecRuntime):
         timed_out = False
 
         try:
-            proc = _spawn_trusted_docker_process(
+            proc = subprocess.Popen(  # noqa: S603 - local argv, no shell
                 run_args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -298,27 +296,32 @@ class DockerExecRuntime(ExecRuntime):
             )
             self._process = proc
         except OSError as exc:
+            self._active_container_name = None
             raise SolutionRuntimeError("Failed to launch docker run") from exc
 
         try:
-            # Handle stdin if provided
-            if stdin is not None:
-                self._write_stdin(proc, stdin)
-            elif proc.stdin is not None:
-                proc.stdin.close()
-
-            # Wait for completion
             try:
-                stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout)
+                stdout_bytes, stderr_bytes = proc.communicate(
+                    input=input_bytes,
+                    timeout=timeout,
+                )
             except subprocess.TimeoutExpired:
                 timed_out = True
                 proc.kill()
+                self._force_remove_container(container_name)
                 stdout_bytes, stderr_bytes = proc.communicate()
         finally:
+            if proc.poll() is None:
+                with contextlib.suppress(Exception):
+                    proc.kill()
+                with contextlib.suppress(Exception):
+                    proc.wait(timeout=5)
             self._process = None
             if proc.stdin:
                 with contextlib.suppress(Exception):
                     proc.stdin.close()
+            self._force_remove_container(container_name)
+            self._active_container_name = None
 
         elapsed = time.time() - start_time
         exit_code = proc.returncode if proc.returncode is not None else -1
@@ -367,7 +370,7 @@ class DockerExecRuntime(ExecRuntime):
         return self._exit_code
 
     def kill(self) -> None:
-        """Kill the running process."""
+        """Kill the running process and its daemon-side container."""
         proc = self._process
         if proc is not None:
             with contextlib.suppress(Exception):
@@ -375,6 +378,10 @@ class DockerExecRuntime(ExecRuntime):
             with contextlib.suppress(Exception):
                 proc.wait(timeout=5)
             self._process = None
+        container_name = self._active_container_name
+        if container_name is not None:
+            self._force_remove_container(container_name)
+            self._active_container_name = None
 
     def cleanup(self) -> None:
         """Clean up all resources used by the runtime."""

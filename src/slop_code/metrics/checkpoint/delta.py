@@ -17,38 +17,29 @@ DELTA_METRIC_KEYS: tuple[str, ...] = (
 )
 
 
-def safe_ratio(numerator: float | None, denominator: float | None) -> float:
+def safe_ratio(
+    numerator: float | None, denominator: float | None
+) -> float | None:
     """Compute numerator / denominator with zero handling.
 
-    Args:
-        numerator: Value to divide.
-        denominator: Value to divide by.
-
-    Returns:
-        Ratio, 0 if both are 0, inf if denominator is 0 but numerator isn't.
+    Returns ``None`` when either input is unavailable. Otherwise returns zero
+    if both are zero, or infinity if only the denominator is zero.
     """
-    numer = numerator or 0
-    denom = denominator or 0
-
-    if denom == 0:
-        return 0.0 if numer == 0 else float("inf")
-
-    return numer / denom
+    if numerator is None or denominator is None:
+        return None
+    if denominator == 0:
+        return 0.0 if numerator == 0 else float("inf")
+    return numerator / denominator
 
 
-def safe_delta_pct(prev_val: float | None, curr_val: float | None) -> float:
-    """Compute (curr - prev) / prev * 100 with zero handling.
-
-    Args:
-        prev_val: Previous checkpoint value.
-        curr_val: Current checkpoint value.
-
-    Returns:
-        Percentage change, 0 if both are 0, inf if prev is 0 but curr isn't.
-    """
-    prev = prev_val or 0
-    curr = curr_val or 0
-    return safe_ratio(curr - prev, prev) * 100
+def safe_delta_pct(
+    prev_val: float | None, curr_val: float | None
+) -> float | None:
+    """Compute a percentage delta without treating missing values as zero."""
+    if prev_val is None or curr_val is None:
+        return None
+    ratio = safe_ratio(curr_val - prev_val, prev_val)
+    return ratio * 100 if ratio is not None else None
 
 
 def compute_checkpoint_delta(
@@ -57,8 +48,9 @@ def compute_checkpoint_delta(
 ) -> dict[str, float | None]:
     """Compute percentage delta metrics between two consecutive checkpoints.
 
-    All deltas are percentage changes: ((curr - prev) / prev) * 100.
-    When prev == 0, returns float('inf') if curr > 0, else 0.
+    When either measurement is unavailable, returns ``None`` for that delta.
+    When the previous measured value is zero, returns ``float('inf')`` if the
+    current value is positive, else zero.
 
     Args:
         prev_metrics: Metrics from checkpoint N (from get_checkpoint_metrics).
@@ -80,13 +72,16 @@ def compute_checkpoint_delta(
             prev_metrics.get(key), curr_metrics.get(key)
         )
 
-    # Compute churn ratio: (lines_added + lines_removed) / prev_total_lines
-    try:
-        churn = curr_metrics["lines_added"] + curr_metrics["lines_removed"]
-    except KeyError:
-        churn = None
-
-    prev_total_lines = prev_metrics.get("total_lines", 0)
-    result["delta.churn_ratio"] = safe_ratio(churn, prev_total_lines)
+    lines_added = curr_metrics.get("lines_added")
+    lines_removed = curr_metrics.get("lines_removed")
+    churn = (
+        lines_added + lines_removed
+        if isinstance(lines_added, int | float)
+        and isinstance(lines_removed, int | float)
+        else None
+    )
+    result["delta.churn_ratio"] = safe_ratio(
+        churn, prev_metrics.get("total_lines")
+    )
 
     return result

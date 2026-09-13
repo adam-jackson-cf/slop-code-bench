@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-7307b3db19-edbd_69249a688f",
+  "featureId": "feat_library_7307b3db19",
+  "title": "Rendering multiple problems overwrites earlier prompts",
+  "category": "data-loss",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/render_prompts.py",
+      "startLine": 93,
+      "endLine": 111,
+      "symbol": "_process_problem",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/render_prompts.py",
+      "startLine": 230,
+      "endLine": 241,
+      "symbol": "render_prompts",
+      "quote": null
+    }
+  ],
+  "reasoning": "Every problem receives the same output directory and writes part_1.md, part_2.md, and so on directly into it. Later problems overwrite earlier prompts despite the documented per-problem directory structure. Problems with different checkpoint counts also leave a mixture of prompts from different problems while the summary reports all prompts as rendered.",
+  "reproduction": "Render two problems with distinct specifications into one output directory. Their shared part_N.md filenames collide, retaining only the later problem's content.",
+  "recommendation": "Place each problem's rendered files in a distinct problem-named subdirectory.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied tests do not exercise render_prompts or multi-problem output isolation.",
+  "suggestedRegressionTest": "Render multiple problems with distinct content and unequal checkpoint counts; assert every prompt exists under its own problem directory and no content is overwritten or mixed.",
+  "minimumFixScope": "Correct the per-problem output directory in render_prompts.py and cover multi-problem rendering.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201140-7dd0c7",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original evidence locations still exist. render_prompts.py:93 now creates output_dir / problem_config.name, and lines 110–111 write each prompt there, supporting the intended repair despite the shared base directory at lines 230–241. A focused test now covers distinct problems with unequal checkpoint counts and preserved content. However, targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory, so the repair cannot be reported as fixed. No linked patch attempts or successful validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/commands/render_prompts.py | sed -n '76,120p;225,250p'",
+        "rg -n 'render_prompts|problem_output_dir' tests/entrypoints",
+        "cat tests/entrypoints/commands/test_render_prompts.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/commands/test_render_prompts.py"
+      ],
+      "createdAt": "2026-09-12T20:12:05.423Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified unequal multi-problem prompts are isolated under problem-named directories without overwrite; 14 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:13:20.908Z"
+    }
+  ],
+  "signature": "sig_feat-library-7307b3db19_edbd7bb2f2",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:33.678Z",
+  "updatedAt": "2026-09-12T20:13:20.907Z"
+}

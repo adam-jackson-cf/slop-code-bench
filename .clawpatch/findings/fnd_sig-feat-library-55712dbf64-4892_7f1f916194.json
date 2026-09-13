@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-55712dbf64-4892_7f1f916194",
+  "featureId": "feat_library_55712dbf64",
+  "title": "Grouped runs generate duplicate traces when run dates differ",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/graphs/comparison.py",
+      "startLine": 63,
+      "endLine": 85,
+      "symbol": "build_problem_comparison_chart",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/graphs/boxplot.py",
+      "startLine": 55,
+      "endLine": 76,
+      "symbol": "build_checkpoint_delta_boxplot",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/graphs/test_pass.py",
+      "startLine": 40,
+      "endLine": 61,
+      "symbol": "build_test_pass_rate_bars",
+      "quote": null
+    }
+  ],
+  "reasoning": "The iteration table deduplicates complete metadata tuples, including run_date, but the loop selects data only by display_name. Grouped repetitions sharing a display name and having different dates therefore render the same combined data repeatedly. This duplicates legends and traces, including identical grouped bars and checkpoint means.",
+  "reproduction": "Use two runs with the same display_name, different run_date values, and group_runs enabled. Each affected builder iterates that display name twice and renders its combined data twice.",
+  "recommendation": "Sort the metadata and then deduplicate by the actual trace identity, display_name, before rendering grouped data.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied tests cover isolated heatmap values and scatter configuration; none exercises repeated runs in these builders. test_pass.py contains production chart code, not tests.",
+  "suggestedRegressionTest": "Exercise grouped repetitions with varying dates and assert one trace per display name per metric, with statistics calculated from every repetition exactly once.",
+  "minimumFixScope": "Trace iteration in comparison.py, boxplot.py, and test_pass.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T203254-a5fd23",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "All original evidence paths still exist. comparison.py:80, boxplot.py:72, and test_pass.py:57 now sort metadata then deduplicate by display_name, supporting the proposed repair. tests/dashboard/graphs/quality_test.py:158 exercises grouped repetitions with different dates and checks trace counts and aggregate values. However, targeted pytest validation exited 1 before running tests because the read-only environment had no usable temporary directory. Therefore the repair cannot be confirmed as fixed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "rg -n 'drop_duplicates|sorted_unique_runs' src/slop_code/dashboard/graphs/{comparison,boxplot,test_pass}.py",
+        "rg --files tests/dashboard | head -40",
+        "rg -n 'group|comparison|boxplot|pass_rate|date' tests/dashboard/graphs/quality_test.py",
+        "sed -n '1,260p' tests/dashboard/graphs/quality_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/graphs/quality_test.py"
+      ],
+      "createdAt": "2026-09-12T20:33:21.626Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified sorted metadata deduplicates display_name trace identity and aggregates every grouped repetition once; 7 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:33:59.550Z"
+    }
+  ],
+  "signature": "sig_feat-library-55712dbf64_4892779a37",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:50.298Z",
+  "updatedAt": "2026-09-12T20:33:59.549Z"
+}

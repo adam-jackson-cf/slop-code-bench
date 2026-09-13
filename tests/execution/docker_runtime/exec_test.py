@@ -186,6 +186,39 @@ class TestDockerExecRuntimeBuildVolumes:
             assert str(extra_mount) in volumes
 
 
+class TestDockerExecRuntimeCommandLogging:
+    """Tests for safe Docker command logging."""
+
+    def test_environment_value_reaches_command_but_not_log(
+        self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Environment values are passed to Docker without entering logs."""
+        synthetic_value = "synthetic-sensitive-value"
+        with (
+            patch("slop_code.execution.docker_runtime.exec.docker"),
+            patch(
+                "slop_code.execution.docker_runtime.exec.logger.debug"
+            ) as log,
+        ):
+            runtime = DockerExecRuntime(
+                spec=docker_spec,
+                working_dir=tmp_path,
+                command="echo test",
+                static_assets={},
+                is_evaluation=False,
+                ports={},
+                mounts={},
+                env_vars={"TOKEN": synthetic_value},
+                setup_command=None,
+            )
+            args = runtime._build_docker_run_command({})
+
+        assert f"TOKEN={synthetic_value}" in args
+        assert all(
+            synthetic_value not in str(call) for call in log.call_args_list
+        )
+
+
 class TestDockerExecRuntimeBuildDockerRunCommand:
     """Tests for _build_docker_run_command method."""
 
@@ -485,6 +518,43 @@ class TestDockerExecRuntimeCleanup:
             runtime.cleanup()
             runtime.cleanup()
             runtime.cleanup()
+
+
+class TestDockerExecRuntimeStdinLifecycle:
+    """Tests stdin delivery through communicate."""
+
+    def test_execute_passes_encoded_stdin_to_communicate(
+        self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Input is delivered while communicate drains process output."""
+        proc = MagicMock()
+        proc.communicate.return_value = (b"output", b"")
+        proc.returncode = 0
+        with (
+            patch("slop_code.execution.docker_runtime.exec.docker"),
+            patch(
+                "slop_code.execution.docker_runtime.exec.subprocess.Popen",
+                return_value=proc,
+            ),
+            patch("slop_code.execution.docker_runtime.exec.subprocess.run"),
+        ):
+            runtime = DockerExecRuntime(
+                spec=docker_spec,
+                working_dir=tmp_path,
+                command="cat",
+                static_assets={},
+                is_evaluation=False,
+                ports={},
+                mounts={},
+                env_vars={},
+                setup_command=None,
+                disable_setup=True,
+            )
+            runtime.execute(env={}, stdin=["large", "-input"], timeout=1)
+
+        proc.communicate.assert_called_once_with(
+            input=b"large-input", timeout=1
+        )
 
 
 # Integration tests - require real Docker

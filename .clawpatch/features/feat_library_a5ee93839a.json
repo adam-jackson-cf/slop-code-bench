@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_a5ee93839a",
+  "title": "Python source src/slop_code/metrics/languages",
+  "summary": "Python source group src/slop_code/metrics/languages with 2 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/metrics/languages",
+      "symbol": "src/slop_code/metrics/languages",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/metrics/languages/__init__.py",
+      "reason": "source group src/slop_code/metrics/languages"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/registry.py",
+      "reason": "source group src/slop_code/metrics/languages"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/agent_runner/test_registry.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/agent_runner/test_registry.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-a5ee93839a-a36d_0567ee32b8"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "1 finding(s); prompt=19155 bytes; approxTokens=4789; includedFiles=4; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:58:10.434Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:03:59.436Z"
+}

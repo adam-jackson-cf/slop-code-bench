@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-cbe7be3794-27d7_739e2904b5",
+  "featureId": "feat_library_cbe7be3794",
+  "title": "Checkpoint classification treats missing evidence and isolated passes as solved",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/data.py",
+      "startLine": 423,
+      "endLine": 437,
+      "symbol": "process_checkpoint_row",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/data.py",
+      "startLine": 691,
+      "endLine": 698,
+      "symbol": "build_chart_context",
+      "quote": null
+    },
+    {
+      "path": "tests/dashboard/data_test.py",
+      "startLine": 22,
+      "endLine": 32,
+      "symbol": "test_process_checkpoint_row_uses_new_pass_rate_names",
+      "quote": null
+    }
+  ],
+  "reasoning": "passed_chkpt is true when either pass rate reaches one or the counts match. Missing counts default to zero, so even a row with strict_pass_rate=0 and no counts is classified as passed. An isolated_pass_rate of one also overrides an explicit strict failure. These flags feed filtered passed-checkpoint and solved-problem calculations, overstating success under the required strict all-cases criterion. The existing test establishes that strict success is sufficient, but does not establish that isolated success or missing evidence may override strict failure.",
+  "reproduction": "Call process_checkpoint_row with {'strict_pass_rate': 0.0}, or with strict_pass_rate=0.5, isolated_pass_rate=1.0, total_tests=10, passed_tests=5. Both return passed_chkpt=True.",
+  "recommendation": "Make verified strict all-cases success authoritative and classify missing or incomplete pass evidence as unsolved; do not allow isolated results to override strict failure.",
+  "whyTestsDoNotAlreadyCoverThis": "The only direct classification test checks strict_pass_rate=1.0. It does not cover strict failures, conflicting evidence, missing counts, or zero evaluated tests.",
+  "suggestedRegressionTest": "Expand checkpoint-classification coverage into a matrix of strict success, strict failure, isolated-only success, missing evidence, and zero-test rows, preserving the existing strict-success scenario.",
+  "minimumFixScope": "process_checkpoint_row and its existing behavioral test coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T202323-61c4e2",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence paths still exist. process_checkpoint_row at data.py:421–445 now requires a strict pass rate near 1, positive test counts, and matching passed/total counts; isolated results cannot override strict failure. Downstream aggregation remains at lines 723–730. Tests at data_test.py:20–63 preserve strict success and cover incomplete evidence, isolated-only success, and zero tests. This supports a repair, but targeted pytest validation failed before collection because the read-only environment has no writable temporary directory; the reproduction command also failed before execution. No linked patch attempts were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md; nl -ba src/slop_code/dashboard/data.py | sed -n '420,465p;710,760p'; nl -ba tests/dashboard/data_test.py | sed -n '18,68p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/data_test.py -k process_checkpoint_row",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python - <<'PY' [six-case classification validation; shell rejected heredoc before execution]"
+      ],
+      "createdAt": "2026-09-12T20:23:50.248Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified only complete nonzero strict all-cases evidence is solved; strict failure, isolated-only, missing, and zero-test rows are unsolved; 11 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:24:26.422Z"
+    }
+  ],
+  "signature": "sig_feat-library-cbe7be3794_27d7031782",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:37.605Z",
+  "updatedAt": "2026-09-12T20:24:26.420Z"
+}

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-9ab76ebf59-5_a9305d7693",
+  "featureId": "feat_test-suite_9ab76ebf59",
+  "title": "Width-filter test never exercises a rejected interval",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/entrypoints/commands/test_variance.py",
+      "startLine": 88,
+      "endLine": 107,
+      "symbol": "test_collect_ci_entries_filters_by_width",
+      "quote": null
+    }
+  ],
+  "reasoning": "The width-filter scenario supplies only an interval of width 1.2 with a minimum of 0.5 and expects inclusion. Removing width filtering entirely would still pass this test. The other supplied collector scenarios use a zero minimum, so they do not protect rejection either.",
+  "reproduction": "A collector mutation that ignores min_width while preserving interval extraction satisfies all supplied width-related collector assertions.",
+  "recommendation": "Expand the existing scenario with eligible metrics whose intervals fall below and above the threshold, and assert the exact retained metrics.",
+  "whyTestsDoNotAlreadyCoverThis": "No supplied collector test expects an otherwise eligible interval to be excluded because of its width.",
+  "suggestedRegressionTest": "Parameterize the existing scenario across below-threshold, above-threshold, and explicitly defined boundary behavior.",
+  "minimumFixScope": "tests/entrypoints/commands/test_variance.py::test_collect_ci_entries_filters_by_width",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201141-03025e",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file exists, but lines 88–107 now concern rendering. The width-filter test moved to lines 123–150 and now asserts rejection at width 0.4 and inclusion at 0.5 and 0.6 for minimum 0.5. The collector still rejects width < min_width at variance.py:653–654. This supports repair of the reported gap, but targeted pytest validation failed before collection because the read-only environment has no writable temporary directory; therefore fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba tests/entrypoints/commands/test_variance.py | sed -n '85,158p'",
+        "rg -n -A 95 'def _collect_ci_entries' src/slop_code/entrypoints/commands/variance.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/commands/test_variance.py -k collect_ci_entries"
+      ],
+      "createdAt": "2026-09-12T20:12:05.095Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified CI width filtering covers below, exact boundary, and above threshold with exact retained metrics; 14 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:13:21.675Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-9ab76ebf59_5c81ea71d5",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:44.133Z",
+  "updatedAt": "2026-09-12T20:13:21.675Z"
+}

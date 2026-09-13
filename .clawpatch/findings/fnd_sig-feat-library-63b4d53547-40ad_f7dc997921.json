@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-63b4d53547-40ad_f7dc997921",
+  "featureId": "feat_library_63b4d53547",
+  "title": "Compression deletes the recovery archive when source removal partially fails",
+  "category": "data-loss",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/compress_artifacts.py",
+      "startLine": 37,
+      "endLine": 50,
+      "symbol": "_compress_agent_dir",
+      "quote": null
+    }
+  ],
+  "reasoning": "Archive creation and source deletion share one exception handler. shutil.rmtree can remove some files before raising OSError. The handler then deletes the successfully completed archive, permanently losing the files already removed from the source directory.",
+  "reproduction": "Compress an agent directory containing multiple files and inject a removal failure after one source file has been deleted. The function removes the archive and leaves an incomplete source directory.",
+  "recommendation": "Separate archive creation cleanup from source deletion handling. Once the archive is complete, retain it if deleting the source fails and report the remaining cleanup work.",
+  "whyTestsDoNotAlreadyCoverThis": "None of the supplied tests exercise artifact compression or partial source-deletion failures.",
+  "suggestedRegressionTest": "Exercise failures during archive creation and during partial source removal; assert that every original file remains recoverable from either the source or the completed archive.",
+  "minimumFixScope": "The exception boundaries and archive cleanup in _compress_agent_dir.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200512-14fe3d",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path and lines still exist, but the code now separates archive creation (lines 37–49) from source removal (51–57). A removal OSError retains the completed archive and reports cleanup failure. Existing tests cover archive-creation failure and recovery of both files after partial source deletion. However, targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory. No linked patch attempts were supplied. The repair is supported by inspection but cannot be marked fixed with failed validation.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/commands/compress_artifacts.py | head -75",
+        "rg -n 'partial|compress_agent|archive' tests/entrypoints/commands/test_compress_artifacts.py",
+        "cat tests/entrypoints/commands/test_compress_artifacts.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/commands/test_compress_artifacts.py"
+      ],
+      "createdAt": "2026-09-12T20:05:35.461Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified completed recovery archive is retained when source cleanup partially fails; 35 focused command tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:06:28.691Z"
+    }
+  ],
+  "signature": "sig_feat-library-63b4d53547_40adf368f4",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:26.300Z",
+  "updatedAt": "2026-09-12T20:06:28.690Z"
+}

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bd130bc9cb-f0a4_64aef18dd0",
+  "featureId": "feat_library_bd130bc9cb",
+  "title": "Nested file assets fail when their destination parents do not exist",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/workspace.py",
+      "startLine": 184,
+      "endLine": 203,
+      "symbol": "Workspace._maybe_materialize_static_assets",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/assets.py",
+      "startLine": 22,
+      "endLine": 28,
+      "symbol": "StaticAssetConfig.save_path",
+      "quote": null
+    }
+  ],
+  "reasoning": "File assets are copied directly to their configured save_path without creating its parent directories. A valid nested destination such as data/input.csv fails with FileNotFoundError in a fresh workspace. Directory assets use copytree and do not have this limitation.",
+  "reproduction": "Prepare an empty agent-inference workspace with a file asset whose save_path is data/input.csv, then call materialize_assets().",
+  "recommendation": "Create the file destination's parent directories before copying, subject to workspace containment checks.",
+  "whyTestsDoNotAlreadyCoverThis": "Included materialization tests do not explicitly exercise a standalone file asset with absent nested destination parents; nested directory assets use a different branch.",
+  "suggestedRegressionTest": "Expand asset materialization coverage to nested file destinations with absent and existing parents, including repeated materialization.",
+  "minimumFixScope": "Workspace._maybe_materialize_static_assets file-copy branch.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170839-62e08e",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files still exist. Workspace._maybe_materialize_static_assets moved to line 197; lines 233–234 now create destination parents before copying, after containment checks at lines 207–215. StaticAssetConfig.save_path remains at lines 22–28. tests/execution/workspace_test.py:482 covers missing nested parents and repeated materialization. The code supports the repair, but targeted pytest validation exited 1 before running because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/execution/workspace.py | sed -n '180,245p'",
+        "nl -ba src/slop_code/execution/assets.py | sed -n '18,50p'",
+        "rg -n 'nested|materializ|parent' tests/execution/workspace_test.py",
+        "sed -n '450,515p' tests/execution/workspace_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/execution/workspace_test.py -k materialize_nested_file_asset"
+      ],
+      "createdAt": "2026-09-11T17:09:05.617Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:09:06.195Z"
+    }
+  ],
+  "signature": "sig_feat-library-bd130bc9cb_f0a4c652be",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:36.106Z",
+  "updatedAt": "2026-09-11T17:09:06.195Z"
+}

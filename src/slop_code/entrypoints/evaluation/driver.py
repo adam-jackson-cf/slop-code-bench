@@ -375,10 +375,6 @@ def evaluate(
 
             yield snapshot_dir, chkpt_submission, checkpoint, problem
 
-    name_to_path = {
-        problem.name: problem_submission
-        for problem, problem_submission in problems
-    }
     results = defaultdict(dict)
     errors: list[EvaluationResult] = []
     successful = 0
@@ -464,12 +460,13 @@ def evaluate(
         successful=successful,
         failed=len(errors),
     )
-    for problem_name, checkpoints in results.items():
-        summaries = {
-            checkpoint_name: (report, quality)
-            for checkpoint_name, (report, quality) in checkpoints.items()
-        }
-        maybe_update_problem_report(name_to_path[problem_name], summaries)
+    for problem, problem_submission in problems:
+        summaries = results.get(problem.name, {})
+        maybe_update_problem_report(
+            problem_submission,
+            summaries,
+            expected_checkpoint_count=len(problem.checkpoints),
+        )
 
     summary = BatchEvaluationSummary(
         total_checkpoints=total_checkpoints,

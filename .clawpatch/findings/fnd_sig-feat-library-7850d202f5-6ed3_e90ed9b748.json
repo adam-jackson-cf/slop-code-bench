@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-7850d202f5-6ed3_e90ed9b748",
+  "featureId": "feat_library_7850d202f5",
+  "title": "Missing live oracles escape provenance error handling",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/scoring/live_evidence.py",
+      "startLine": 140,
+      "endLine": 141,
+      "symbol": "_committed_artifacts",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/live_evidence.py",
+      "startLine": 285,
+      "endLine": 311,
+      "symbol": "produce_checkpoint_evidence",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/live_regression.py",
+      "startLine": 523,
+      "endLine": 548,
+      "symbol": "produce_live_regression_evidence",
+      "quote": null
+    }
+  ],
+  "reasoning": "When no historical bundle exists, zero or multiple live oracle files raise RuntimeError. Both callers handle invalid or unavailable provenance through ValueError and OSError, but neither catches this RuntimeError. A checkpoint with saved inference output and missing provenance therefore aborts the entire evidence operation instead of returning ineligibility; multiple oracle files also receive the misleading 'missing' error.",
+  "reproduction": "Use a checkpoint with inference output but no live oracle or historical bundle, then call either evidence producer. An uncaught RuntimeError is raised before measurement.",
+  "recommendation": "Raise canonical_provenance_unavailable as ValueError for zero live oracles and canonical_artifact_invalid for multiple live oracles, matching the callers' existing handling.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included. The uncovered behavior is the exception contract between the shared verifier and both callers.",
+  "suggestedRegressionTest": "Parameterize oracle cardinality across zero, one, and multiple files for both producers; assert structured provenance ineligibility for invalid cardinalities and no measurement execution.",
+  "minimumFixScope": "_committed_artifacts oracle-cardinality handling.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T195846-5203cc",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence paths still exist, but line locations changed. live_evidence.py:209-212 now raises ValueError('canonical_provenance_unavailable') for zero live oracles and ValueError('canonical_artifact_invalid') for multiple oracles. Both producers catch these errors and return structured ineligibility. Targeted execution of the current functions with mocked filesystem cardinalities passed for both cases and both producers, with guards confirming measurement did not start. The initial here-document invocation was blocked by read-only permissions; rerunning through python -c succeeded. No linked patch attempts were provided.",
+      "commands": [
+        "Read Clawpatch skill and revalidation runbook",
+        "rg -n 'if not live|len\\(live\\)|except ValueError|def _committed_artifacts|def produce_checkpoint_evidence|def produce_live_regression_evidence' src/slop_code/metrics/scoring/live_evidence.py src/slop_code/metrics/scoring/live_regression.py",
+        "rg -n 'oracle_cardinality|multiple.*oracle|missing.*oracle|canonical_provenance_unavailable|committed_artifacts' tests -g '*.py'",
+        "sed -n '200,216p' src/slop_code/metrics/scoring/live_evidence.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -c '<in-memory validation of zero/multiple oracle cardinalities through both producers, asserting exact ineligibility reasons and no measurement execution>'"
+      ],
+      "createdAt": "2026-09-12T19:59:39.307Z"
+    }
+  ],
+  "signature": "sig_feat-library-7850d202f5_6ed3013921",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:36.674Z",
+  "updatedAt": "2026-09-12T19:59:39.307Z"
+}

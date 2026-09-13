@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-1cc90d9a69-5744_c8e7386dc9",
+  "featureId": "feat_library_1cc90d9a69",
+  "title": "Version selection sorts version strings lexicographically",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/visualization/data_transforms.py",
+      "startLine": 213,
+      "endLine": 235,
+      "symbol": "select_best_version_per_model",
+      "quote": null
+    }
+  ],
+  "reasoning": "The documented contract selects the highest agent version for non-Opus models, but descending string order does not preserve numeric version order. For example, 2.0.9 sorts above 2.0.75, causing charts to use an older version's results.",
+  "reproduction": "Pass two rows for the same non-Opus model with agent_version values '2.0.9' and '2.0.75'. The function selects '2.0.9'.",
+  "recommendation": "Sort using parsed version values while retaining the original version strings in the returned data.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included or linked for this feature; numeric version-order coverage cannot be verified.",
+  "suggestedRegressionTest": "Cover version ordering across patch, minor, and major component boundaries, plus the explicit Opus version selection rule.",
+  "minimumFixScope": "Version ordering in select_best_version_per_model.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171248-317464",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path and function still exist at line 213. Lines 235–243 now sort integer component tuples, supporting the intended numeric ordering while preserving version strings and the Opus override. An existing test covers patch, minor, major, and Opus selection. However, targeted pytest validation exited 1 before executing tests because the read-only environment had no writable temporary directory. No linked patch attempts or successful validation results were supplied, so the repair cannot be classified as fixed.",
+      "commands": [
+        "nl -ba src/slop_code/visualization/data_transforms.py | sed -n '210,260p'",
+        "rg -n 'select_best_version_per_model' tests",
+        "cat tests/visualization/data_transforms_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/visualization/data_transforms_test.py"
+      ],
+      "createdAt": "2026-09-11T17:13:11.124Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:13:11.647Z"
+    }
+  ],
+  "signature": "sig_feat-library-1cc90d9a69_5744dcb839",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:57.931Z",
+  "updatedAt": "2026-09-11T17:13:11.647Z"
+}

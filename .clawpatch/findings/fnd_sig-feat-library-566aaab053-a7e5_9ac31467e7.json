@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-566aaab053-a7e5_9ac31467e7",
+  "featureId": "feat_library_566aaab053",
+  "title": "self calls can resolve to another class in the same file",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/languages/python/graph.py",
+      "startLine": 501,
+      "endLine": 508,
+      "symbol": "_resolve_call",
+      "quote": null
+    }
+  ],
+  "reasoning": "The self branch chooses the first candidate in the caller's file without checking its owning class. When multiple classes define the same method, a call in one class can point to another class's method, making graph edges dependent on candidate ordering despite caller_qual_name being available.",
+  "reproduction": "Pass candidates [(Path('m.py'), 'A.save'), (Path('m.py'), 'B.save')] for called_name='save', qualifier='self', caller_file=Path('m.py'), and caller_qual_name='B.run'. The result is m.py::A.save.",
+  "recommendation": "Resolve self calls against the caller's class first and then its supported inheritance hierarchy; do not select unrelated same-file methods.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied test does not cover call resolution or multiple classes sharing method names.",
+  "suggestedRegressionTest": "Test same-named methods across classes and reorder candidate lists; resolution must remain tied to the caller's class.",
+  "minimumFixScope": "The self-qualified branch of _resolve_call in graph.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171119-d8a841",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The evidence path and lines still exist, but graph.py:503-512 now matches the caller's class and then its direct parents using exact qualified names and file identity. The graph builder supplies caller context at lines 680-688. Five targeted checks passed: both candidate orders resolve B.run to B.save, unrelated A.save remains unresolved, direct-parent resolution works, and B.save takes precedence over its parent. No linked patch attempts were supplied. An initial heredoc command was blocked by sandbox temporary-file restrictions; rerunning validation with python -c succeeded.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/languages/python/graph.py | sed -n '490,575p;680,735p'",
+        ".venv/bin/python -B -c 'from pathlib import Path; from itertools import permutations; from slop_code.metrics.languages.python.graph import _resolve_call; p=Path(\"m.py\"); cases=[(list(c), {}, \"m.py::B.save\") for c in permutations([(p,\"A.save\"),(p,\"B.save\")])]+[([(p,\"A.save\")],{},None), ([(p,\"A.save\"),(p,\"Base.save\")],{\"B\":[\"Base\"]},\"m.py::Base.save\"), ([(p,\"Base.save\"),(p,\"B.save\")],{\"B\":[\"Base\"]},\"m.py::B.save\")]; results=[_resolve_call(\"save\",\"self\",p,{}, {\"save\":c},class_hierarchy=h,caller_qual_name=\"B.run\") for c,h,e in cases]; assert results==[e for c,h,e in cases],results; print(\"5 targeted resolver checks passed:\",results)'"
+      ],
+      "createdAt": "2026-09-11T17:11:51.296Z"
+    }
+  ],
+  "signature": "sig_feat-library-566aaab053_a7e5fff4ab",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:01.548Z",
+  "updatedAt": "2026-09-11T17:11:51.296Z"
+}

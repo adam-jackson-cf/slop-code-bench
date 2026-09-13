@@ -6,9 +6,14 @@ streaming output, suitable for agent development and testing.
 
 from __future__ import annotations
 
+import codecs
+import contextlib
+import os
 import selectors
 import shlex
+import signal
 import subprocess
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
@@ -90,11 +95,12 @@ class LocalStreamingRuntime(StreamingRuntime):
         self._mounts = mounts or {}
         self._env_vars = env_vars or {}
         self._is_evaluation = is_evaluation
-        self._proc: subprocess.Popen[str] | None = None
+        self._proc: subprocess.Popen[bytes] | None = None
+        self._process_group_id: int | None = None
         self.cwd = working_dir
 
     @property
-    def process(self) -> subprocess.Popen[str]:
+    def process(self) -> subprocess.Popen[bytes]:
         """Get the current subprocess instance."""
         if self._proc is None:
             raise SolutionRuntimeError("Process not running")
@@ -104,19 +110,20 @@ class LocalStreamingRuntime(StreamingRuntime):
         self,
         command: str,
         env: dict[str, str],
-    ) -> subprocess.Popen[str]:
+    ) -> subprocess.Popen[bytes]:
         """Start a subprocess for the given command.
 
         Args:
             command: Command to execute
             env: Environment variables
         """
-        if self._proc is not None and self._proc.poll() is None:
-            try:
-                self._proc.wait(timeout=10)
-            except subprocess.TimeoutExpired as e:
-                self._proc.kill()
-                raise SolutionRuntimeError("Process is still running") from e
+        if self._proc is not None:
+            if self._proc.poll() is None:
+                self._terminate_process_group(self._proc)
+                self._proc = None
+                raise SolutionRuntimeError("Process is still running")
+            self._terminate_process_group(self._proc)
+            self._proc = None
 
         logger.debug(
             "Starting subprocess",
@@ -127,28 +134,28 @@ class LocalStreamingRuntime(StreamingRuntime):
 
         cmd_args = shlex.split(command)
 
+        full_env = {**self._env_vars, **env}
         self._proc = _spawn_argv_process(
             cmd_args,
-            env=self.spec.get_full_env(env),
+            env=self.spec.get_full_env(full_env),
             stdin=None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,
             cwd=self.cwd,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=0,
+            start_new_session=True,
             shell=False,
         )
+        self._process_group_id = self._proc.pid
         return self._proc
 
     def _create_demuxed_stream(
-        self, proc: subprocess.Popen[str]
+        self, proc: subprocess.Popen[bytes]
     ) -> Iterator[tuple[str, str]]:
         """Create a demuxed stream from stdout/stderr.
 
-        Yields:
-            Tuples of (stdout_chunk, stderr_chunk)
+        Reads only bytes already reported ready by the selector, then decodes
+        each pipe incrementally so partial UTF-8 sequences stay intact.
         """
         stdout = proc.stdout
         stderr = proc.stderr
@@ -156,30 +163,37 @@ class LocalStreamingRuntime(StreamingRuntime):
             raise SolutionRuntimeError("Process missing output pipes")
 
         sel = selectors.DefaultSelector()
-        sel.register(stdout, selectors.EVENT_READ, data="OUT")
-        sel.register(stderr, selectors.EVENT_READ, data="ERR")
-
+        streams = ((stdout, "OUT"), (stderr, "ERR"))
+        decoders = {
+            label: codecs.getincrementaldecoder("utf-8")(errors="replace")
+            for _, label in streams
+        }
+        for pipe, label in streams:
+            os.set_blocking(pipe.fileno(), False)
+            sel.register(pipe, selectors.EVENT_READ, data=label)
         try:
             while sel.get_map():
-                for key, _ in sel.select():
-                    chunk = (
-                        stdout.read(8192)
-                        if key.data == "OUT"
-                        else stderr.read(8192)
-                    )
+                for key, _ in sel.select(timeout=0.1):
+                    try:
+                        chunk = os.read(key.fd, 8192)
+                    except BlockingIOError:
+                        continue
+                    label = key.data
                     if not chunk:
                         sel.unregister(key.fileobj)
-                        continue
-                    if key.data == "OUT":
-                        yield (chunk, "")
+                        text = decoders[label].decode(b"", final=True)
                     else:
-                        yield ("", chunk)
+                        text = decoders[label].decode(chunk, final=False)
+                    if not text:
+                        continue
+                    if label == "OUT":
+                        yield (text, "")
+                    else:
+                        yield ("", text)
         finally:
             sel.close()
-            if proc.stdout:
-                proc.stdout.close()
-            if proc.stderr:
-                proc.stderr.close()
+            stdout.close()
+            stderr.close()
 
     def stream(
         self,
@@ -198,24 +212,35 @@ class LocalStreamingRuntime(StreamingRuntime):
             RuntimeEvent objects for stdout, stderr, and completion
         """
         proc = self._start_process(command, env)
-
         logger.debug(
             "Streaming from local process",
             command=command,
             timeout=timeout,
             verbose=True,
         )
-
         stream = self._create_demuxed_stream(proc)
-        result = yield from process_stream(stream, timeout, self.poll)
+        timeout_fired = threading.Event()
+        timer: threading.Timer | None = None
+        if timeout is not None:
 
-        # Kill process if it timed out
+            def terminate_on_timeout() -> None:
+                timeout_fired.set()
+                self._terminate_process_group(proc)
+
+            timer = threading.Timer(timeout, terminate_on_timeout)
+            timer.start()
+        try:
+            result = yield from process_stream(stream, timeout, self.poll)
+        finally:
+            if timer is not None:
+                timer.cancel()
+
+        result.timed_out = result.timed_out or timeout_fired.is_set()
         if result.timed_out:
             logger.warning("local_runtime.timeout", command=command)
             self.kill()
 
-        # Get exit code
-        exit_code = proc.wait()
+        exit_code = proc.wait(timeout=5)
 
         logger.debug(
             "Streaming from local process completed",
@@ -243,19 +268,38 @@ class LocalStreamingRuntime(StreamingRuntime):
             return None
         return self._proc.poll()
 
+    def _terminate_process_group(
+        self, proc: subprocess.Popen[bytes] | None
+    ) -> None:
+        """Terminate the owned process group and reap its direct parent."""
+        process_group_id = self._process_group_id
+        self._process_group_id = None
+        if process_group_id is not None:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process_group_id, signal.SIGKILL)
+        if proc is None:
+            return
+        if proc.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            logger.warning("Process group did not terminate", pid=proc.pid)
+
     def kill(self) -> None:
-        """Kill the running process."""
-        if self._proc is None:
+        """Kill the running process and all of its descendants."""
+        proc = self._proc
+        if proc is None and self._process_group_id is None:
             return
         logger.debug("Killing subprocess", verbose=True)
-        self._proc.kill()
+        self._terminate_process_group(proc)
+        self._proc = None
 
     def cleanup(self) -> None:
         """Clean up the process."""
         logger.debug("Cleaning up local streaming runtime", verbose=True)
-        if self._proc is not None:
-            self.kill()
-            self._proc.wait(timeout=10)
+        self.kill()
 
     @classmethod
     def spawn(

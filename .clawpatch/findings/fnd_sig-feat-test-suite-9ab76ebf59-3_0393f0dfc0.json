@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-9ab76ebf59-3_0393f0dfc0",
+  "featureId": "feat_test-suite_9ab76ebf59",
+  "title": "Relative output-directory test creates persistent workspace state",
+  "category": "bug",
+  "severity": "low",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "tests/entrypoints/commands/test_run_agent.py",
+      "startLine": 248,
+      "endLine": 251,
+      "symbol": "TestResolveOutputDirectory.test_debug_prefix_with_simple_path",
+      "quote": null
+    },
+    {
+      "path": "tests/entrypoints/commands/test_run_agent.py",
+      "startLine": 269,
+      "endLine": 283,
+      "symbol": "TestResolveOutputDirectory",
+      "quote": null
+    }
+  ],
+  "reasoning": "The simple-path test invokes a directory-creating helper with a relative path without changing into tmp_path or disabling creation. The adjacent tests establish that creation is the default. Running this test therefore creates DEBUG_run_123 in the invocation directory and leaves it behind, making the suite dependent on workspace permissions and persistent state.",
+  "reproduction": "Run the simple-path test from a writable checkout without DEBUG_run_123; it creates that directory outside pytest's temporary directory.",
+  "recommendation": "Change into tmp_path with monkeypatch.chdir before exercising the relative path.",
+  "whyTestsDoNotAlreadyCoverThis": "The test checks only the returned path and has no temporary working directory or cleanup.",
+  "suggestedRegressionTest": "Expand the existing relative-path scenario to run inside tmp_path and assert that the resolved directory is created there.",
+  "minimumFixScope": "tests/entrypoints/commands/test_run_agent.py::TestResolveOutputDirectory.test_debug_prefix_with_simple_path",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165504-720c59",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The original test still exists at lines 248–255, but now changes into tmp_path before calling the helper and asserts that DEBUG_run_123 is created inside that temporary directory. The current helper and ensure_dir_exists preserve this relative path, so creation is confined to tmp_path. No linked patch attempts were supplied. This conclusion is based on current source inspection; pytest was not run because this session permits only filesystem reads.",
+      "commands": [
+        "sed -n '240,290p' tests/entrypoints/commands/test_run_agent.py",
+        "rg -n -A 48 '^def _resolve_output_directory' src/slop_code/entrypoints/commands/run_agent.py",
+        "rg -n -A 30 '^def ensure_dir_exists' src/slop_code",
+        "rg -n 'chdir|autouse|DEBUG_run_123|test_debug_prefix_with_simple_path' tests/conftest.py tests/entrypoints/conftest.py tests/entrypoints/commands/conftest.py tests/entrypoints/commands/test_run_agent.py"
+      ],
+      "createdAt": "2026-09-11T16:55:21.436Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-9ab76ebf59_3de17c57c3",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:44.133Z",
+  "updatedAt": "2026-09-11T16:55:21.435Z"
+}

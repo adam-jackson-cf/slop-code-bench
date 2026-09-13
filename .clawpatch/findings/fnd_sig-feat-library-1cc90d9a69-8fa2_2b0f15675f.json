@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-1cc90d9a69-8fa2_2b0f15675f",
+  "featureId": "feat_library_1cc90d9a69",
+  "title": "Configurable progress bins are clipped by a fixed axis range",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/visualization/chart_builders.py",
+      "startLine": 333,
+      "endLine": 362,
+      "symbol": "ProgressLineChartBuilder.build",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/visualization/data_transforms.py",
+      "startLine": 168,
+      "endLine": 182,
+      "symbol": "compute_progress_metric",
+      "quote": null
+    }
+  ],
+  "reasoning": "The progress computation explicitly supports ten bins, producing a first point at 10%. The chart always starts its visible x-axis at 15%, hiding that point. Larger bin counts hide additional early-progress observations.",
+  "reproduction": "Build a progress chart with num_bins=10 and checkpoints numbered 1 through 10 for one problem. Its trace contains x=10, but the axis range is [15, 105].",
+  "recommendation": "Derive the lower axis bound from the configured bins or show the complete 0–100% progress interval with suitable padding.",
+  "whyTestsDoNotAlreadyCoverThis": "No chart tests were supplied; coverage of nondefault bin counts cannot be verified.",
+  "suggestedRegressionTest": "For several supported bin counts, assert that every generated progress point lies within the chart's visible axis range.",
+  "minimumFixScope": "ProgressLineChartBuilder.build axis configuration.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171312-017719",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both original evidence paths and line ranges still exist. chart_builders.py:361 now sets range=[0, 105], which supports the intended repair; configurable bin computation remains at data_transforms.py:175–182. An existing regression test checks visibility for 2, 5, and 10 bins. However, targeted validation exited 1 before running tests because the read-only environment has no usable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/visualization/chart_builders.py | sed -n '325,375p'",
+        "nl -ba src/slop_code/visualization/data_transforms.py | sed -n '160,200p'",
+        "rg -n 'progress.*bin|ProgressLineChart' tests/visualization tests --glob '*test*.py'",
+        "cat tests/visualization/chart_builders_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/visualization/chart_builders_test.py"
+      ],
+      "createdAt": "2026-09-11T17:13:38.208Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:13:38.773Z"
+    }
+  ],
+  "signature": "sig_feat-library-1cc90d9a69_8fa26dfcff",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:57.932Z",
+  "updatedAt": "2026-09-11T17:13:38.773Z"
+}

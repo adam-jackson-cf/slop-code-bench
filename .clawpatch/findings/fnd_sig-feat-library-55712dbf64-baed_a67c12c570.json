@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-55712dbf64-baed_a67c12c570",
+  "featureId": "feat_library_55712dbf64",
+  "title": "Logarithmic quality charts hide valid zero-defect results",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/graphs/scatter.py",
+      "startLine": 306,
+      "endLine": 315,
+      "symbol": "aggregate_lint_vs_solve",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/graphs/scatter.py",
+      "startLine": 441,
+      "endLine": 449,
+      "symbol": "SCATTER_CHARTS",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/graphs/scatter.py",
+      "startLine": 192,
+      "endLine": 198,
+      "symbol": "add_smart_annotations",
+      "quote": null
+    }
+  ],
+  "reasoning": "Lint and rubric aggregators accept zero as a valid metric, but both charts use logarithmic x axes, which cannot display zero. Runs with no lint errors or rubric flags disappear from the comparison. If annotated, a zero-valued point additionally receives annotation coordinate zero on the log axis, placing its label at data value 1 despite its marker being unrenderable.",
+  "reproduction": "Render lint_vs_solve or rubric_vs_solve for a run whose corresponding mean ratio is zero and whose solve percentage is finite. Its marker cannot appear on the logarithmic axis.",
+  "recommendation": "Use a zero-capable axis representation for quality metrics and keep annotation coordinates consistent with that representation.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied scatter tests check missing time and catalog names, without rendering quality metrics or testing zero values.",
+  "suggestedRegressionTest": "Cover zero and positive quality metrics together, verifying that all valid runs have representable marker and annotation coordinates in both single and multi-chart rendering.",
+  "minimumFixScope": "Quality scatter axis configuration and associated annotation handling.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T203253-ad9de9",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original evidence paths and lines still exist. Both quality charts now use AxisConfig's linear default (scatter.py:440–448), preserving zero metrics and matching the raw annotation coordinates at lines 192–196 in single and multi-chart rendering. A regression test covers zero and positive values. However, targeted pytest validation exited 1 before running tests because the read-only environment had no usable temporary directory, so the repair cannot be confirmed as fixed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/graphs/scatter.py | sed -n '185,205p;300,320p;435,455p'",
+        "sed -n '1,210p' tests/dashboard/graphs/scatter_test.py",
+        "sed -n '32,49p;365,407p;500,550p' src/slop_code/dashboard/graphs/scatter.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/graphs/scatter_test.py"
+      ],
+      "createdAt": "2026-09-12T20:33:16.841Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified zero-capable quality axis renders zero and positive markers with consistent annotation coordinates; 7 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:33:59.070Z"
+    }
+  ],
+  "signature": "sig_feat-library-55712dbf64_baed3f4d2e",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:50.298Z",
+  "updatedAt": "2026-09-12T20:33:59.069Z"
+}

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-253ca83a3d-9_e96d39be58",
+  "featureId": "feat_test-suite_253ca83a3d",
+  "title": "Exact checkpoint identity test does not cover cross-problem collisions",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/entrypoints/test_utils_summary.py",
+      "startLine": 213,
+      "endLine": 239,
+      "symbol": "test_verified_checkpoint_additions_merge_by_exact_checkpoint_identity",
+      "quote": null
+    },
+    {
+      "path": "tests/entrypoints/test_utils_summary.py",
+      "startLine": 262,
+      "endLine": 270,
+      "symbol": "test_verified_checkpoint_additions_merge_by_exact_checkpoint_identity",
+      "quote": null
+    }
+  ],
+  "reasoning": "The test promises matching by exact checkpoint identity, but both additions belong to the same problem. An implementation that matches only checkpoint_id and ignores problem_name would pass. Reused checkpoint names across problems could therefore attach another problem's score without this test detecting it. This is a coverage gap; the supplied excerpts do not establish an implementation defect.",
+  "reproduction": null,
+  "recommendation": "Expand the existing scenario with an addition from another problem that shares the selected checkpoint_id, and assert that it is excluded.",
+  "whyTestsDoNotAlreadyCoverThis": "The unmatched addition differs only in checkpoint_id, so the assertions verify the checkpoint component but not the problem component of identity.",
+  "suggestedRegressionTest": "Exercise matching and nonmatching combinations of problem_name and checkpoint_id in the existing test, asserting that only additions matching both fields are projected and the source results remain unchanged.",
+  "minimumFixScope": "tests/entrypoints/test_utils_summary.py::test_verified_checkpoint_additions_merge_by_exact_checkpoint_identity",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165440-3fb7b6",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and test still exist, now at lines 217–288. The scenario includes prob2 sharing checkpoint_twenty, asserts only the prob1 addition is projected, and verifies source results remain unchanged. Current implementation matches both problem_name and checkpoint_id. This supports repair of the coverage gap, but targeted validation exited 2 because sandbox permissions prevented uv cache access, so fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba tests/entrypoints/test_utils_summary.py | sed -n '210,305p'",
+        "rg -n 'checkpoint_keys|report_additions|problem_name|checkpoint_id' src/slop_code/entrypoints/utils.py",
+        "sed -n '348,365p' src/slop_code/entrypoints/utils.py",
+        "sed -n '585,605p' src/slop_code/entrypoints/utils.py",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/entrypoints/test_utils_summary.py::test_verified_checkpoint_additions_merge_by_exact_checkpoint_identity"
+      ],
+      "createdAt": "2026-09-11T16:55:03.378Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded after the Clawpatch sandbox-only validation failure: focused first-wave pytest passed all 1018 tests; changed-file Ruff and ty both passed. Clawpatch static inspection supports the implemented repair.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:35:12.033Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-253ca83a3d_9b151580f9",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:04.338Z",
+  "updatedAt": "2026-09-12T07:35:12.032Z"
+}

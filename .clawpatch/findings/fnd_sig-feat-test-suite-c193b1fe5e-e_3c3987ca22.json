@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-c193b1fe5e-e_3c3987ca22",
+  "featureId": "feat_test-suite_c193b1fe5e",
+  "title": "Solve-rate tests cannot distinguish strict from isolated assessment",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/metrics/summary_test.py",
+      "startLine": 112,
+      "endLine": 147,
+      "symbol": "TestRunSummarySolveRates.test_computes_checkpoint_solve_rate",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/summary_test.py",
+      "startLine": 149,
+      "endLine": 184,
+      "symbol": "TestRunSummarySolveRates.test_computes_problem_solve_rate",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/summary_test.py",
+      "startLine": 220,
+      "endLine": 255,
+      "symbol": "TestRunSummarySolveRates.test_computes_partial_solve_rate",
+      "quote": null
+    }
+  ],
+  "reasoning": "Every supplied solve-rate scenario gives strict_pass_rate and isolated_pass_rate identical values. Using isolated_pass_rate to classify solved checkpoints would therefore satisfy these assertions, even though a checkpoint with passing isolated tests and failing regression tests must remain unsolved under the required all-cases criterion.",
+  "reproduction": "Substitute isolated_pass_rate for strict_pass_rate in solve classification; the cited scenarios cannot detect the substitution.",
+  "recommendation": "Extend the existing solve-rate scenarios with checkpoints whose isolated tests all pass but whose strict pass rate is below one.",
+  "whyTestsDoNotAlreadyCoverThis": "The checkpoint extraction tests distinguish the two rates, but the summary tests never supply divergent values when asserting solved classifications.",
+  "suggestedRegressionTest": "Verify checkpoint, fully solved problem, and partially solved problem counts using a mixture of strictly solved checkpoints and checkpoints that pass isolated tests but fail regression tests.",
+  "minimumFixScope": "TestRunSummarySolveRates in tests/metrics/summary_test.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200115-af1164",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original test symbols still exist at lines 114, 200, and 271. New coverage at tests/metrics/summary_test.py:151-177 supplies divergent strict/isolated rates and asserts distinct checkpoint counts plus fully/partially solved problem counts. Current summary aggregation uses strict rates for strict classification. This supports repair, but targeted pytest validation failed before collection because the read-only environment has no usable temporary directory; therefore fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba tests/metrics/summary_test.py | sed -n '108,335p'",
+        "rg -n 'strict_pass_rate|isolated_pass_rate|problem_partial|problem_solved' src/slop_code/metrics/summary.py",
+        "rg -n 'strict_pass_rate|isolated_pass_rate|problem_partial|problem_solved' src/slop_code/metrics/summary",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/summary_test.py::TestRunSummarySolveRates",
+        "sed -n '155,220p' src/slop_code/metrics/summary/aggregators.py"
+      ],
+      "createdAt": "2026-09-12T20:01:43.188Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified solve-rate scenarios distinguish isolated passes from strict regression failures at checkpoint and problem levels; 123 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:59.072Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-c193b1fe5e_e9cc62bffa",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:01:06.751Z",
+  "updatedAt": "2026-09-12T20:03:59.071Z"
+}

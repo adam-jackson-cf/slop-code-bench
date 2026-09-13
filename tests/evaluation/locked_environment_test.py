@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import stat
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -23,14 +23,20 @@ def _problem(
     tmp_path: Path,
     name: str = "project",
     test_dependencies: tuple[str, ...] = (),
+    project_dependencies: tuple[str, ...] | None = None,
 ) -> ProblemConfig:
     project = tmp_path / name
-    project.mkdir()
+    project.mkdir(exist_ok=True)
+    locked_dependencies = (
+        test_dependencies
+        if project_dependencies is None
+        else project_dependencies
+    )
     dependencies = (
         "\ndependencies = ["
-        + ", ".join(f'"{dependency}"' for dependency in test_dependencies)
+        + ", ".join(f'"{dependency}"' for dependency in locked_dependencies)
         + "]"
-        if test_dependencies
+        if locked_dependencies
         else ""
     )
     (project / "pyproject.toml").write_text(
@@ -124,8 +130,17 @@ def test_different_inputs_receive_different_environments(
 def test_declared_test_dependencies_are_identity_inputs(
     tmp_path: Path, fake_sync: list[Path]
 ) -> None:
-    first_problem = _problem(tmp_path, "first", ("httpx==0.28.1",))
-    second_problem = _problem(tmp_path, "second", ("anyio==4.10.0",))
+    locked_dependencies = ("httpx==0.28.1", "anyio==4.10.0")
+    first_problem = _problem(
+        tmp_path,
+        test_dependencies=("httpx==0.28.1",),
+        project_dependencies=locked_dependencies,
+    )
+    second_problem = _problem(
+        tmp_path,
+        test_dependencies=("anyio==4.10.0",),
+        project_dependencies=locked_dependencies,
+    )
 
     first = ensure_locked_evaluator_environment(
         tmp_path / "cache", first_problem, b"plugin", b"interpreter"
@@ -149,21 +164,20 @@ def test_same_id_concurrency_builds_once(
     tmp_path: Path, fake_sync: list[Path]
 ) -> None:
     problem = _problem(tmp_path)
-    results = []
 
-    def build() -> None:
-        results.append(
-            ensure_locked_evaluator_environment(
-                tmp_path / "cache", problem, b"plugin", b"interpreter"
-            )
+    def build():
+        return ensure_locked_evaluator_environment(
+            tmp_path / "cache", problem, b"plugin", b"interpreter"
         )
 
-    threads = [threading.Thread(target=build) for _ in range(2)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    executor = ThreadPoolExecutor(max_workers=2)
+    futures = [executor.submit(build) for _ in range(2)]
+    try:
+        results = [future.result(timeout=5) for future in futures]
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
+    assert results[0] == results[1]
     assert len({result.environment_id for result in results}) == 1
     assert len(fake_sync) == 1
 

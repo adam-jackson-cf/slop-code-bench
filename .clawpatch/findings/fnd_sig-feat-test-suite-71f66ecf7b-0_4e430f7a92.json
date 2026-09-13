@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-71f66ecf7b-0_4e430f7a92",
+  "featureId": "feat_test-suite_71f66ecf7b",
+  "title": "Codex command fixture declares a dictionary but returns a list",
+  "category": "api-contract",
+  "severity": "low",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "tests/agent_runner/parsers/test_fixtures.py",
+      "startLine": 106,
+      "endLine": 133,
+      "symbol": "get_codex_command",
+      "quote": null
+    }
+  ],
+  "reasoning": "The helper is annotated as returning dict but returns a list containing started and completed events. This produces a return-type error under type checking and gives callers an incorrect contract for constructing event streams.",
+  "reproduction": null,
+  "recommendation": "Change the return annotation to list[dict], preserving the two-event sequence.",
+  "whyTestsDoNotAlreadyCoverThis": "Runtime pytest execution does not enforce return annotations, and the included Codex command test constructs its event directly instead of using this helper.",
+  "suggestedRegressionTest": null,
+  "minimumFixScope": "Correct the return annotation on get_codex_command.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T205222-16d0fe",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The original evidence still exists at tests/agent_runner/parsers/test_fixtures.py:106–133. Line 108 now declares list[dict], matching the returned list of started and completed event dictionaries. Direct runtime validation of the resolved annotation and two-event contract passed. The initial heredoc invocation was blocked by sandbox temporary-file restrictions; the equivalent inline validation succeeded. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba tests/agent_runner/parsers/test_fixtures.py | sed -n '100,138p'",
+        "python3 -B -c 'import runpy, typing; fn = runpy.run_path(\"tests/agent_runner/parsers/test_fixtures.py\")[\"get_codex_command\"]; assert typing.get_type_hints(fn)[\"return\"] == list[dict]; events = fn(command=\"echo example\", exit_code=2, output=\"example\"); assert isinstance(events, list) and len(events) == 2; assert all(isinstance(event, dict) for event in events); assert [event[\"type\"] for event in events] == [\"item.started\", \"item.completed\"]; assert events[0][\"item\"][\"id\"] == events[1][\"item\"][\"id\"]; assert events[1][\"item\"][\"exit_code\"] == 2; assert events[1][\"item\"][\"aggregated_output\"] == \"example\"; print(\"PASS: return annotation and two-event contract\")'"
+      ],
+      "createdAt": "2026-09-12T20:52:56.005Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-71f66ecf7b_03281bbfa2",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:26.526Z",
+  "updatedAt": "2026-09-12T20:52:56.005Z"
+}

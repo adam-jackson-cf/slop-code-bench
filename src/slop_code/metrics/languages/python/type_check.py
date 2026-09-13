@@ -17,6 +17,18 @@ logger = get_logger(__name__)
 
 _EMPTY = TypeCheckMetrics(errors=0, warnings=0, counts={})
 
+
+def _unavailable_type_check_metrics(reason: str) -> TypeCheckMetrics:
+    """Build an explicit unavailable type-check metric result."""
+    return TypeCheckMetrics(
+        errors=None,
+        warnings=None,
+        counts={},
+        available=False,
+        unavailable_reason=reason,
+    )
+
+
 # ty gitlab format maps severity to these strings
 _ERROR_SEVERITIES = frozenset({"major", "critical", "blocker"})
 
@@ -81,7 +93,7 @@ def calculate_type_check_metrics(source: Path) -> TypeCheckMetrics:
     uv_executable = _resolve_uv_executable()
     if uv_executable is None:
         logger.debug("uv executable is unavailable")
-        return _EMPTY
+        return _unavailable_type_check_metrics("checker_unavailable")
 
     command = [
         str(uv_executable),
@@ -92,11 +104,26 @@ def calculate_type_check_metrics(source: Path) -> TypeCheckMetrics:
         "gitlab",
         str(source.resolve()),
     ]
-    _, stdout, _ = _run_with_captured_output(command)
+    try:
+        exit_status, stdout, _ = _run_with_captured_output(command)
+    except OSError as exc:
+        logger.warning(
+            "Failed to run ty",
+            source=str(source),
+            error=str(exc),
+        )
+        return _unavailable_type_check_metrics("checker_launch_failed")
+
+    # ty uses exit status one for reported diagnostics. Higher statuses are
+    # checker execution or configuration failures rather than findings.
+    if exit_status not in {0, 1}:
+        return _unavailable_type_check_metrics("checker_operational_failure")
 
     stdout = stdout.strip()
     if not stdout:
-        return _EMPTY
+        if exit_status == 0:
+            return _EMPTY
+        return _unavailable_type_check_metrics("checker_malformed_output")
 
     try:
         diagnostics = json.loads(stdout)
@@ -106,20 +133,24 @@ def calculate_type_check_metrics(source: Path) -> TypeCheckMetrics:
             source=str(source),
             stdout=stdout[:200],
         )
-        return _EMPTY
+        return _unavailable_type_check_metrics("checker_malformed_output")
 
     if not isinstance(diagnostics, list):
-        return _EMPTY
+        return _unavailable_type_check_metrics("checker_malformed_output")
 
     errors = 0
     warnings = 0
     counts: Counter[str] = Counter()
 
     for diag in diagnostics:
-        severity = diag.get("severity", "").lower()
+        if not isinstance(diag, dict):
+            return _unavailable_type_check_metrics("checker_malformed_output")
+        severity = diag.get("severity", "")
         rule = diag.get("check_name", "unknown")
+        if not isinstance(severity, str) or not isinstance(rule, str):
+            return _unavailable_type_check_metrics("checker_malformed_output")
         counts[rule] += 1
-        if severity in _ERROR_SEVERITIES:
+        if severity.lower() in _ERROR_SEVERITIES:
             errors += 1
         else:
             warnings += 1

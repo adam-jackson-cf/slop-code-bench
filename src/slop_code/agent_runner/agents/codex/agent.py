@@ -19,7 +19,6 @@ from slop_code.agent_runner.agent import AgentConfigBase
 from slop_code.agent_runner.agents.cli_utils import AgentCommandResult
 from slop_code.agent_runner.agents.cli_utils import stream_cli_command
 from slop_code.agent_runner.agents.utils import HOME_PATH
-from slop_code.agent_runner.agents.utils import copy_jsonl_files
 from slop_code.agent_runner.agents.utils import find_jsonl_files
 from slop_code.agent_runner.credentials import CredentialType
 from slop_code.agent_runner.credentials import ProviderCredential
@@ -42,10 +41,10 @@ log = get_logger(__name__)
 class CodexConfig(AgentConfigBase):
     """Configuration for ``CodexAgent`` instances."""
 
-    type: tp.Literal["codex"] = "codex"
-    version: str
+    type: tp.Literal["codex"] = "codex"  # pyright: ignore[reportIncompatibleVariableOverride]
+    version: str  # pyright: ignore[reportGeneralTypeIssues, reportIncompatibleVariableOverride]
     binary: str = "codex"
-    docker_template: Path = Path(__file__).parent / "docker.j2"
+    docker_template: Path | None = Path(__file__).parent / "docker.j2"
     extra_args: list[str] = Field(
         default_factory=list,
         description="Additional arguments appended to the CLI invocation.",
@@ -87,7 +86,7 @@ class CodexAgent(Agent):
         credential: ProviderCredential | None,
         # Codex specific
         binary: str,
-        model: str,
+        model: str | None,
         timeout: int | None,
         thinking: ThinkingPreset | None,
         max_thinking_tokens: int | None,
@@ -119,7 +118,9 @@ class CodexAgent(Agent):
         self._runtime: StreamingRuntime | None = None
         self._trace_tmp: tempfile.TemporaryDirectory | None = None
         self._trace_dir: Path | None = None
-        self._saved_trace_paths: set[Path] = set()
+        self._saved_trace_offsets: dict[Path, int] = {}
+        self._cumulative_usage_tokens = TokenUsage()
+        self._cumulative_usage_cost = 0.0
 
         # Get auth file from credential if it's a file credential
         self._auth_file: Path | None = None
@@ -212,7 +213,9 @@ class CodexAgent(Agent):
                 cache_write=0,
                 reasoning=int(usage.get("reasoning_output_tokens") or 0),
             )
-            raw_cost = info.get("total_cost") or info.get("cost_usd")
+            raw_cost = info.get("total_cost")
+            if raw_cost is None:
+                raw_cost = info.get("cost_usd")
             cost = (
                 float(raw_cost) if isinstance(raw_cost, int | float) else None
             )
@@ -261,7 +264,9 @@ class CodexAgent(Agent):
     ) -> None:
         self._session = session
         self._environment = session.spec
-        self._saved_trace_paths = set()
+        self._saved_trace_offsets = {}
+        self._cumulative_usage_tokens = TokenUsage()
+        self._cumulative_usage_cost = 0.0
         mounts: dict[str, dict[str, str] | str] = {}
         if isinstance(session.spec, DockerEnvironmentSpec):
             self._trace_tmp = tempfile.TemporaryDirectory()
@@ -288,6 +293,8 @@ class CodexAgent(Agent):
         self._last_prompt = task
         self._last_command = None
 
+        self._cumulative_usage_tokens = TokenUsage()
+        self._cumulative_usage_cost = 0.0
         log_kwargs: dict[str, tp.Any] = {
             "workspace": str(self.session.working_dir),
             "prompt_chars": len(task),
@@ -403,7 +410,7 @@ class CodexAgent(Agent):
 
         if self._session is None:
             raise AgentError("CodexAgent has not been set up with a session")
-        command_str = " ".join(command)
+        command_str = shlex.join(command)
 
         # Use partial to bind pricing to parse_line
         parser = tp.cast(
@@ -493,7 +500,7 @@ class CodexAgent(Agent):
 
         latest_cost: float | None = None
         latest_tokens: TokenUsage | None = None
-        for path in self._new_trace_files():
+        for path in sorted(find_jsonl_files(self._trace_dir)):
             for line in path.read_text(encoding="utf-8").splitlines():
                 cost, tokens, payload = self.parse_line(
                     line, pricing=self.pricing
@@ -511,33 +518,48 @@ class CodexAgent(Agent):
                 latest_cost = cost
         return latest_cost, latest_tokens
 
-    def _new_trace_files(self) -> list[Path]:
-        if self._trace_dir is None:
-            return []
-        return sorted(
-            path
-            for path in find_jsonl_files(self._trace_dir)
-            if path.relative_to(self._trace_dir) not in self._saved_trace_paths
-        )
-
     def _sync_usage(self, totals: dict[str, int]) -> None:
         totals = totals or {}
-        input_tokens = int(totals.get("input_tokens") or 0)
-        output_tokens = int(totals.get("output_tokens") or 0)
-        cache_read_tokens = int(totals.get("cached_input_tokens") or 0)
-        reasoning_tokens = int(totals.get("reasoning_tokens") or 0)
+        cumulative_tokens = TokenUsage(
+            input=int(totals.get("input_tokens") or 0),
+            output=int(totals.get("output_tokens") or 0),
+            cache_read=int(totals.get("cached_input_tokens") or 0),
+            reasoning=int(totals.get("reasoning_tokens") or 0),
+        )
         tokens = TokenUsage(
-            input=input_tokens,
-            output=output_tokens,
-            cache_read=cache_read_tokens,
-            reasoning=reasoning_tokens,
+            input=max(
+                cumulative_tokens.input - self._cumulative_usage_tokens.input,
+                0,
+            ),
+            output=max(
+                cumulative_tokens.output - self._cumulative_usage_tokens.output,
+                0,
+            ),
+            cache_read=max(
+                cumulative_tokens.cache_read
+                - self._cumulative_usage_tokens.cache_read,
+                0,
+            ),
+            reasoning=max(
+                cumulative_tokens.reasoning
+                - self._cumulative_usage_tokens.reasoning,
+                0,
+            ),
         )
         if int(totals.get("reported_cost_present") or 0):
-            cost = (
+            cumulative_cost = (
                 float(int(totals.get("reported_cost_micros") or 0)) / 1_000_000
             )
         else:
-            cost = self.pricing.get_cost(tokens) if self.pricing else 0.0
+            cumulative_cost = (
+                self.pricing.get_cost(cumulative_tokens)
+                if self.pricing
+                else 0.0
+            )
+        cost = max(cumulative_cost - self._cumulative_usage_cost, 0.0)
+        self._cumulative_usage_tokens = cumulative_tokens
+        self._cumulative_usage_cost = cumulative_cost
+
         # Update tokens and cost without incrementing steps (already done during streaming)
         self.usage.cost += cost
         self.usage.net_tokens += tokens
@@ -581,7 +603,7 @@ class CodexAgent(Agent):
             command.extend(["resume", "--last"])
         command.extend(
             [
-                shlex.quote(prompt),
+                prompt,
                 "--skip-git-repo-check",
                 "--json",
                 "--dangerously-bypass-approvals-and-sandbox",
@@ -645,28 +667,44 @@ class CodexAgent(Agent):
         self._write_artifacts(path, stdout_text, stderr_text)
         self._save_codex_traces(path)
 
+    @staticmethod
+    def _trace_output_path(output_dir: Path, source: Path) -> Path:
+        """Choose an unused artifact name for a Codex trace."""
+        candidate = output_dir / source.name
+        counter = 1
+        while candidate.exists():
+            candidate = output_dir / f"{source.stem}_{counter}{source.suffix}"
+            counter += 1
+        return candidate
+
     def _save_codex_traces(self, output_dir: Path) -> None:
         if self._trace_dir is None:
             self.log.debug("agent.codex.traces.skipped", reason="no_trace_dir")
             return
-        jsonl_files = find_jsonl_files(self._trace_dir)
-        new_jsonl_files = [
-            path
-            for path in jsonl_files
-            if path.relative_to(self._trace_dir) not in self._saved_trace_paths
-        ]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        jsonl_files = sorted(find_jsonl_files(self._trace_dir))
+        saved = 0
+        for path in jsonl_files:
+            relative_path = path.relative_to(self._trace_dir)
+            content = path.read_bytes()
+            offset = self._saved_trace_offsets.get(relative_path, 0)
+            if offset > len(content):
+                offset = 0
+            if offset == len(content):
+                continue
+            destination = self._trace_output_path(output_dir, path)
+            destination.write_bytes(content[offset:])
+            self._saved_trace_offsets[relative_path] = len(content)
+            saved += 1
         self.log.debug(
             "agent.codex.traces.found",
             trace_dir=str(self._trace_dir),
             files=len(jsonl_files),
         )
-        copied = copy_jsonl_files(new_jsonl_files, output_dir)
-        for path in new_jsonl_files:
-            self._saved_trace_paths.add(path.relative_to(self._trace_dir))
         self.log.debug(
             "agent.codex.traces.saved",
             output_dir=str(output_dir),
-            saved=len(copied),
+            saved=saved,
         )
 
     def cleanup(self) -> None:
@@ -676,7 +714,7 @@ class CodexAgent(Agent):
             self._trace_tmp.cleanup()
             self._trace_tmp = None
             self._trace_dir = None
-            self._saved_trace_paths = set()
+            self._saved_trace_offsets = {}
         self.log.debug("agent.codex.cleanup")
 
 

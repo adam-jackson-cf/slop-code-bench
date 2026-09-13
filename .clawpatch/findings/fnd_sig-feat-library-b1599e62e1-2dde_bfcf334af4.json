@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-b1599e62e1-2dde_bfcf334af4",
+  "featureId": "feat_library_b1599e62e1",
+  "title": "Docker template rendering omits the required version",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agent.py",
+      "startLine": 119,
+      "endLine": 139,
+      "symbol": "AgentConfigBase._validate_version_for_docker_template",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agent.py",
+      "startLine": 146,
+      "endLine": 155,
+      "symbol": "AgentConfigBase.get_docker_file",
+      "quote": null
+    }
+  ],
+  "reasoning": "Configuration explicitly requires a version because Docker templates use {{ version }}, but get_docker_file passes only base_image to Jinja. The base implementation silently renders version as an empty string, producing an invalid installation command or installing an unintended unpinned version despite valid configuration.",
+  "reproduction": "Create a valid AgentConfigBase with a nonempty version and a Docker template containing {{ version }}. Call get_docker_file; the configured version is absent from the rendered output.",
+  "recommendation": "Include version=self.version in the Docker template context and reject undefined template variables instead of silently rendering them empty.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied registry tests validate registration and type matching but never render Docker templates.",
+  "suggestedRegressionTest": "Extend configuration coverage to verify that validated template inputs reach rendered Docker instructions and that undeclared variables fail clearly.",
+  "minimumFixScope": "AgentConfigBase.get_docker_file and template-rendering coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T191944-f1c469",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence symbols still exist in agent.py: the validator at lines 121–141 and get_docker_file at 148–169. Rendering now passes version=self.version and uses StrictUndefined. Targeted runtime assertions passed for version/base-image interpolation and rejection of unknown variables, mocking only file reads to respect the read-only sandbox. Matching coverage exists in tests/agent_runner/test_agent_config.py. No linked patch attempts were supplied. The initial heredoc invocation was blocked before execution; the subsequent Python -c validation succeeded.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agent.py | sed -n '119,177p'",
+        "rg -n 'docker_template|docker_file|undefined' tests/agent_runner/test_registry.py tests/agent_runner/*config*",
+        "cat tests/agent_runner/test_agent_config.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c '<runtime assertions for AgentConfigBase version/base-image rendering and undefined-variable rejection>'"
+      ],
+      "createdAt": "2026-09-12T19:20:22.474Z"
+    }
+  ],
+  "signature": "sig_feat-library-b1599e62e1_2dde02fb93",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:56.856Z",
+  "updatedAt": "2026-09-12T19:20:22.474Z"
+}

@@ -15,6 +15,7 @@ from slop_code.common import WORKSPACE_TEST_DIR
 from slop_code.evaluation import coverage_plugin
 from slop_code.evaluation.config import CheckpointConfig
 from slop_code.evaluation.config import ProblemConfig
+from slop_code.evaluation.config import classify_test_group
 from slop_code.evaluation.locked_environment import LockedEnvironmentError
 from slop_code.evaluation.locked_environment import (
     ensure_locked_evaluator_environment,
@@ -273,9 +274,7 @@ def _parse_collect_stdout(stdout: str) -> list[str]:
             continue
         if "::" not in stripped:
             continue
-        if " " in stripped:
-            continue
-        nodeids.append(stripped)
+        nodeids.append(line)
     return nodeids
 
 
@@ -361,16 +360,17 @@ def collect_checkpoint_tc(
         evaluator_mounts = _locked_evaluator_mounts(
             session, evaluator_environment_parent
         )
+        marker_names = dict.fromkeys(
+            ("error", "functionality", "regression", *problem.markers)
+        )
         marker_map: dict[str | None, set[str]] = {
-            "error": set(),
-            "functionality": set(),
-            "regression": set(),
-            None: set(),
+            marker: set() for marker in marker_names
         }
+        marker_map[None] = set()
 
         infrastructure_failure = False
 
-        for marker in ("error", "functionality", "regression", None):
+        for marker in (*marker_names, None):
             cmd = _build_collect_cmd(
                 evaluator_python=evaluator_python,
                 checkpoint_name=checkpoint.name,
@@ -434,16 +434,16 @@ def collect_checkpoint_tc(
                 fallback=checkpoint.name,
             )
 
-            if source_checkpoint != checkpoint.name:
-                group_type = GroupType.REGRESSION
-            elif nodeid in marker_map["error"]:
-                group_type = GroupType.ERROR
-            elif nodeid in marker_map["regression"]:
-                group_type = GroupType.REGRESSION
-            elif nodeid in marker_map["functionality"]:
-                group_type = GroupType.FUNCTIONALITY
-            else:
-                group_type = GroupType.CORE
+            group_type = classify_test_group(
+                test_checkpoint=source_checkpoint,
+                current_checkpoint=checkpoint.name,
+                markers=(
+                    marker
+                    for marker in marker_names
+                    if nodeid in marker_map[marker]
+                ),
+                custom_markers=problem.markers,
+            )
 
             by_nodeid[nodeid] = CollectedTestCase(
                 nodeid=nodeid,
@@ -522,9 +522,10 @@ def apply_collection_inventory(
     totals = dict.fromkeys(GroupType, 0)
     passes = dict.fromkeys(GroupType, 0)
     for test in merged:
-        totals[test.group_type] += 1
-        if test.status == "passed":
-            passes[test.group_type] += 1
+        if test.status != "skipped":
+            totals[test.group_type] += 1
+            if test.status == "passed":
+                passes[test.group_type] += 1
 
     results.tests = merged
     results.total_counts = totals

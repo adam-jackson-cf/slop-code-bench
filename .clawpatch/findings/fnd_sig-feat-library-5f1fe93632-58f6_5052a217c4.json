@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-5f1fe93632-58f6_5052a217c4",
+  "featureId": "feat_library_5f1fe93632",
+  "title": "Final progress updates are discarded when all futures finish",
+  "category": "concurrency",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/problem_runner/driver.py",
+      "startLine": 169,
+      "endLine": 180,
+      "symbol": "_run_problems",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/problem_runner/driver.py",
+      "startLine": 210,
+      "endLine": 213,
+      "symbol": "_run_problems",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/problem_runner/worker.py",
+      "startLine": 39,
+      "endLine": 59,
+      "symbol": "_send_completed_progress",
+      "quote": null
+    }
+  ],
+  "reasoning": "Future completion does not mean the progress queue has been consumed. When the last worker finishes, the loop exits even if terminal updates remain queued. The display can consequently retain running states and omit final costs and solved-checkpoint counts. Workers that finish before the first loop condition can have all their updates discarded.",
+  "reproduction": "Have a fake executor enqueue progress updates and return already-completed futures. Call _run_problems and observe that the queue remains populated and problem states remain pending.",
+  "recommendation": "After all producers finish, drain remaining progress messages through the same update handler and refresh the display before returning.",
+  "whyTestsDoNotAlreadyCoverThis": "The executor test returns already-completed futures but enqueues no progress messages and asserts only results and executor configuration.",
+  "suggestedRegressionTest": "Expand the executor scenario to cover queued updates before and during future completion, asserting that every problem's final state, usage, and evaluation counts are applied.",
+  "minimumFixScope": "driver.py progress-consumption loop and tests/entrypoints/problem_runner/test_driver.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T164700-60d060",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence paths and symbols still exist, but driver.py now drains remaining messages through the shared handler at lines 221–225 and refreshes the display at line 226 before returning. This supports the intended repair, including already-completed futures. A regression test at test_driver.py:298–357 covers terminal updates queued during completion and checks final state, cost, and evaluation counts. No linked patch attempts or successful validation results were supplied. Targeted pytest execution exited 1 before collection because the read-only environment has no usable temporary directory; therefore the repair cannot be marked fixed under the requested validation rule.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/problem_runner/driver.py | sed -n '160,240p'",
+        "nl -ba src/slop_code/entrypoints/problem_runner/worker.py | sed -n '32,62p'",
+        "nl -ba tests/entrypoints/problem_runner/test_driver.py | sed -n '295,390p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/problem_runner/test_driver.py -k 'drains_progress_after_futures_complete or recycles_workers_between_problems'"
+      ],
+      "createdAt": "2026-09-11T16:47:22.440Z"
+    },
+    {
+      "runId": "20260911T164800-91d1f3",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original paths and symbols still exist, but driver.py:221–226 now drains queued updates through the shared handler and refreshes the display before returning, supporting the intended repair even for already-completed futures. test_driver.py:298–357 covers updates queued during completion and asserts final state, cost, and evaluation count. No linked patch attempts or successful validation results were supplied. Targeted pytest again exited 1 before collection because the read-only environment has no usable temporary directory. The code supports repair, but failed validation prevents classifying it as fixed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/entrypoints/problem_runner/driver.py | sed -n '160,232p'",
+        "nl -ba src/slop_code/entrypoints/problem_runner/worker.py | sed -n '32,62p'",
+        "nl -ba tests/entrypoints/problem_runner/test_driver.py | sed -n '298,360p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/problem_runner/test_driver.py -k 'drains_progress_after_futures_complete or recycles_workers_between_problems'"
+      ],
+      "createdAt": "2026-09-11T16:48:25.634Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:52:39.533Z"
+    }
+  ],
+  "signature": "sig_feat-library-5f1fe93632_58f691d382",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:08.842Z",
+  "updatedAt": "2026-09-11T16:52:39.532Z"
+}

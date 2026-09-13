@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-958b9d2532-5df8_f6f4fc4884",
+  "featureId": "feat_library_958b9d2532",
+  "title": "Problems without a test category depress that category's average",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/summary/aggregators.py",
+      "startLine": 216,
+      "endLine": 220,
+      "symbol": "compute_pass_rates_stats",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/summary/aggregators.py",
+      "startLine": 239,
+      "endLine": 262,
+      "symbol": "compute_pass_rates_stats",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/summary/aggregators.py",
+      "startLine": 271,
+      "endLine": 273,
+      "symbol": "compute_pass_rates_stats",
+      "quote": null
+    }
+  ],
+  "reasoning": "The documented rule excludes checkpoints without tests of a given type. At problem level, however, a problem with no applicable checkpoints becomes 0.0 through mean_excluding_none, and that zero participates in the final average. This treats absence of tests as failure and makes the reported rate depend on how many unrelated problems lack that category.",
+  "reproduction": "Use two problems with one checkpoint each: the first has error_passed=1 and error_total=1; the second has error_passed=0 and error_total=0. The checkpoint error average is 1.0, but the problem error average is 0.5 despite every applicable error test passing.",
+  "recommendation": "Preserve the absence of an applicable problem-level rate until the final aggregation, exclude those problems, and apply the empty-result default only after filtering.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; coverage of test categories absent from entire problems could not be verified.",
+  "suggestedRegressionTest": "Verify across test categories that adding problems with no applicable tests leaves the existing problem-level average unchanged, while actual zero-pass results remain included. Also cover the case where every problem lacks the category.",
+  "minimumFixScope": "Update the problem-level collection and averaging in compute_pass_rates_stats.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200117-626aa8",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists, but line references shifted: compute_pass_rates_stats now starts at line 240. Lines 281–306 exclude problems without applicable tests before averaging, retain actual zero-pass rates, and default to zero only after filtering. This supports the intended repair, and relevant tests exist in tests/metrics/summary_test.py. However, targeted pytest validation exited 1 before running because the read-only environment provided no usable temporary directory. No linked patch attempts were supplied, so fixed cannot be verified.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/summary/aggregators.py | sed -n '240,330p'",
+        "rg -n 'no.*tests|absent|compute_pass_rates_stats' tests/metrics",
+        "sed -n '450,620p' tests/metrics/summary_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/summary_test.py -k 'problem_rates or pass_rates'"
+      ],
+      "createdAt": "2026-09-12T20:01:49.685Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified inapplicable categories are excluded while actual zero-pass results remain included; 123 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:58.691Z"
+    }
+  ],
+  "signature": "sig_feat-library-958b9d2532_5df82c5f96",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:53.916Z",
+  "updatedAt": "2026-09-12T20:03:58.691Z"
+}

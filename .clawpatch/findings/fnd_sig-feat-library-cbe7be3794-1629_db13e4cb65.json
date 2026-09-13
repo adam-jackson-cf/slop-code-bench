@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-cbe7be3794-1629_db13e4cb65",
+  "featureId": "feat_library_cbe7be3794",
+  "title": "Run configuration loading permits arbitrary code execution",
+  "category": "security",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/data.py",
+      "startLine": 469,
+      "endLine": 474,
+      "symbol": "load_config_metadata",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/app.py",
+      "startLine": 59,
+      "endLine": 71,
+      "symbol": null,
+      "quote": null
+    }
+  ],
+  "reasoning": "Every discovered run's config.yaml is parsed with yaml.unsafe_load during startup. Python object constructors in a supplied run configuration can execute code with the dashboard process's permissions, before score verification occurs.",
+  "reproduction": "Include a config.yaml containing a Python object/application tag in a discovered run directory. Starting the dashboard invokes its constructor during metadata loading.",
+  "recommendation": "Use safe YAML loading and validate the resulting configuration structure. If custom tags are necessary, register only explicitly permitted non-executing constructors.",
+  "whyTestsDoNotAlreadyCoverThis": "The included load_run tests replace load_config_metadata with a stub and never exercise YAML parsing.",
+  "suggestedRegressionTest": "Exercise real configuration loading with ordinary configuration mappings and Python object tags; assert ordinary metadata loads and executable tags are rejected without invoking constructors.",
+  "minimumFixScope": "load_config_metadata and configuration-loading behavioral coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T202324-5f35dd",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence paths exist. data.py:469–474 now handles JSON summaries; load_config_metadata moved to line 476 and uses yaml.safe_load at line 480 with mapping and metadata type validation. app.py:71 still calls this repaired loader. Existing tests cover ordinary metadata and executable-tag rejection. Direct validation of the current function passed for valid metadata, root and nested executable tags without constructor invocation, and invalid structures. An initial heredoc invocation was blocked by sandbox temporary-file restrictions; rerunning in memory succeeded. No linked patch attempts were provided.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/data.py | sed -n '465,525p'",
+        "nl -ba src/slop_code/dashboard/app.py | sed -n '59,75p'",
+        "rg -n 'unsafe_load|safe_load|add_constructor|add_multi_constructor|load_config_metadata|executable_yaml' src/slop_code/dashboard tests/dashboard/data_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B - <<'PY' (blocked before execution by sandbox)",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c '<in-memory validation of current load_config_metadata with valid mappings, root/nested executable tags, constructor-call monitoring, and invalid structures>'"
+      ],
+      "createdAt": "2026-09-12T20:24:03.181Z"
+    }
+  ],
+  "signature": "sig_feat-library-cbe7be3794_1629fe1a79",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:37.605Z",
+  "updatedAt": "2026-09-12T20:24:03.181Z"
+}

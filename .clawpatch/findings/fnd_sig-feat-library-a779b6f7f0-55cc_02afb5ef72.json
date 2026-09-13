@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a779b6f7f0-55cc_02afb5ef72",
+  "featureId": "feat_library_a779b6f7f0",
+  "title": "Streaming port mappings reverse the public host-to-container mapping",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/docker_runtime/exec.py",
+      "startLine": 212,
+      "endLine": 216,
+      "symbol": "DockerExecRuntime._build_docker_run_command",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/docker_runtime/streaming.py",
+      "startLine": 152,
+      "endLine": 162,
+      "symbol": "DockerStreamingRuntime._resolve_ports",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/docker_runtime/streaming.py",
+      "startLine": 272,
+      "endLine": 286,
+      "symbol": "DockerStreamingRuntime._create_base_container",
+      "quote": null
+    },
+    {
+      "path": "tests/execution/docker_runtime/streaming_test.py",
+      "startLine": 104,
+      "endLine": 114,
+      "symbol": "test_spawn_passes_ports",
+      "quote": null
+    }
+  ],
+  "reasoning": "The exec runtime interprets ports as host_port to container_port, but streaming passes the same dictionary directly to Docker SDK containers.create, whose keys identify container ports and values identify host bindings. Consequently, {8080: 80} publishes container port 8080 on host port 80 instead of container port 80 on host port 8080.",
+  "reproduction": "Create a bridge-network streaming runtime with ports={8080: 80} and run a service on container port 80. The expected host endpoint on port 8080 is not published.",
+  "recommendation": "Translate the public host-to-container mapping into Docker SDK container-to-host bindings before creating the container.",
+  "whyTestsDoNotAlreadyCoverThis": "The streaming test only checks the stored dictionary; it never checks SDK arguments or connectivity with unequal ports.",
+  "suggestedRegressionTest": "Extend port scenarios to verify SDK bindings and host connectivity for unequal host and container ports, while retaining host-network behavior.",
+  "minimumFixScope": "Streaming port conversion and port mapping tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170325-e012a9",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "All original evidence paths still exist. streaming.py:152-161 now converts host-to-container mappings into Docker SDK bindings, and lines 277-286 pass them to containers.create. Exec retains host:container ordering at lines 212-214. Tests at streaming_test.py:219-256 cover conversion and host networking. Targeted validation passed for unequal ports, empty mappings, and host networking, checking actual create arguments and SDK serialization. Initial validation harness errors were corrected before the successful rerun. Live connectivity was not tested. No linked patch attempts were supplied.",
+      "commands": [
+        "Read Clawpatch revalidation skill and runbook.",
+        "Inspected numbered evidence ranges in exec.py, streaming.py, and streaming_test.py.",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c '<targeted validation of container-create arguments and HostConfig(version=\"1.41\") port serialization>' — passed."
+      ],
+      "createdAt": "2026-09-11T17:04:20.927Z"
+    }
+  ],
+  "signature": "sig_feat-library-a779b6f7f0_55cce429ea",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:39.908Z",
+  "updatedAt": "2026-09-11T17:04:20.927Z"
+}

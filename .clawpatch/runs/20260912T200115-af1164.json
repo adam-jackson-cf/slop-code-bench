@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "runId": "20260912T200115-af1164",
+  "command": "revalidate",
+  "args": [
+    "revalidate",
+    "--finding",
+    "fnd_sig-feat-test-suite-c193b1fe5e-e_3c3987ca22",
+    "--include-dirty"
+  ],
+  "rootPath": "/Users/adamjackson/Projects/inflight/slop-code-bench",
+  "headSha": "613c39c80ff562735835cc7dae1b5e8eacd5e35b",
+  "startedAt": "2026-09-12T20:01:17.103Z",
+  "finishedAt": "2026-09-12T20:01:43.189Z",
+  "status": "completed",
+  "claimedFeatureIds": [],
+  "findingIds": [
+    "fnd_sig-feat-test-suite-c193b1fe5e-e_3c3987ca22"
+  ],
+  "patchAttemptIds": [],
+  "errors": []
+}

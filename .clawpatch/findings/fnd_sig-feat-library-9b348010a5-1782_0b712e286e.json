@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-9b348010a5-1782_0b712e286e",
+  "featureId": "feat_library_9b348010a5",
+  "title": "Materialization can write outside the working directory",
+  "category": "security",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/file_ops/entrypoint.py",
+      "startLine": 335,
+      "endLine": 350,
+      "symbol": "materialize_input_files",
+      "quote": null
+    }
+  ],
+  "reasoning": "InputFile paths are joined to cwd without containment validation. Absolute paths discard cwd, parent traversal escapes it, and existing symlinks can redirect writes outside it. A caller-controlled input path can therefore overwrite files accessible to the process outside the intended working directory.",
+  "reproduction": "Materialize a TEXT InputFile whose path is '../outside.txt' into a temporary working directory; the file is written in its parent.",
+  "recommendation": "Reject absolute and escaping paths and enforce destination containment, including symlink handling, before creating directories or opening files.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests cover metrics and language registration, not input-file destination containment.",
+  "suggestedRegressionTest": "Exercise ordinary nested paths, absolute paths, parent traversal, and symlink escapes; assert rejected destinations leave outside files unchanged.",
+  "minimumFixScope": "Destination validation in materialize_input_files.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170458-7e3a25",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path and lines still exist. entrypoint.py:336-350 now rejects absolute paths and checks resolved destination containment before directory creation or writing, addressing traversal and existing symlink escapes. tests/execution/file_ops_test.py:585-633 covers nested paths, absolute paths, traversal, symlink escapes, and unchanged outside content. No linked patch attempts or validation results were supplied. Targeted pytest exited 1 before executing tests because the read-only environment provided no usable temporary directory; therefore the apparent repair cannot be marked fixed.",
+      "commands": [
+        "nl -ba src/slop_code/execution/file_ops/entrypoint.py | sed -n '315,390p'; rg -n 'materialize|symlink|escapes' tests/execution",
+        "sed -n '575,645p' tests/execution/file_ops_test.py; ls .venv/bin/python",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/execution/file_ops_test.py::TestMaterializeInputFiles"
+      ],
+      "createdAt": "2026-09-11T17:05:26.730Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:05:27.314Z"
+    }
+  ],
+  "signature": "sig_feat-library-9b348010a5_178236bea0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:13.990Z",
+  "updatedAt": "2026-09-11T17:05:27.313Z"
+}

@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-42cc4cda50-7b67_cd703bd06c",
+  "featureId": "feat_library_42cc4cda50",
+  "title": "Unavailable measurements become false percentage changes",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/checkpoint/delta.py",
+      "startLine": 49,
+      "endLine": 51,
+      "symbol": "safe_delta_pct",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/checkpoint/delta.py",
+      "startLine": 77,
+      "endLine": 81,
+      "symbol": "compute_checkpoint_delta",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/checkpoint/driver.py",
+      "startLine": 93,
+      "endLine": 109,
+      "symbol": "_get_scb_check_metrics",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/checkpoint/driver.py",
+      "startLine": 152,
+      "endLine": 155,
+      "symbol": "get_checkpoint_metrics",
+      "quote": null
+    }
+  ],
+  "reasoning": "The scb-check failure path legitimately returns no verbosity measurement, but delta computation converts that missing value to zero. A failed measurement after a successful checkpoint therefore reports a 100% verbosity reduction. Recovery after an unavailable measurement reports infinite growth. These are measurement failures presented as quality changes.",
+  "reproduction": "Call compute_checkpoint_delta with previous verbosity=4 and current metrics lacking verbosity: delta.verbosity is -100. Reversing the missing and measured checkpoints produces infinity.",
+  "recommendation": "At the checkpoint delta boundary, omit the delta or return null when either measurement is absent or null. Preserve the existing zero-denominator behavior for actual numeric zero measurements.",
+  "whyTestsDoNotAlreadyCoverThis": "None of the supplied tests exercises checkpoint delta extraction or an scb-check failure between successful measurements.",
+  "suggestedRegressionTest": "Cover measured-to-missing, missing-to-measured, both-missing, and genuine zero-valued measurements for every DELTA_METRIC_KEYS entry, including an orchestration scenario where scb-check fails.",
+  "minimumFixScope": "Guard unavailable values in compute_checkpoint_delta and add coverage distinguishing missing measurements from numeric zero.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200117-15c9a1",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files still exist, but the relevant delta code changed. delta.py:39-40 returns None for unavailable inputs, and lines 70-73 retrieve measurements without defaulting to zero. Numeric-zero handling remains intact. driver.py:93-109 still returns empty metrics on scb-check failure and passes them to delta computation at lines 159-162. This supports the repair, and regression coverage exists in tests/metrics/checkpoint_results_test.py. However, targeted pytest validation failed before collection because the read-only environment provides no writable temporary directory, so fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/checkpoint/delta.py",
+        "nl -ba src/slop_code/metrics/checkpoint/driver.py",
+        "rg -n 'missing|unavailable|delta|scb_check' tests/metrics/checkpoint*",
+        "rg --files tests/metrics -g '*checkpoint*'",
+        "sed -n '790,835p' tests/metrics/checkpoint_results_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/checkpoint_results_test.py -k TestComputeCheckpointDelta"
+      ],
+      "createdAt": "2026-09-12T20:01:57.501Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified unavailable deltas serialize null while measured zero remains numeric; 123 focused metrics tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:58.505Z"
+    }
+  ],
+  "signature": "sig_feat-library-42cc4cda50_7b67ae16b1",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:22.193Z",
+  "updatedAt": "2026-09-12T20:03:58.504Z"
+}

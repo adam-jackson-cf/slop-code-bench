@@ -21,6 +21,8 @@ import time
 from collections.abc import Callable
 from collections.abc import Generator
 from collections.abc import Iterator
+from dataclasses import dataclass
+from types import GeneratorType
 from typing import Literal
 
 import structlog
@@ -39,34 +41,37 @@ def ensure_string(data: bytes | str) -> str:
     return data
 
 
+@dataclass(frozen=True)
+class PumpEvent:
+    """An event emitted by the background stream pump."""
+
+    kind: Literal["stdout", "stderr", "finished", "error"]
+    payload: str | None = None
+    error: Exception | None = None
+
+
 def start_stream_pump(
     stream: Iterator[tuple[bytes | str, bytes | str]],
-    event_queue: queue.Queue[
-        tuple[Literal["stdout", "stderr", "finished"], str | None]
-    ],
+    event_queue: queue.Queue[PumpEvent],
     stop_event: threading.Event,
 ) -> threading.Thread:
-    """Start a thread to pump a demuxed stream into an event queue.
-
-    Args:
-        stream: Iterator yielding (stdout, stderr) tuples
-        event_queue: Queue to receive events
-        stop_event: Event to check for early termination
-        ensure_string: Function to convert bytes to string
-    """
+    """Start a daemon thread that pumps a demuxed stream into an event queue."""
 
     def pump() -> None:
-        """Pump demuxed stream to event queue."""
-        for stdout, stderr in stream:
-            if stdout:
-                contents = ensure_string(stdout)
-                event_queue.put(("stdout", contents))
-            if stderr:
-                contents = ensure_string(stderr)
-                event_queue.put(("stderr", contents))
-            if stop_event.is_set():
-                break
-        event_queue.put(("finished", None))
+        """Pump demuxed stream data, errors, and completion into the queue."""
+        try:
+            for stdout, stderr in stream:
+                if stdout:
+                    event_queue.put(PumpEvent("stdout", ensure_string(stdout)))
+                if stderr:
+                    event_queue.put(PumpEvent("stderr", ensure_string(stderr)))
+                if stop_event.is_set():
+                    break
+        except Exception as error:  # noqa: BLE001 - iterator boundary
+            logger.exception("Stream pump failed")
+            event_queue.put(PumpEvent("error", error=error))
+        finally:
+            event_queue.put(PumpEvent("finished"))
 
     thread = threading.Thread(target=pump, daemon=True)
     thread.start()
@@ -89,14 +94,14 @@ def process_stream(
     timeout: float | None,
     poll_fn: Callable[[], int | None],
     yield_only_after: str | None = None,
+    cancel_fn: Callable[[], None] | None = None,
 ) -> Generator[RuntimeEvent, None, RuntimeResult]:
+    """Consume a runtime stream while bounding timeout cleanup."""
     logger.debug("Starting to consume events with timeout", timeout=timeout)
     start_time = time.monotonic()
     timeout_fn = make_timeout_fn(timeout, start_time)
     stop_event = threading.Event()
-    event_queue: queue.Queue[
-        tuple[Literal["stdout", "stderr", "finished"], str | None]
-    ] = queue.Queue()
+    event_queue: queue.Queue[PumpEvent] = queue.Queue()
     thread = start_stream_pump(stream, event_queue, stop_event)
     stdout = ""
     stderr = ""
@@ -105,15 +110,17 @@ def process_stream(
     yielding_stdout = yield_only_after is None
     yielding_stderr = yield_only_after is None
     timed_out = False
+    pump_error: Exception | None = None
+    cleanup_error: Exception | None = None
+    exit_code: int | None = None
 
-    def handle_event(
-        kind: Literal["stdout", "stderr"],
-        payload: str,
-    ) -> Iterator[RuntimeEvent]:
+    def handle_event(event: PumpEvent) -> Iterator[RuntimeEvent]:
         nonlocal stdout, stderr, setup_stdout, setup_stderr
         nonlocal yielding_stdout, yielding_stderr
-
-        if kind == "stdout":
+        if event.payload is None:
+            return
+        payload = event.payload
+        if event.kind == "stdout":
             stdout += payload
             if (
                 not yielding_stdout
@@ -123,12 +130,9 @@ def process_stream(
                 yielding_stdout = True
                 setup_stdout, stdout = stdout.split(yield_only_after, 1)
                 payload = stdout
-
             if yielding_stdout and payload.strip():
                 yield RuntimeEvent(kind="stdout", text=payload)
-            return
-
-        if kind == "stderr":
+        elif event.kind == "stderr":
             stderr += payload
             if (
                 not yielding_stderr
@@ -138,63 +142,72 @@ def process_stream(
                 yielding_stderr = True
                 setup_stderr, stderr = stderr.split(yield_only_after, 1)
                 payload = stderr
-
             if yielding_stderr and payload.strip():
                 yield RuntimeEvent(kind="stderr", text=payload)
-            return
 
-        logger.error("Received unknown event", kind=kind, payload=payload)
+    def consume_event(event: PumpEvent) -> Iterator[RuntimeEvent]:
+        nonlocal pump_error
+        if event.kind == "error":
+            pump_error = event.error or RuntimeError("Stream pump failed")
+        elif event.kind not in {"finished"}:
+            yield from handle_event(event)
 
-    while (exit_code := poll_fn()) is None:
-        if (remaining := timeout_fn()) <= 0:
-            timed_out = True
-            break
+    def interrupt_stream() -> None:
+        nonlocal cleanup_error
+        stop_event.set()
+        # A generator cannot be closed while its pump is blocked in next();
+        # runtime-specific cancellation must be supplied through cancel_fn.
+        cancel = cancel_fn
+        if cancel is None and not isinstance(stream, GeneratorType):
+            cancel = getattr(stream, "close", None)
+        if callable(cancel):
+            try:
+                cancel()
+            except Exception as error:  # noqa: BLE001 - cancellation boundary
+                logger.exception("Stream cancellation failed")
+                cleanup_error = error
 
-        try:
-            kind, payload = event_queue.get(timeout=remaining)
-        except queue.Empty:
-            if (exit_code := poll_fn()) is not None:
+    try:
+        while (exit_code := poll_fn()) is None and pump_error is None:
+            if (remaining := timeout_fn()) <= 0:
+                timed_out = True
                 break
-            continue
+            try:
+                event = event_queue.get(timeout=remaining)
+            except queue.Empty:
+                continue
+            yield from consume_event(event)
+            if event.kind == "finished":
+                break
 
-        if kind == "finished":
-            logger.debug("Received finished event")
-            break
+        if not timed_out and exit_code is not None and pump_error is None:
+            thread.join(timeout=max(0.0, timeout_fn()))
 
-        if payload is None:
-            logger.error("Received empty stream event", kind=kind)
-            break
+        while True:
+            try:
+                event = event_queue.get_nowait()
+            except queue.Empty:
+                break
+            yield from consume_event(event)
+    finally:
+        interrupt_stream()
+        # Closing an iterator cannot guarantee that a third-party blocking read
+        # returns, so the daemon pump is joined only for this bounded interval.
+        thread.join(timeout=0.1)
+        if thread.is_alive():
+            logger.warning(
+                "Stream pump did not exit after bounded cancellation"
+            )
 
-        yield from handle_event(kind, payload)
-
-    # A process can exit before the pump has queued bytes already readable from
-    # its pipes. Give the pump the remaining command budget to reach EOF before
-    # taking the final queue snapshot.
-    if not timed_out and exit_code is not None:
-        thread.join(timeout=max(0.0, timeout_fn()))
-
-    # Handle any remaining events in the queue
-    while True:
-        try:
-            kind, payload = event_queue.get_nowait()
-        except queue.Empty:
-            break
-
-        if kind == "finished":
-            logger.debug("Received finished event")
-            break
-
-        if payload is None:
-            logger.error("Received empty stream event", kind=kind)
-            break
-
-        yield from handle_event(kind, payload)
+    if pump_error is not None:
+        if cleanup_error is not None:
+            raise pump_error from cleanup_error
+        raise pump_error
+    if cleanup_error is not None:
+        raise cleanup_error
 
     elapsed = time.monotonic() - start_time
-    stop_event.set()
-    thread.join()
-
-    exit_code = exit_code or poll_fn()
+    exit_code = exit_code if exit_code is not None else poll_fn()
     if exit_code is None:
         exit_code = -1
     logger.debug(

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_566aaab053",
+  "title": "Python source src/slop_code/metrics/languages/python",
+  "summary": "Python source group src/slop_code/metrics/languages/python with 11 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/metrics/languages/python",
+      "symbol": "src/slop_code/metrics/languages/python",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/metrics/languages/python/__init__.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/constants.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/graph.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/imports.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/line_metrics.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/lint_metrics.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/parser.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/symbols.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/type_check.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/utils.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/waste.py",
+      "reason": "source group src/slop_code/metrics/languages/python"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/evaluation/utils_test.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/evaluation/utils_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-566aaab053-dc34_b159acc174",
+    "fnd_sig-feat-library-566aaab053-f079_361c246197",
+    "fnd_sig-feat-library-566aaab053-90e3_c75e820e17",
+    "fnd_sig-feat-library-566aaab053-a7e5_9ac31467e7",
+    "fnd_sig-feat-library-566aaab053-8e6a_1b43651504"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "5 finding(s); prompt=127643 bytes; approxTokens=31911; includedFiles=13; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:57:01.552Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:01:51.003Z"
+}

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a779b6f7f0-c21e_4b8fd2fe9d",
+  "featureId": "feat_library_a779b6f7f0",
+  "title": "Failed container startup loses the container needed for cleanup",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/docker_runtime/streaming.py",
+      "startLine": 279,
+      "endLine": 291,
+      "symbol": "DockerStreamingRuntime._create_base_container",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/docker_runtime/streaming.py",
+      "startLine": 489,
+      "endLine": 510,
+      "symbol": "DockerStreamingRuntime.cleanup",
+      "quote": null
+    }
+  ],
+  "reasoning": "Container creation occurs before start, but self._container is assigned only after start succeeds. If startup fails, for example because a published host port is occupied, the created container remains in Docker while cleanup sees no container to remove. Repeated attempts accumulate orphaned containers.",
+  "reproduction": "Make containers.create succeed and container.start raise an APIError, then call cleanup. The created container receives no removal request.",
+  "recommendation": "Retain ownership immediately after creation and explicitly remove the container if startup fails, preserving the original startup error.",
+  "whyTestsDoNotAlreadyCoverThis": "Container creation coverage exercises successful startup only; cleanup tests use runtimes without containers.",
+  "suggestedRegressionTest": "Expand lifecycle coverage with startup failures after successful creation and assert removal, client closure, and safe repeated cleanup.",
+  "minimumFixScope": "DockerStreamingRuntime container startup failure handling and lifecycle tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170421-af9556",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The evidence file still exists. At streaming.py:290-296, ownership is now assigned before start(), and startup exceptions trigger container removal before re-raising. Cleanup moved to lines 521-528. Targeted validation passed for APIError startup failures, including stop failure, confirming forced removal, preservation of the original exception, client closure, and safe repeated cleanup. The initial heredoc invocation was blocked by read-only temporary-file restrictions; the same validation succeeded using python -c. No linked patch attempts were provided.",
+      "commands": [
+        "nl -ba src/slop_code/execution/docker_runtime/streaming.py | sed -n '279,312p;520,550p'",
+        "sed -n '325,363p' tests/execution/docker_runtime/streaming_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c '<in-memory mocked startup lifecycle validation covering APIError, stop failure, forced removal, exception identity, and repeated cleanup>'"
+      ],
+      "createdAt": "2026-09-11T17:04:57.659Z"
+    }
+  ],
+  "signature": "sig_feat-library-a779b6f7f0_c21ea98c7d",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:39.908Z",
+  "updatedAt": "2026-09-11T17:04:57.659Z"
+}

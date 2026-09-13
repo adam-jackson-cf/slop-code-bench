@@ -72,12 +72,23 @@ def _run_with_captured_output(command: list[str]) -> tuple[int, str, str]:
     )
 
 
+def _unavailable_lint_metrics(reason: str) -> LintMetrics:
+    """Build an explicit unavailable lint metric result."""
+    return LintMetrics(
+        errors=None,
+        fixable=None,
+        counts={},
+        available=False,
+        unavailable_reason=reason,
+    )
+
+
 def calculate_lint_metrics(source: Path) -> LintMetrics:
     """Calculate lint metrics for a Python file using ruff."""
     uv_executable = _resolve_uv_executable()
     if uv_executable is None:
         logger.error("uv executable is unavailable", source=str(source))
-        return LintMetrics(errors=0, fixable=0, counts={})
+        return _unavailable_lint_metrics("checker_unavailable")
 
     command = [
         str(uv_executable),
@@ -93,18 +104,30 @@ def calculate_lint_metrics(source: Path) -> LintMetrics:
         str(source.resolve()),
     ]
     try:
-        _, stdout, _ = _run_with_captured_output(command)
+        exit_status, stdout, _ = _run_with_captured_output(command)
     except OSError as exc:
         logger.error(
             "Failed to calculate lint metrics",
             source=str(source),
             error=str(exc),
         )
-        return LintMetrics(errors=0, fixable=0, counts={})
+        return _unavailable_lint_metrics("checker_launch_failed")
+
+    # Ruff uses exit status one for checker-defined findings. Other nonzero
+    # statuses indicate an execution or configuration failure, not clean code.
+    if exit_status not in {0, 1}:
+        logger.warning(
+            "Ruff failed without a findings result",
+            source=str(source),
+            exit_status=exit_status,
+        )
+        return _unavailable_lint_metrics("checker_operational_failure")
 
     stdout = stdout.strip()
     if not stdout:
-        return LintMetrics(errors=0, fixable=0, counts={})
+        if exit_status == 0:
+            return LintMetrics(errors=0, fixable=0, counts={})
+        return _unavailable_lint_metrics("checker_malformed_output")
 
     stats = None
     while stats is None and stdout:
@@ -117,23 +140,35 @@ def calculate_lint_metrics(source: Path) -> LintMetrics:
                 break
             stdout = parts[1]
 
-    if stats is None:
+    if not isinstance(stats, list):
         logger.warning(
             "Failed to parse lint statistics",
             source=str(source),
             stdout=stdout,
         )
-        return LintMetrics(errors=0, fixable=0, counts={})
+        return _unavailable_lint_metrics("checker_malformed_output")
 
     counts = Counter()
-    fixable = total = 0
+    fixable_count = total = 0
 
     for item in stats:
-        if not isinstance(item["code"], str):
-            continue
-        counts[item["code"]] += item["count"]
-        total += item["count"]
-        if item["fixable"]:
-            fixable += item["count"]
+        try:
+            code = item["code"]
+            count = item["count"]
+            is_fixable = item["fixable"]
+        except (KeyError, TypeError):
+            return _unavailable_lint_metrics("checker_malformed_output")
+        if (
+            not isinstance(code, str)
+            or not isinstance(count, int)
+            or isinstance(count, bool)
+        ):
+            return _unavailable_lint_metrics("checker_malformed_output")
+        if not isinstance(is_fixable, bool):
+            return _unavailable_lint_metrics("checker_malformed_output")
+        counts[code] += count
+        total += count
+        if is_fixable:
+            fixable_count += count
 
-    return LintMetrics(errors=total, fixable=fixable, counts=counts)
+    return LintMetrics(errors=total, fixable=fixable_count, counts=dict(counts))

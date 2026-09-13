@@ -57,24 +57,24 @@ def _run_problem_worker(
     Returns:
         TaskResult with problem execution outcome
     """
-    prob_save_dir = config.run_dir / problem_name
-    prob_save_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        prob_save_dir = config.run_dir / problem_name
+        prob_save_dir.mkdir(parents=True, exist_ok=True)
 
-    if config.live_progress or not config.debug:
-        setup_problem_logging(
-            prob_save_dir, problem_name, log_file_name="infer.log"
+        if config.live_progress or not config.debug:
+            setup_problem_logging(
+                prob_save_dir, problem_name, log_file_name="infer.log"
+            )
+
+        problem_logger = get_logger()
+        problem_path = config.problem_base_path / problem_name
+        problem_logger.info(
+            "Running agent for problem",
+            problem=problem_name,
+            problem_path=str(problem_path),
         )
 
-    problem_logger = get_logger()
-    problem_path = config.problem_base_path / problem_name
-    problem_logger.info(
-        "Running agent for problem",
-        problem=problem_name,
-        problem_path=str(problem_path),
-    )
-
-    problem_config = evaluation.ProblemConfig.from_yaml(problem_path)
-    try:
+        problem_config = evaluation.ProblemConfig.from_yaml(problem_path)
         results = run_agent_on_problem(
             problem_config=problem_config,
             problem_name=problem_name,
@@ -166,23 +166,21 @@ def _run_problems(
             )
             for problem_name in problem_names
         ]
-        while not all(future.done() for future in futures):
-            try:
-                problem_name, agent_usage, metrics_tracker = progress_queue.get(
-                    timeout=0.1
-                )
-            except queue.Empty:
-                if progress_display is not None:
-                    progress_display.update()
-                continue
+
+        def handle_progress_update(
+            problem_name: str,
+            agent_usage: UsageTracker,
+            metrics_tracker: MetricsTracker,
+        ) -> None:
             problem_states.handle_update(
                 problem_name, agent_usage, metrics_tracker
             )
+            progress_state = AgentStateEnum(metrics_tracker.state)
             net_cost = metrics_tracker.usage.cost + (agent_usage.cost or 0.0)
 
             logger.info(
                 f"'{problem_name}': progress update",
-                state=metrics_tracker.state.value,
+                state=progress_state.value,
                 checkpoint=metrics_tracker.current_checkpoint,
                 elapsed=(
                     datetime.now() - metrics_tracker.started
@@ -207,8 +205,25 @@ def _run_problems(
                 f"{sum(not future.done() for future in futures)} problem(s) "
                 "alive"
             )
+
+        def refresh_progress_display() -> None:
             if progress_display is not None:
                 progress_display.update()
+
+        while not all(future.done() for future in futures):
+            try:
+                handle_progress_update(*progress_queue.get(timeout=0.1))
+            except queue.Empty:
+                refresh_progress_display()
+                continue
+            refresh_progress_display()
+
+        while True:
+            try:
+                handle_progress_update(*progress_queue.get_nowait())
+            except queue.Empty:
+                break
+        refresh_progress_display()
 
         return [future.result() for future in futures]
 

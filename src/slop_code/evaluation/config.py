@@ -18,6 +18,7 @@ can focus on execution rather than schema management.
 from __future__ import annotations
 
 from collections.abc import Generator
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal, Self
 
@@ -88,6 +89,30 @@ class MarkerConfig(BaseModel):
 
     description: str = Field(description="Marker description for pytest.ini")
     group: GroupType = Field(description="GroupType this marker maps to")
+
+
+def classify_test_group(
+    *,
+    test_checkpoint: str,
+    current_checkpoint: str,
+    markers: Iterable[str],
+    custom_markers: dict[str, MarkerConfig],
+) -> GroupType:
+    """Classify a test with precedence shared by collection and execution."""
+    if test_checkpoint != current_checkpoint:
+        return GroupType.REGRESSION
+    marker_names = tuple(markers)
+    marker_set = set(marker_names)
+    if "error" in marker_set:
+        return GroupType.ERROR
+    if "regression" in marker_set:
+        return GroupType.REGRESSION
+    for marker, marker_config in custom_markers.items():
+        if marker in marker_set:
+            return GroupType(marker_config.group)
+    if "functionality" in marker_set:
+        return GroupType.FUNCTIONALITY
+    return GroupType.CORE
 
 
 class BaseConfig(BaseModel):

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-c79ab5abca-2_f80d1fce6f",
+  "featureId": "feat_test-suite_c79ab5abca",
+  "title": "Errors axis labels a percentage as a total count",
+  "category": "bug",
+  "severity": "low",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/graphs/test_pass.py",
+      "startLine": 73,
+      "endLine": 87,
+      "symbol": "get_test_stats",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/graphs/test_pass.py",
+      "startLine": 122,
+      "endLine": 147,
+      "symbol": "build_test_pass_rate_bars",
+      "quote": null
+    }
+  ],
+  "reasoning": "The Errors panel plots the mean of error_passed / error_total multiplied by 100, but its axis reads 'Total Errors'. A value of 50 therefore describes a pass percentage while the chart presents it as an error count, reversing the likely interpretation of whether larger values are better.",
+  "reproduction": "Supply one checkpoint with error_passed=1 and error_total=2. The Errors panel displays 50 on an axis labeled 'Total Errors'.",
+  "recommendation": "Label the Errors axis as a pass percentage, consistent with the computed values and chart title.",
+  "whyTestsDoNotAlreadyCoverThis": "No supplied tests check that panel axis units agree with the plotted statistics.",
+  "suggestedRegressionTest": "Verify across all panels that plotted pass percentages and axis units agree, including the error-test panel.",
+  "minimumFixScope": "The Errors panel axis title and chart unit-consistency coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T203253-405425",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and calculation still exist: line 73 computes pass percentages, and lines 140–142 now label the Errors axis 'Avg Pass %'. Existing coverage at tests/dashboard/graphs/quality_test.py:249 checks that label. No 'Total Errors' references remain in the searched dashboard code/tests, and no linked patch attempts were supplied. The code supports the repair, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory; therefore fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/graphs/test_pass.py | sed -n '60,160p'",
+        "rg -n 'Total Errors|Avg Pass %|build_test_pass_rate_bars' tests src/slop_code/dashboard",
+        "sed -n '180,265p' tests/dashboard/graphs/quality_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/graphs/quality_test.py"
+      ],
+      "createdAt": "2026-09-12T20:33:18.929Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified Errors and all other panels label plotted pass percentages with percentage units; 7 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:33:59.745Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-c79ab5abca_2022fee656",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:01:04.413Z",
+  "updatedAt": "2026-09-12T20:33:59.745Z"
+}

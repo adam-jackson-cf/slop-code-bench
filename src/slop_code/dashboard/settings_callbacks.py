@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from dash import ALL
 from dash import ClientsideFunction
@@ -38,11 +37,18 @@ def _manage_run_selection_logic(
     Extracted logic for manage_run_selection to facilitate testing.
     'ctx' is passed explicitly.
     """
-    # Use rsplit to only split off the property (e.g. '.value') from the end
-    # This preserves dots inside the JSON ID (like "gpt-5.2")
     triggered_id = (
         ctx.triggered[0]["prop_id"].rsplit(".", 1)[0] if ctx.triggered else None
     )
+    triggered_component: dict[str, object] | None = None
+    if triggered_id:
+        try:
+            decoded_id = json.loads(triggered_id)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(decoded_id, dict):
+                triggered_component = decoded_id
 
     if not all_runs:
         return [], [], no_update
@@ -89,31 +95,26 @@ def _manage_run_selection_logic(
     elif triggered_id == "deselect-all-button":
         new_selection = []
 
-    elif triggered_id and "group-select-switch" in triggered_id:
-        # Parse triggered index (parent directory name)
-        try:
-            triggered_idx = json.loads(triggered_id)["index"]
-        except (json.JSONDecodeError, KeyError):
-            triggered_idx = None
-
-        # Get the value from the context
+    elif (
+        triggered_component
+        and triggered_component.get("type") == "group-select-switch"
+    ):
+        model_name = triggered_component.get("index")
         is_selected = ctx.triggered[0]["value"]
 
-        if triggered_idx:
-            # Find runs in this group
-            group_runs = [
-                r
-                for r in visible_runs
-                if Path(r["value"]).parent.name == triggered_idx
+        if isinstance(model_name, str) and model_name:
+            matching_runs = [
+                run
+                for run in visible_runs
+                if run.get("model_name") == model_name
             ]
-            group_ids = {r["value"] for r in group_runs}
-
+            matching_ids = {run["value"] for run in matching_runs}
             current_sel_set = set(current_selection or [])
 
             if is_selected:
-                new_selection = list(current_sel_set.union(group_ids))
+                new_selection = list(current_sel_set.union(matching_ids))
             else:
-                new_selection = list(current_sel_set - group_ids)
+                new_selection = list(current_sel_set - matching_ids)
         else:
             new_selection = (
                 current_selection
@@ -121,31 +122,28 @@ def _manage_run_selection_logic(
                 else visible_run_values
             )
 
-    elif triggered_id and "subgroup-select-switch" in triggered_id:
-        try:
-            triggered_idx = json.loads(triggered_id)["index"]  # "Parent|Prompt"
-            parts = triggered_idx.split("|")
-            parent_part = parts[0]
-            prompt_part = parts[1] if len(parts) > 1 else "Unknown"
-        except (json.JSONDecodeError, KeyError, IndexError):
-            triggered_idx = None
-
+    elif (
+        triggered_component
+        and triggered_component.get("type") == "subgroup-select-switch"
+    ):
+        subgroup_index = triggered_component.get("index")
         is_selected = ctx.triggered[0]["value"]
 
-        if triggered_idx:
-            group_runs = [
-                r
-                for r in visible_runs
-                if Path(r["value"]).parent.name == parent_part
-                and r.get("prompt_template", "Unknown") == prompt_part
+        if isinstance(subgroup_index, str) and "|" in subgroup_index:
+            model_name, prompt_template = subgroup_index.rsplit("|", 1)
+            matching_runs = [
+                run
+                for run in visible_runs
+                if run.get("model_name") == model_name
+                and run.get("prompt_template", "Unknown") == prompt_template
             ]
-            group_ids = {r["value"] for r in group_runs}
+            matching_ids = {run["value"] for run in matching_runs}
             current_sel_set = set(current_selection or [])
 
             if is_selected:
-                new_selection = list(current_sel_set.union(group_ids))
+                new_selection = list(current_sel_set.union(matching_ids))
             else:
-                new_selection = list(current_sel_set - group_ids)
+                new_selection = list(current_sel_set - matching_ids)
         else:
             new_selection = (
                 current_selection
@@ -153,7 +151,10 @@ def _manage_run_selection_logic(
                 else visible_run_values
             )
 
-    elif triggered_id and triggered_id.startswith('{"index"'):
+    elif (
+        triggered_component
+        and triggered_component.get("type") == "run-selector"
+    ):
         # Triggered by run selector (individual checkbox)
         # Flatten list of lists
         new_selection = [

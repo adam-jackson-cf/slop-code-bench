@@ -189,14 +189,20 @@ class CursorCliAgent(Agent):
         if payload.get("type") != "result":
             return None, None, payload
 
-        usage = payload.get("usage") or {}
-        tokens = TokenUsage(
-            input=int(usage.get("inputTokens") or 0),
-            output=int(usage.get("outputTokens") or 0),
-            cache_read=int(usage.get("cacheReadTokens") or 0),
-            cache_write=int(usage.get("cacheWriteTokens") or 0),
-            reasoning=0,
-        )
+        usage = payload.get("usage")
+        if not isinstance(usage, dict):
+            return None, None, payload
+
+        try:
+            tokens = TokenUsage(
+                input=int(usage.get("inputTokens") or 0),
+                output=int(usage.get("outputTokens") or 0),
+                cache_read=int(usage.get("cacheReadTokens") or 0),
+                cache_write=int(usage.get("cacheWriteTokens") or 0),
+                reasoning=0,
+            )
+        except (TypeError, ValueError):
+            return None, None, payload
         cost = pricing.get_cost(tokens) if pricing else 0.0
         return cost, tokens, payload
 
@@ -303,7 +309,7 @@ class CursorCliAgent(Agent):
             raise AgentError(
                 "CursorCliAgent has not been set up with a session"
             )
-        command_text = " ".join(command)
+        command_text = shlex.join(command)
         self._last_command_text = command_text
         parser = functools.partial(self.parse_line, pricing=self.pricing)
 
@@ -399,7 +405,6 @@ class CursorCliAgent(Agent):
 
     def _build_command(self, prompt: str) -> list[str]:
         command = [
-            'export PATH="$HOME/.local/bin:$PATH";',
             self.binary,
             "--yolo",
             "--print",
@@ -412,7 +417,7 @@ class CursorCliAgent(Agent):
             command.append(f"--mode={self.mode}")
 
         command.extend(self.extra_args)
-        command.extend(["--", shlex.quote(prompt)])
+        command.extend(["--", prompt])
         return command
 
     @classmethod

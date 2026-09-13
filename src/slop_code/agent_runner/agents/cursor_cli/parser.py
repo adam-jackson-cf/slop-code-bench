@@ -36,6 +36,8 @@ class CursorCliParser(TrajectoryParser):
                         event = json.loads(line)
                     except json.JSONDecodeError:
                         continue
+                    if not isinstance(event, dict):
+                        continue
                     if (
                         event.get("type") == "system"
                         and event.get("subtype") == "init"
@@ -67,6 +69,11 @@ class CursorCliParser(TrajectoryParser):
                 except json.JSONDecodeError as e:
                     raise ParseError(f"Invalid JSON at line {line_num}: {e}")
 
+                if not isinstance(event, dict):
+                    raise ParseError(
+                        f"Invalid record at line {line_num}: expected object"
+                    )
+
                 event_type = event.get("type")
 
                 if event_type == "system" and event.get("subtype") == "init":
@@ -85,21 +92,33 @@ class CursorCliParser(TrajectoryParser):
                     continue
 
                 if event_type == "assistant":
-                    message = event.get("message", {})
-                    content_blocks = message.get("content", [])
-                    if isinstance(content_blocks, list):
-                        text_parts = []
-                        for block in content_blocks:
-                            if not isinstance(block, dict):
-                                continue
-                            if block.get("type") != "text":
-                                continue
-                            text = block.get("text")
-                            if isinstance(text, str):
-                                text_parts.append(text)
-                        text = "".join(text_parts).strip()
-                        if text:
-                            steps.append(AgentStep(content=text))
+                    message = event.get("message")
+                    if not isinstance(message, dict):
+                        raise ParseError(
+                            f"Invalid assistant message at line {line_num}: "
+                            "expected object"
+                        )
+                    content_blocks = message.get("content")
+                    if not isinstance(content_blocks, list):
+                        raise ParseError(
+                            f"Invalid assistant message content at line "
+                            f"{line_num}: expected array"
+                        )
+                    text_parts = []
+                    for block in content_blocks:
+                        if not isinstance(block, dict):
+                            raise ParseError(
+                                f"Invalid assistant message content at line "
+                                f"{line_num}: expected objects"
+                            )
+                        if block.get("type") != "text":
+                            continue
+                        text = block.get("text")
+                        if isinstance(text, str):
+                            text_parts.append(text)
+                    text = "".join(text_parts).strip()
+                    if text:
+                        steps.append(AgentStep(content=text))
                     continue
 
                 if (

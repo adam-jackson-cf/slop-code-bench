@@ -24,35 +24,31 @@ def _decode_node_text(node: Node) -> str:
     return text.decode("utf-8")
 
 
-def _parse_import_statement(node: Node) -> ImportInfo | None:
-    """Parse 'import X' or 'import X.Y' or 'import X as Y' statements.
-
-    Args:
-        node: The import_statement tree-sitter node.
-
-    Returns:
-        ImportInfo or None if parsing fails.
-    """
+def _parse_import_statement(node: Node) -> list[ImportInfo]:
+    """Parse every module in an ``import`` statement."""
+    imports: list[ImportInfo] = []
     for child in node.children:
-        if child.type == "dotted_name":
-            return ImportInfo(
-                module_path=_decode_node_text(child),
-                is_relative=False,
-                relative_level=0,
-                imported_names=[],
-                line=node.start_point[0] + 1,
-            )
+        module_node = child
         if child.type == "aliased_import":
-            for subchild in child.children:
-                if subchild.type == "dotted_name":
-                    return ImportInfo(
-                        module_path=_decode_node_text(subchild),
-                        is_relative=False,
-                        relative_level=0,
-                        imported_names=[],
-                        line=node.start_point[0] + 1,
-                    )
-    return None
+            module_node = next(
+                (
+                    subchild
+                    for subchild in child.children
+                    if subchild.type == "dotted_name"
+                ),
+                child,
+            )
+        if module_node.type == "dotted_name":
+            imports.append(
+                ImportInfo(
+                    module_path=_decode_node_text(module_node),
+                    is_relative=False,
+                    relative_level=0,
+                    imported_names=[],
+                    line=node.start_point[0] + 1,
+                )
+            )
+    return imports
 
 
 def _parse_relative_import(node: Node) -> tuple[int, str | None]:
@@ -131,9 +127,7 @@ def _extract_imports_from_node(node: Node, imports: list[ImportInfo]) -> None:
     """
     for child in node.children:
         if child.type == "import_statement":
-            result = _parse_import_statement(child)
-            if result:
-                imports.append(result)
+            imports.extend(_parse_import_statement(child))
         elif child.type == "import_from_statement":
             result = _parse_import_from_statement(child)
             if result:
@@ -301,26 +295,42 @@ def _resolve_absolute_import(
     return results
 
 
+def _package_initializers(resolved: Path, snapshot_dir: Path) -> list[Path]:
+    """Return regular-package initializers executed before ``resolved``."""
+    initializers: list[Path] = []
+    directory = (
+        resolved.parent
+        if resolved.name != "__init__.py"
+        else resolved.parent.parent
+    )
+    while directory.is_relative_to(snapshot_dir):
+        initializer = directory / "__init__.py"
+        if initializer.exists():
+            initializers.append(initializer)
+        if directory == snapshot_dir:
+            break
+        directory = directory.parent
+    return initializers
+
+
 def _resolve_import(
     import_info: ImportInfo,
     importing_file: Path,
     snapshot_dir: Path,
 ) -> list[Path]:
-    """Resolve an import to file path(s) within the snapshot.
-
-    Args:
-        import_info: The import information.
-        importing_file: Path to the file containing the import.
-        snapshot_dir: Root directory of the snapshot.
-
-    Returns:
-        List of resolved file paths.
-    """
+    """Resolve an import and its executed package initializers."""
     if import_info.is_relative:
-        return _resolve_relative_import(
+        resolved = _resolve_relative_import(
             import_info, importing_file, snapshot_dir
         )
-    return _resolve_absolute_import(import_info, snapshot_dir)
+    else:
+        resolved = _resolve_absolute_import(import_info, snapshot_dir)
+
+    paths: list[Path] = []
+    for path in resolved:
+        paths.extend(_package_initializers(path, snapshot_dir))
+        paths.append(path)
+    return list(dict.fromkeys(paths))
 
 
 def trace_source_files(

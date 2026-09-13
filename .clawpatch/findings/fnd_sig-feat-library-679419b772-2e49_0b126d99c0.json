@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-679419b772-2e49_0b126d99c0",
+  "featureId": "feat_library_679419b772",
+  "title": "Checkpoints with no category tests lower the evolution pass rate",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/pages/run_analysis_tests.py",
+      "startLine": 140,
+      "endLine": 150,
+      "symbol": "update_tests",
+      "quote": null
+    }
+  ],
+  "reasoning": "Replacing a zero test total with 1 turns a checkpoint with no tests in a category into a 0% pass-rate observation. The subsequent bin mean counts this as failure, lowering the displayed rate even though no tests failed. This also conflicts with the bar calculation, where zero-total, zero-passed rows do not affect an otherwise populated category's rate.",
+  "reproduction": "Place two checkpoints from different problems in the same progress bin: one has 10 passed out of 10 category tests and the other has 0 out of 0. The evolution chart displays 50%, while the category bar displays 100%.",
+  "recommendation": "Treat zero-total category rates as unavailable and exclude them from bin means. Preserve an unavailable state for bins with no evaluated tests.",
+  "whyTestsDoNotAlreadyCoverThis": "No linked tests were supplied, so coverage of categories absent from some checkpoints cannot be established.",
+  "suggestedRegressionTest": "Cover progress bins containing evaluated suites, empty suites, and mixtures. Adding a checkpoint with no category tests must not change that category's measured pass rate.",
+  "minimumFixScope": "Per-row rate calculation and bin aggregation in update_tests, with focused behavioral coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T204057-9df608",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path still exists. Current lines 144–151 assign NaN to zero-total category rates and exclude them from bin means, preserving unavailable bins; this supports the intended repair. Existing tests/dashboard/pages_test.py covers evaluated and empty-only bins. However, targeted pytest validation failed before collection because the read-only environment has no writable temporary directory, and the additional mixed-bin check could not execute. No linked patch attempts or validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/pages/run_analysis_tests.py | sed -n '90,175p'",
+        "rg -n 'evolution|update_tests|empty.suite|zero.total' tests/dashboard",
+        "sed -n '1,105p' tests/dashboard/pages_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/pages_test.py -k test_rates",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python - <<'PY' [mixed-bin validation script; shell rejected heredoc temporary-file creation]"
+      ],
+      "createdAt": "2026-09-12T20:41:30.291Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified zero-total category rates remain unavailable and are excluded from bin means without changing measured rates; 5 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:42:40.677Z"
+    }
+  ],
+  "signature": "sig_feat-library-679419b772_2e4973c51d",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:18.804Z",
+  "updatedAt": "2026-09-12T20:42:40.676Z"
+}

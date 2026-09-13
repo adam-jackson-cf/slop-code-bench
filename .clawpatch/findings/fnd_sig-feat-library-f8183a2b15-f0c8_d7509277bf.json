@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-f8183a2b15-f0c8_d7509277bf",
+  "featureId": "feat_library_f8183a2b15",
+  "title": "Synchronous grading fails when called inside a running event loop",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/grade.py",
+      "startLine": 60,
+      "endLine": 74,
+      "symbol": "_run_async",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/grade.py",
+      "startLine": 411,
+      "endLine": 428,
+      "symbol": "llm_judge_snapshot",
+      "quote": null
+    }
+  ],
+  "reasoning": "The running-loop branch creates another event loop in the same thread and calls run_until_complete. Python prohibits running a second event loop while another loop is running in that thread, so this branch always raises RuntimeError instead of performing grading. The supplied coroutine also remains unawaited. This breaks synchronous snapshot grading invoked from notebooks or async applications despite the helper explicitly claiming to handle that context.",
+  "reproduction": "Inside an async function executed by asyncio.run, call _run_async with a trivial coroutine. It raises RuntimeError: Cannot run the event loop while another loop is running.",
+  "recommendation": "Provide an awaitable snapshot-grading entrypoint for async callers, or execute the synchronous bridge in a separate thread with its own event loop.",
+  "whyTestsDoNotAlreadyCoverThis": "The included grading tests await the lower-level grade_file_async functions directly; none exercise _run_async or llm_judge_snapshot inside an active event loop.",
+  "suggestedRegressionTest": "Cover grading invocation from both ordinary synchronous code and an active event loop, checking result propagation, exception propagation, and coroutine cleanup.",
+  "minimumFixScope": "src/slop_code/metrics/grade.py async bridge and snapshot-grading API tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200117-354d97",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path still exists. _run_async at grade.py:61–86 now runs the coroutine in a separate worker thread when a loop is active, addressing the original nested-loop defect. llm_judge_snapshot still uses this bridge at lines 423–441. Three focused tests now cover synchronous results, active-loop results, and exception propagation. However, targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/grade.py | sed -n '60,90p;414,449p'",
+        "rg -n '_run_async|running_loop|running_event_loop' tests/metrics",
+        "cat tests/metrics/grade_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/grade_test.py"
+      ],
+      "createdAt": "2026-09-12T20:01:41.248Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified synchronous grading works inside and outside active event loops with exception propagation; 123 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:59.410Z"
+    }
+  ],
+  "signature": "sig_feat-library-f8183a2b15_f0c819706c",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:40.733Z",
+  "updatedAt": "2026-09-12T20:03:59.410Z"
+}

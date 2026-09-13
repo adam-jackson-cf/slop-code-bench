@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-55341e0286-dcbb_47b9134faf",
+  "featureId": "feat_library_55341e0286",
+  "title": "JSONL detection accepts action events that parsing silently discards",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/openhands/parser.py",
+      "startLine": 69,
+      "endLine": 80,
+      "symbol": "OpenHandsParser._is_openhands_jsonl",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/openhands/parser.py",
+      "startLine": 244,
+      "endLine": 258,
+      "symbol": "OpenHandsParser._process_event",
+      "quote": null
+    }
+  ],
+  "reasoning": "Format detection accepts an event containing action without is_step, but processing immediately drops every event without a truthy is_step. A directory containing action-only JSONL events therefore passes can_parse and returns an empty trajectory without an error.",
+  "reproduction": "Use an events.jsonl containing {\"action\":\"run\",\"args\":{\"command\":\"pwd\"}}. can_parse returns true, while parse produces no steps.",
+  "recommendation": "Make detection and processing share an explicit event contract, including processing supported action events when is_step is absent.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included that verify detection and parsing agree for accepted JSONL event forms.",
+  "suggestedRegressionTest": "Exercise supported action events with and without is_step and verify that accepted actionable events produce their corresponding trajectory steps.",
+  "minimumFixScope": "OpenHandsParser JSONL detection and event processing.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193624-1a51c9",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists. Detection at lines 69–92 and processing now at lines 258–328 share _has_supported_action; action-only run events now produce bash steps. An existing test at tests/agent_runner/agents/openhands_agent_test.py:289 covers eight action forms without is_step. This supports a repair, but targeted pytest validation exited 1 before collection because the read-only environment provided no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "nl -ba src/slop_code/agent_runner/agents/openhands/parser.py | sed -n '65,100p;250,350p'",
+        "rg -n 'supported_action|is_step|jsonl' tests/agent_runner -g '*openhands*'",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "sed -n '240,345p' tests/agent_runner/agents/openhands_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/openhands_agent_test.py -k parser_processes_action_events_without_is_step"
+      ],
+      "createdAt": "2026-09-12T19:36:55.592Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified detected action events are parsed rather than discarded; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:37:36.358Z"
+    }
+  ],
+  "signature": "sig_feat-library-55341e0286_dcbb92b9a0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:33.029Z",
+  "updatedAt": "2026-09-12T19:37:36.358Z"
+}

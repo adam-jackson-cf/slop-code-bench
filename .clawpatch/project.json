@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "projectId": "prj_https-github-com-adam-jackson-cf_714aae97a9",
+  "name": "slop-code-bench",
+  "rootPath": "/Users/adamjackson/Projects/inflight/slop-code-bench",
+  "git": {
+    "remoteUrl": "https://github.com/adam-jackson-cf/slop-code-bench",
+    "defaultBranch": "main",
+    "currentBranch": "main",
+    "headSha": "613c39c80ff562735835cc7dae1b5e8eacd5e35b"
+  },
+  "detected": {
+    "languages": [
+      "python"
+    ],
+    "frameworks": [
+      "flask",
+      "pytest"
+    ],
+    "packageManagers": [
+      "uv",
+      "hatch"
+    ],
+    "commands": {
+      "typecheck": "uv run pyright",
+      "lint": "uv run ruff check .",
+      "format": "uv run ruff format --check .",
+      "test": "uv run pytest"
+    }
+  },
+  "createdAt": "2026-09-11T10:54:10.075Z",
+  "updatedAt": "2026-09-11T10:54:10.075Z"
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from slop_code.common.llms import APIPricing
 from slop_code.common.llms import ModelDefinition
 from slop_code.execution import DockerConfig
 from slop_code.execution import DockerEnvironmentSpec
+from slop_code.execution import Session
 from slop_code.execution.runtime import RuntimeEvent
 from slop_code.execution.runtime import RuntimeResult
 
@@ -136,7 +138,7 @@ class TestCodexConfig:
     def test_version_is_required(self, mock_cost_limits):
         """Version field is required for docker template."""
         with pytest.raises(Exception):  # Pydantic validation error
-            CodexConfig(
+            CodexConfig(  # type: ignore[missing-argument]
                 type="codex",
                 cost_limits=mock_cost_limits,
                 # Missing version
@@ -235,7 +237,7 @@ class TestCodexAgent:
         with pytest.raises(Exception):
             _ = agent.session
 
-        agent.setup(session)
+        agent.setup(cast(Session, session))
 
         # After setup, session should be accessible
         assert agent.session == session
@@ -266,7 +268,7 @@ class TestCodexAgent:
             env={},
         )
 
-        agent.setup(session)
+        agent.setup(cast(Session, session))
 
         # Set some state
         agent._last_prompt = "some prompt"
@@ -277,9 +279,7 @@ class TestCodexAgent:
         assert agent._last_prompt == ""
         assert agent._last_command is None
 
-    def test_build_command_basic(
-        self, tmp_path, mock_cost_limits, mock_pricing
-    ):
+    def test_build_command_basic(self, mock_cost_limits, mock_pricing):
         """_build_command creates correct base command."""
         agent = CodexAgent(
             problem_name="test-problem",
@@ -301,7 +301,7 @@ class TestCodexAgent:
 
         assert command[0] == "codex"
         assert command[1] == "exec"
-        assert "'do something'" in command  # shlex.quote wraps prompt
+        assert command[2] == "do something"
         assert "--skip-git-repo-check" in command
         assert "--json" in command
         assert "--dangerously-bypass-approvals-and-sandbox" in command
@@ -402,6 +402,32 @@ class TestCodexAgent:
         assert "--custom-flag" in command
         assert "value" in command
 
+    def test_build_command_round_trips_complex_arguments(
+        self, mock_cost_limits, mock_pricing
+    ):
+        """Shell serialization preserves each raw Codex CLI argument."""
+        prompt = "summarize 'quoted' text\nthen preserve \"double quotes\""
+        agent = CodexAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+            cost_limits=mock_cost_limits,
+            pricing=mock_pricing,
+            credential=None,
+            binary="codex",
+            model=None,
+            timeout=None,
+            thinking=None,
+            max_thinking_tokens=None,
+            extra_args=["--config", 'title="quoted value"', "--label=a b"],
+            env={},
+        )
+
+        command = agent._build_command(prompt)
+
+        assert command[2] == prompt
+        assert shlex.split(shlex.join(command)) == command
+
     def test_save_artifacts_writes_files(
         self, tmp_path, mock_cost_limits, mock_pricing
     ):
@@ -425,7 +451,7 @@ class TestCodexAgent:
             env={},
         )
 
-        agent.setup(session)
+        agent.setup(cast(Session, session))
         agent._last_prompt = "test prompt"
 
         output_dir = tmp_path / "artifacts"
@@ -536,7 +562,7 @@ class TestCodexAgent:
             env={},
         )
 
-        agent.setup(session)
+        agent.setup(cast(Session, session))
         agent.run("do something")
 
         assert agent.usage.cost == pytest.approx(1.25)
@@ -544,6 +570,63 @@ class TestCodexAgent:
         assert agent.usage.net_tokens.output == 50
         assert agent.usage.net_tokens.cache_read == 25
         assert agent.usage.net_tokens.reasoning == 10
+
+    def test_sync_usage_only_accounts_cumulative_deltas(
+        self, mock_cost_limits, mock_pricing
+    ):
+        """Resumed total usage is charged only after its prior total."""
+        agent = CodexAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+            cost_limits=mock_cost_limits,
+            pricing=mock_pricing,
+            credential=None,
+            binary="codex",
+            model=None,
+            timeout=None,
+            thinking=None,
+            max_thinking_tokens=None,
+            extra_args=[],
+            env={},
+        )
+
+        agent._sync_usage(
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cached_input_tokens": 25,
+                "reasoning_tokens": 10,
+                "reported_cost_present": 1,
+                "reported_cost_micros": 1_250_000,
+            }
+        )
+        agent._sync_usage(
+            {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cached_input_tokens": 25,
+                "reasoning_tokens": 10,
+                "reported_cost_present": 1,
+                "reported_cost_micros": 1_250_000,
+            }
+        )
+        agent._sync_usage(
+            {
+                "input_tokens": 150,
+                "output_tokens": 70,
+                "cached_input_tokens": 35,
+                "reasoning_tokens": 15,
+                "reported_cost_present": 1,
+                "reported_cost_micros": 1_750_000,
+            }
+        )
+
+        assert agent.usage.cost == pytest.approx(1.75)
+        assert agent.usage.net_tokens.input == 150
+        assert agent.usage.net_tokens.output == 70
+        assert agent.usage.net_tokens.cache_read == 35
+        assert agent.usage.net_tokens.reasoning == 15
 
     def test_run_uses_codex_trace_token_count_when_stdout_lacks_reasoning(
         self, tmp_path, mock_cost_limits, mock_pricing
@@ -599,7 +682,7 @@ class TestCodexAgent:
             env={},
         )
 
-        agent.setup(session)
+        agent.setup(cast(Session, session))
         assert agent._trace_dir is not None
         trace_file = agent._trace_dir / "rollout.jsonl"
         trace_file.write_text(
@@ -663,7 +746,7 @@ class TestCodexAgent:
             env={},
         )
 
-        agent.setup(session)
+        agent.setup(cast(Session, session))
         assert agent._trace_dir is not None
         trace_dir = agent._trace_dir / "traces"
         trace_dir.mkdir(parents=True, exist_ok=True)
@@ -708,7 +791,7 @@ class TestCodexAgent:
             env={},
         )
 
-        agent.setup(session)
+        agent.setup(cast(Session, session))
 
         assert session.last_spawn_env_vars is not None
         assert session.last_spawn_env_vars.get("HOME") == HOME_PATH
@@ -758,10 +841,10 @@ class TestCodexAgent:
             for event, kwargs in logger.debug_calls
         )
 
-    def test_save_artifacts_only_copies_new_codex_trace_files_between_checkpoints(
+    def test_save_artifacts_copies_new_and_appended_codex_trace_events(
         self, tmp_path, mock_cost_limits, mock_pricing
     ):
-        """Later checkpoints should only save newly created Codex trace files."""
+        """Later checkpoints export newly appended trace events."""
         agent = CodexAgent(
             problem_name="test-problem",
             verbose=False,
@@ -787,6 +870,8 @@ class TestCodexAgent:
         first_output = tmp_path / "checkpoint_1"
         agent._save_codex_traces(first_output)
         assert (first_output / "trace1.jsonl").exists()
+        appended_event = '{"type":"item.completed"}\n'
+        first_trace.write_text(first_trace.read_text() + appended_event)
 
         agent.reset()
 
@@ -796,7 +881,8 @@ class TestCodexAgent:
         second_output = tmp_path / "checkpoint_2"
         agent._save_codex_traces(second_output)
 
-        assert not (second_output / "trace1.jsonl").exists()
+        saved_appended_trace = second_output / "trace1.jsonl"
+        assert saved_appended_trace.read_text() == appended_event
         saved_new_trace = second_output / "trace2.jsonl"
         assert saved_new_trace.exists()
         assert saved_new_trace.read_text() == second_trace.read_text()

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_test-suite_091e87b9e7",
+  "title": "Python test suite tests/metrics/rubric",
+  "summary": "Python pytest files in tests/metrics/rubric.",
+  "kind": "test-suite",
+  "source": "python-test-suite",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "tests/metrics/rubric",
+      "symbol": "tests/metrics/rubric",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "tests/metrics/rubric/bedrock_grade_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/rubric/carry_forward_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/rubric/driver_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/rubric/grade_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/rubric/llm_grade_test.py",
+      "reason": "pytest file"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/metrics/rubric/bedrock_grade_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/rubric/carry_forward_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/rubric/driver_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/rubric/grade_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/rubric/llm_grade_test.py",
+      "reason": "nearby test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/metrics/rubric/bedrock_grade_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/rubric/carry_forward_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/rubric/driver_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/rubric/grade_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/rubric/llm_grade_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "test"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-test-suite-091e87b9e7-c_94163531c6",
+    "fnd_sig-feat-test-suite-091e87b9e7-b_27d6fbe82d"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "2 finding(s); prompt=61215 bytes; approxTokens=15304; includedFiles=6; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T11:00:00.228Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:15:34.340Z"
+}

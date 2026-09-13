@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a1c6cc683e-723e_aac0f76086",
+  "featureId": "feat_library_a1c6cc683e",
+  "title": "Experiment numbering reads numeric suffixes from ancestor directories",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/utils.py",
+      "startLine": 144,
+      "endLine": 161,
+      "symbol": "get_next_experiment_dir",
+      "quote": null
+    }
+  ],
+  "reasoning": "The suffix regex searches the entire child path, so a matching ancestor takes precedence over the child's experiment number. Under /runs/exp_001, existing children exp_001 and exp_002 both produce ID 1. The function consequently selects exp_002 again, and exist_ok=True silently reuses it instead of creating a new experiment directory.",
+  "reproduction": "Use an experiment_dir ending in exp_001 with children exp_001 and exp_002, then call get_next_experiment_dir. It returns the existing exp_002 directory.",
+  "recommendation": "Match an escaped prefix and numeric suffix against each child's name only, using a full match, and reject an already-existing destination.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied evaluation utils test covers a different module's dictionary merge; no included test exercises experiment-directory numbering.",
+  "suggestedRegressionTest": "Cover numbering under ancestors containing experiment-like names and with varied literal prefixes, asserting every successful allocation creates a previously absent directory.",
+  "minimumFixScope": "get_next_experiment_dir suffix parsing and directory-allocation tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165855-736b5f",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path and lines still exist, but the implementation now supports the repair: src/slop_code/utils.py:135 escapes the prefix, line 147 full-matches child.name, and lines 152–159 retry collisions without exist_ok=True. tests/utils_test.py includes literal-prefix, child-name and concurrent-allocation coverage. No linked patch attempts were supplied. Targeted validation exited 1 before running tests because the read-only environment had no usable temporary directory. The code appears repaired, but failed validation prevents a fixed verdict.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/utils.py | sed -n '120,175p'",
+        "rg -n 'get_next_experiment_dir|experiment.*prefix|ancestor' tests/utils_test.py tests -g '*utils*'",
+        "cat tests/utils_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/utils_test.py"
+      ],
+      "createdAt": "2026-09-11T16:59:16.148Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:59:16.675Z"
+    }
+  ],
+  "signature": "sig_feat-library-a1c6cc683e_723ea173b5",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:19.528Z",
+  "updatedAt": "2026-09-11T16:59:16.674Z"
+}

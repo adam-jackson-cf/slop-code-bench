@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-553e2630dd-b_8830adaa68",
+  "featureId": "feat_test-suite_553e2630dd",
+  "title": "Running-process kill test never verifies termination",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/execution/local_streaming_test.py",
+      "startLine": 378,
+      "endLine": 395,
+      "symbol": "TestLocalStreamingRuntimeKill.test_kill_terminates_running_process",
+      "quote": null
+    }
+  ],
+  "reasoning": "The test calls kill() without asserting that the process is alive beforehand or terminated afterward. Replacing kill() with a no-op can still pass because cleanup runs afterward. Additionally, next() on a silent sleep command with timeout=None does not establish a reliable readiness signal and may wait until the command has already finished.",
+  "reproduction": "Make kill() a no-op: this test contains no termination assertion that would detect the regression.",
+  "recommendation": "Use an explicit readiness event from a long-running child, retain its process handle, assert it is running, invoke kill(), and assert termination within a bounded deadline before cleanup.",
+  "whyTestsDoNotAlreadyCoverThis": "The sibling kill test only checks safety when no process exists. Timeout tests exercise a different entry point and do not establish that explicit kill() terminates an active process.",
+  "suggestedRegressionTest": "Expand this lifecycle scenario to prove readiness and bounded termination, with guaranteed cleanup and explicit stream closure even when assertions fail.",
+  "minimumFixScope": "TestLocalStreamingRuntimeKill.test_kill_terminates_running_process.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170100-84b7eb",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file exists, but lines 378–395 now cover another test. The original symbol moved to lines 443–471 and now checks readiness, asserts the retained process is running, calls kill(), verifies parent and descendant termination within bounded waits before cleanup, and closes output pipes. The runtime supports process-group termination. This appears to address the finding, but targeted pytest validation exited 1 before collection because the read-only environment provided no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba tests/execution/local_streaming_test.py | sed -n '420,480p'",
+        "rg -n 'def kill|def _start_process|def cleanup|terminate' src/slop_code/execution/local_streaming.py",
+        "sed -n '108,148p' src/slop_code/execution/local_streaming.py",
+        "sed -n '250,300p' src/slop_code/execution/local_streaming.py",
+        "nl -ba tests/execution/local_streaming_test.py | sed -n '20,40p;378,395p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q tests/execution/local_streaming_test.py::TestLocalStreamingRuntimeKill::test_kill_terminates_running_process"
+      ],
+      "createdAt": "2026-09-11T17:01:24.537Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:01:25.106Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-553e2630dd_b454952891",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:31.925Z",
+  "updatedAt": "2026-09-11T17:01:25.105Z"
+}

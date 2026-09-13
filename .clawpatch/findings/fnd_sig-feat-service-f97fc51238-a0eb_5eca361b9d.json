@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-service-f97fc51238-a0eb_5eca361b9d",
+  "featureId": "feat_service_f97fc51238",
+  "title": "The loader bypasses raw configuration validation",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/config/loader.py",
+      "startLine": 230,
+      "endLine": 233,
+      "symbol": "_get_thinking_values",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/config/loader.py",
+      "startLine": 432,
+      "endLine": 443,
+      "symbol": "load_run_config",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/config/loader.py",
+      "startLine": 542,
+      "endLine": 559,
+      "symbol": "load_run_config",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/config/run_config.py",
+      "startLine": 52,
+      "endLine": 65,
+      "symbol": "ThinkingConfig",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/config/run_config.py",
+      "startLine": 91,
+      "endLine": 106,
+      "symbol": "RunConfig",
+      "quote": null
+    },
+    {
+      "path": "tests/entrypoints/config/test_run_config.py",
+      "startLine": 35,
+      "endLine": 37,
+      "symbol": "TestThinkingConfig.test_mutual_exclusion",
+      "quote": null
+    },
+    {
+      "path": "tests/entrypoints/config/test_run_config.py",
+      "startLine": 125,
+      "endLine": 127,
+      "symbol": "TestRunConfig.test_rejects_extra_fields",
+      "quote": null
+    }
+  ],
+  "reasoning": "load_run_config never validates the merged input as RunConfig. It extracts selected fields and constructs ResolvedRunConfig, discarding unknown top-level keys and bypassing ThinkingConfig's mutual-exclusion validator. Consequently, misspelled settings silently retain defaults, and a thinking mapping containing both preset and max_tokens is accepted despite the explicitly tested rejection contract. ResolvedRunConfig validates the two thinking fields independently, so it cannot recover that validation.",
+  "reproduction": "With otherwise valid references, load a YAML configuration containing thinking: {preset: high, max_tokens: 10000}; both values reach the resolved configuration. Alternatively, pass cli_overrides=['continue_after_test_failur=true']; the unknown key is discarded and continuation remains false.",
+  "recommendation": "Validate merged top-level keys and thinking configuration before extracting resolved fields, preserving the loader's intentional shorthand and normalization behavior.",
+  "whyTestsDoNotAlreadyCoverThis": "The rejection tests instantiate Pydantic models directly. Loader tests exercise valid thinking presets and valid override names, without checking that loading enforces the same rejection rules.",
+  "suggestedRegressionTest": "Extend loader validation scenarios to reject unknown YAML and override keys, invalid thinking input types, and mutually exclusive thinking settings, while accepting supported preset, token-budget, and empty configurations.",
+  "minimumFixScope": "load_run_config and _get_thinking_values in loader.py, with behavioral coverage in test_loader.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171420-fd768b",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Current evidence paths exist, but loader line references have shifted. loader.py:434 now validates merged input with RunConfig before resolving references; RunConfig forbids extra keys and ThinkingConfig enforces mutual exclusion. _get_thinking_values at lines 218–229 also validates raw strings and mappings. Loader tests now cover unknown YAML/override keys, invalid thinking configurations, and supported configurations. These changes support repair, but targeted pytest validation exited 1 before collection because the read-only environment had no usable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md; nl -ba src/slop_code/entrypoints/config/loader.py | sed -n '218,240p;425,505p'; rg -n 'mutual_exclusion|extra=\"forbid\"|unknown_top_level|thinking_configurations' src/slop_code/entrypoints/config/run_config.py tests/entrypoints/config/test_loader.py tests/entrypoints/config/test_run_config.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/config/test_run_config.py tests/entrypoints/config/test_loader.py tests/entrypoints/config/test_resolvers.py"
+      ],
+      "createdAt": "2026-09-11T17:14:43.398Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:14:44.013Z"
+    }
+  ],
+  "signature": "sig_feat-service-f97fc51238_a0ebc6f87f",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:06.876Z",
+  "updatedAt": "2026-09-11T17:14:44.013Z"
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a1c6cc683e-4b97_5f2cbd27d0",
+  "featureId": "feat_library_a1c6cc683e",
+  "title": "Concurrent experiment allocations can share one output directory",
+  "category": "concurrency",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/utils.py",
+      "startLine": 143,
+      "endLine": 163,
+      "symbol": "get_next_experiment_dir",
+      "quote": null
+    }
+  ],
+  "reasoning": "Directory discovery and creation are separate operations. Concurrent callers can observe the same maximum suffix and both choose the same next path. Because mkdir uses exist_ok=True, both report success and receive the same output directory, allowing independent experiments to mix or overwrite artifacts.",
+  "reproduction": "Synchronize two callers after they enumerate an empty experiment directory. Both select exp_001 and both return successfully with that same path.",
+  "recommendation": "Reserve candidate directories with exclusive mkdir and retry allocation on FileExistsError, or serialize allocation with an interprocess lock.",
+  "whyTestsDoNotAlreadyCoverThis": "No included test invokes get_next_experiment_dir, and there is no concurrent allocation coverage.",
+  "suggestedRegressionTest": "Run multiple synchronized allocators against one parent and assert all successful calls return distinct, newly created directories.",
+  "minimumFixScope": "get_next_experiment_dir reservation logic and concurrent allocation tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165833-5d85fd",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The original path and symbol still exist. src/slop_code/utils.py:152-159 now reserves directories with exclusive mkdir (exist_ok defaults to False), retries with the next suffix on FileExistsError, and returns only after successful creation. Concurrent callers selecting the same candidate therefore cannot both return it. tests/utils_test.py:12 adds eight concurrent allocators and asserts distinct, newly created directories. No linked patch attempts or validation results were supplied. Tests were inspected but not executed because this session permits only filesystem reads; this conclusion is based on the current implementation.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/utils.py | sed -n '120,175p'",
+        "rg -n 'get_next_experiment_dir|concurrent.*alloc' tests src/slop_code --glob '*.py'",
+        "cat tests/utils_test.py"
+      ],
+      "createdAt": "2026-09-11T16:58:54.337Z"
+    }
+  ],
+  "signature": "sig_feat-library-a1c6cc683e_4b972c5e7e",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:19.528Z",
+  "updatedAt": "2026-09-11T16:58:54.337Z"
+}

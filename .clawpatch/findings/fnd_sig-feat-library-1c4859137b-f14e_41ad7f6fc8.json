@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-1c4859137b-f14e_41ad7f6fc8",
+  "featureId": "feat_library_1c4859137b",
+  "title": "MiniSWE setup ignores failed setup commands",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/miniswe.py",
+      "startLine": 593,
+      "endLine": 601,
+      "symbol": "MiniSWEAgent.setup",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/miniswe.py",
+      "startLine": 221,
+      "endLine": 225,
+      "symbol": "ACTION_OBSERVATION_TEMPLATE",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/miniswe.py",
+      "startLine": 551,
+      "endLine": 576,
+      "symbol": "MiniSWEAgent.execute_action",
+      "quote": null
+    }
+  ],
+  "reasoning": "Environment execution returns command output with a returncode, but setup discards each result. A setup command that exits nonzero therefore does not stop subsequent commands or prevent setup from returning successfully. The agent can start against an incompletely prepared environment, confounding benchmark results with infrastructure failures.",
+  "reproduction": "Use an environment whose first setup command returns a nonzero returncode. Observe that setup continues to the next command and returns normally.",
+  "recommendation": "Check every setup command's returncode and raise a setup failure immediately on nonzero status, identifying the failed command without exposing sensitive output.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied test covers an unrelated dictionary merge helper and contains no environment setup failure scenarios.",
+  "suggestedRegressionTest": "Exercise successful setup sequences and failures at different positions. Assert that a failure prevents subsequent commands and propagates to the caller.",
+  "minimumFixScope": "Validate execution results in MiniSWEAgent.setup and add setup lifecycle coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193814-3e1503",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists. setup now checks returncode and immediately raises AgentSetupError at lines 602–607, supporting the intended repair. ACTION_OBSERVATION_TEMPLATE and execute_action remain at lines 222 and 552. Existing setup tests cover failures at all three command positions and assert subsequent commands do not run. However, targeted pytest validation exited 1 before collection because the read-only environment has no writable temporary directory; therefore fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/miniswe.py | sed -n '590,630p'",
+        "rg --files tests/agent_runner | rg 'mini|setup'",
+        "rg -n 'MiniSWE|setup command failed' tests/agent_runner",
+        "nl -ba src/slop_code/agent_runner/agents/miniswe.py | sed -n '221,226p;551,578p'",
+        "cat tests/agent_runner/agents/miniswe_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/miniswe_agent_test.py"
+      ],
+      "createdAt": "2026-09-12T19:38:42.024Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified setup stops immediately on each nonzero command and raises AgentSetupError; focused 12 and aggregate 284 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:21.207Z"
+    }
+  ],
+  "signature": "sig_feat-library-1c4859137b_f14e4c99df",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:51.620Z",
+  "updatedAt": "2026-09-12T19:39:21.207Z"
+}

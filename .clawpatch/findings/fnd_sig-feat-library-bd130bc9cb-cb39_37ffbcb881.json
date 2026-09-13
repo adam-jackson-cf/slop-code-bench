@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bd130bc9cb-cb39_37ffbcb881",
+  "featureId": "feat_library_bd130bc9cb",
+  "title": "One runtime cleanup failure prevents all remaining cleanup",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/session.py",
+      "startLine": 185,
+      "endLine": 206,
+      "symbol": "Session.cleanup",
+      "quote": null
+    },
+    {
+      "path": "tests/execution/session_test.py",
+      "startLine": 62,
+      "endLine": 75,
+      "symbol": "TestSessionInitialization.test_cleanup_calls_runtime_cleanup",
+      "quote": null
+    }
+  ],
+  "reasoning": "Cleanup calls execute sequentially without error isolation. If one runtime cleanup raises, later runtimes and the workspace are never cleaned up. This also occurs during context-manager exit, leaving resources allocated precisely when teardown encounters a failure.",
+  "reproduction": "Register two runtime mocks, make the first cleanup raise, and call session.cleanup(). The second runtime and workspace cleanup methods are not called.",
+  "recommendation": "Attempt cleanup for every runtime and the workspace, then report collected failures while retaining useful context from any original session exception.",
+  "whyTestsDoNotAlreadyCoverThis": "Cleanup tests use successful mocks. The context-manager exception test raises inside the body, not during runtime cleanup.",
+  "suggestedRegressionTest": "Expand cleanup tests with failures at different positions across streaming and execution runtimes, asserting every resource receives a cleanup attempt and errors remain observable.",
+  "minimumFixScope": "Session.cleanup and context-manager teardown error handling.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central E05 verification passed: 67 focused tests, Ruff, and ty are green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:48:29.891Z"
+    }
+  ],
+  "signature": "sig_feat-library-bd130bc9cb_cb398efe52",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:36.106Z",
+  "updatedAt": "2026-09-12T07:48:29.891Z"
+}

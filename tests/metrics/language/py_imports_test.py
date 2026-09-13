@@ -401,6 +401,61 @@ class TestTraceSourceFiles:
         assert Path("pkg/sub/main.py") in result
         assert Path("pkg/utils.py") in result
 
+    def test_dotted_import_traces_parent_initializers(self, tmp_path):
+        """Regular package initializers and their imports are executed."""
+        (tmp_path / "main.py").write_text("import pkg.sub.module\n")
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("import parent_dependency\n")
+        (tmp_path / "parent_dependency.py").write_text("")
+        sub = pkg / "sub"
+        sub.mkdir()
+        (sub / "__init__.py").write_text("import child_dependency\n")
+        (tmp_path / "child_dependency.py").write_text("")
+        (sub / "module.py").write_text("")
+
+        result = trace_source_files(tmp_path / "main.py", tmp_path)
+
+        assert result >= {
+            Path("main.py"),
+            Path("pkg/__init__.py"),
+            Path("pkg/sub/__init__.py"),
+            Path("pkg/sub/module.py"),
+            Path("parent_dependency.py"),
+            Path("child_dependency.py"),
+        }
+
+    def test_dotted_import_allows_namespace_packages(self, tmp_path):
+        """Missing package initializers do not prevent module tracing."""
+        (tmp_path / "main.py").write_text("import namespace.sub.module\n")
+        module_dir = tmp_path / "namespace" / "sub"
+        module_dir.mkdir(parents=True)
+        (module_dir / "module.py").write_text("")
+
+        result = trace_source_files(tmp_path / "main.py", tmp_path)
+
+        assert result == {Path("main.py"), Path("namespace/sub/module.py")}
+
+    def test_comma_separated_imports_match_separate_imports(self, tmp_path):
+        """Every module in a comma-separated import is traced."""
+        (tmp_path / "separate.py").write_text(
+            "import first\nimport second as alias\n"
+        )
+        (tmp_path / "combined.py").write_text("import first, second as alias\n")
+        (tmp_path / "first.py").write_text("import transitive\n")
+        (tmp_path / "second.py").write_text("import transitive\n")
+        (tmp_path / "transitive.py").write_text("")
+
+        parsed = extract_imports(tmp_path / "combined.py")
+        assert [item.module_path for item in parsed] == ["first", "second"]
+
+        separate = trace_source_files(tmp_path / "separate.py", tmp_path)
+        combined = trace_source_files(tmp_path / "combined.py", tmp_path)
+
+        assert separate - {Path("separate.py")} == combined - {
+            Path("combined.py")
+        }
+
 
 # =============================================================================
 # Edge Cases

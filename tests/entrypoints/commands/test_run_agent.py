@@ -11,10 +11,10 @@ import yaml
 
 from slop_code.entrypoints.commands.run_agent import _build_cli_flags
 from slop_code.entrypoints.commands.run_agent import _create_task_config
+from slop_code.entrypoints.commands.run_agent import _discover_problems
 from slop_code.entrypoints.commands.run_agent import (
     _filter_problems_for_execution,
 )
-from slop_code.entrypoints.commands.run_agent import _discover_problems
 from slop_code.entrypoints.commands.run_agent import _get_nested
 from slop_code.entrypoints.commands.run_agent import _handle_early_completion
 from slop_code.entrypoints.commands.run_agent import _handle_resume_validation
@@ -245,10 +245,14 @@ class TestResolveOutputDirectory:
         )
         assert str(tmp_path / "experiments" / "DEBUG_run_123") == str(result)
 
-    def test_debug_prefix_with_simple_path(self):
+    def test_debug_prefix_with_simple_path(self, tmp_path, monkeypatch):
         """Test DEBUG_ prefix with simple path."""
+        monkeypatch.chdir(tmp_path)
         result, existed = _resolve_output_directory("run_123", debug=True)
-        assert str(result) == "DEBUG_run_123"
+        assert existed is False
+        assert result == Path("DEBUG_run_123")
+        assert result.resolve() == tmp_path / "DEBUG_run_123"
+        assert result.is_dir()
 
     def test_preexisted_flag_true(self, tmp_path):
         """Test preexisted flag correctly set when directory exists."""
@@ -616,7 +620,7 @@ class TestCreateTaskConfig:
             model_def=MagicMock(),
             credential=MagicMock(),
             run_cfg=mock_run_cfg,
-            seed=None,
+            seed=17,
             verbosity=0,
             debug=True,
             evaluate=False,  # evaluate=False

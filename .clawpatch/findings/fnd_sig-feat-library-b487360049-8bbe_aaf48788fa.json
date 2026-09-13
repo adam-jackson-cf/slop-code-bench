@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-b487360049-8bbe_aaf48788fa",
+  "featureId": "feat_library_b487360049",
+  "title": "Agent-specific thinking settings bypass the mutually exclusive configuration contract",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/common/llms.py",
+      "startLine": 184,
+      "endLine": 217,
+      "symbol": "ModelDefinition.get_thinking_config",
+      "quote": null
+    },
+    {
+      "path": "tests/agent_runner/llms_test.py",
+      "startLine": 247,
+      "endLine": 310,
+      "symbol": "TestModelDefinitionThinking",
+      "quote": null
+    }
+  ],
+  "reasoning": "Validation rejects simultaneous top-level thinking and max_thinking_tokens, but agent_specific dictionaries bypass that validation. get_thinking_config returns both values unchanged when an agent override specifies both, contradicting its explicit guarantee that at most one is set. Invalid preset values also bypass the declared ThinkingPreset return contract.",
+  "reproduction": "Construct a ModelDefinition with agent_specific={'claude_code': {'thinking': 'high', 'max_thinking_tokens': 10000}}. Construction succeeds and get_thinking_config('claude_code') returns ('high', 10000).",
+  "recommendation": "Validate the recognized thinking fields in each agent override using the same type and mutual-exclusion rules as the top-level configuration.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests reject conflicting top-level settings but only exercise individually valid agent-specific overrides.",
+  "suggestedRegressionTest": "Expand thinking configuration validation scenarios across top-level and agent-specific settings, checking conflicting pairs and invalid presets while preserving valid override precedence.",
+  "minimumFixScope": "Extend ModelDefinition thinking validation and TestModelDefinitionThinking.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171400-82e864",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. get_thinking_config moved to llms.py:236–258; validation at lines 185–234 now checks every agent override for valid presets, integer token limits, and mutual exclusion. Tests at llms_test.py:258–278 cover the original conflict and invalid values. This supports a repair, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory. No linked patch attempts were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/common/llms.py | sed -n '184,280p'; nl -ba tests/agent_runner/llms_test.py | sed -n '230,325p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/llms_test.py::TestModelDefinitionThinking"
+      ],
+      "createdAt": "2026-09-11T17:14:19.701Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:14:20.240Z"
+    }
+  ],
+  "signature": "sig_feat-library-b487360049_8bbee3dbd8",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:11.870Z",
+  "updatedAt": "2026-09-11T17:14:20.239Z"
+}

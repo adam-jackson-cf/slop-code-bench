@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-6150408686-8789_4fb4b29fad",
+  "featureId": "feat_library_6150408686",
+  "title": "Collection silently drops parameterized test IDs containing spaces",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/evaluation/collection.py",
+      "startLine": 266,
+      "endLine": 279,
+      "symbol": "_parse_collect_stdout",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/evaluation/collection.py",
+      "startLine": 495,
+      "endLine": 511,
+      "symbol": "apply_collection_inventory",
+      "quote": null
+    },
+    {
+      "path": "tests/evaluation/coverage_plugin_test.py",
+      "startLine": 24,
+      "endLine": 46,
+      "symbol": "test_plugin_records_exact_parameterized_id_and_phase_outcomes",
+      "quote": null
+    }
+  ],
+  "reasoning": "The parser rejects every line containing a space, including valid parameterized node IDs explicitly supported by the coverage tests. These cases disappear from the collection count and hash. If execution stops before reaching such a case, inventory reconciliation cannot backfill its missing result, undermining complete checkpoint accounting.",
+  "reproduction": "Parse 'tests/test_checkpoint_1.py::test_value[one two]\\n'; the returned inventory is empty. Reconcile an execution that never produced that result; no missing failure is added.",
+  "recommendation": "Collect structured node IDs or parse collection output without rejecting whitespace inside valid node IDs.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied collection tests cover command construction and hash ordering, while whitespace-containing IDs are tested only in the coverage plugin.",
+  "suggestedRegressionTest": "Extend collection scenarios with parameterized IDs containing whitespace and punctuation, and verify exact inventory membership, hashes, and missing-result backfilling.",
+  "minimumFixScope": "Collection output parsing and collection inventory tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193938-27fd14",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Evidence paths still exist. collection.py:267-278 now preserves node IDs containing spaces; the former whitespace rejection is absent. Missing-result backfilling remains at lines 495-511. The coverage test remains at lines 24-46, and collection_test.py:87 adds whitespace/punctuation coverage. Direct execution passed the existing whitespace and hash tests plus the original reproduction, confirming exact ID preservation, inventory count/hash, and failed-result backfilling. An initial heredoc was blocked by sandbox temporary-file restrictions; rerunning with python -c passed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/evaluation/collection.py | sed -n '260,285p;490,535p'",
+        "sed -n '1,170p' tests/evaluation/collection_test.py",
+        "nl -ba tests/evaluation/coverage_plugin_test.py | sed -n '24,46p'",
+        " .venv/bin/python -B -c '<directly execute existing whitespace/hash tests and assert original reproduction, inventory count/hash, and missing-result backfilling>'"
+      ],
+      "createdAt": "2026-09-12T19:40:20.212Z"
+    }
+  ],
+  "signature": "sig_feat-library-6150408686_8789d4a5e0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:21.383Z",
+  "updatedAt": "2026-09-12T19:40:20.212Z"
+}

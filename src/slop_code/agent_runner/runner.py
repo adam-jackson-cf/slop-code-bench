@@ -16,6 +16,7 @@ from slop_code import common
 from slop_code.agent_runner import reporting
 from slop_code.agent_runner.agent import Agent
 from slop_code.agent_runner.agent import CheckpointInferenceResult
+from slop_code.agent_runner.agent import build_prompt_context
 from slop_code.agent_runner.models import AgentRunSpec
 from slop_code.agent_runner.models import UsageTracker
 from slop_code.agent_runner.reporting import AgentCheckpointSummary
@@ -203,12 +204,12 @@ def get_task_for_checkpoint(
         checkpoint=checkpoint_name,
         is_first=is_first_checkpoint,
     )
-    context = {
-        "is_continuation": not is_first_checkpoint,
-        "agent_type": agent_type,
-        "agent_version": agent_version or "",
-        "model_name": model_name,
-    }
+    context = build_prompt_context(
+        is_first_checkpoint=is_first_checkpoint,
+        agent_type=agent_type,
+        agent_version=agent_version,
+        model_name=model_name,
+    )
     prompt = common.render_prompt(
         spec_text=spec_text,
         context=context,
@@ -474,6 +475,13 @@ class AgentRunner:
             checkpoint_started=datetime.now(),
         )
         self.progress_thread: threading.Thread | None = None
+        self._session_acquired = False
+        self._session_exit_attempted = False
+        self._agent_cleanup_attempted = False
+        self._results_save_attempted = False
+        self._finish_completed = False
+        self._finish_error: BaseException | None = None
+        self._final_results: dict[str, Any] | None = None
         self.results: list[AgentCheckpointSummary] = []
         # Concurrent-eval bookkeeping (eval overlaps the next solve).
         # Guards record_checkpoint_result against the background eval thread.
@@ -552,6 +560,7 @@ class AgentRunner:
             problem_config=self.run_spec.problem,
             environment_spec=self.run_spec.environment,
         )
+        self._session_acquired = True
         self._session.__enter__()
 
         # Materialize assets: fresh runs do it explicitly, resume does it in restore_from_snapshot_dir
@@ -626,26 +635,65 @@ class AgentRunner:
             problem=self.run_spec.problem.name,
         )
 
-        self.setup()
+        primary_error: BaseException | None = None
         try:
+            self.setup()
             self.results = self._run_problem()
-        except BaseException as e:  # noqa: BLE001
+        except BaseException as error:  # noqa: BLE001
+            primary_error = error
+            self._record_run_error(error)
+
+        try:
+            final_results = self.finish(primary_error)
+        except BaseException as teardown_error:  # noqa: BLE001
+            if primary_error is None:
+                raise
+            primary_error.add_note(
+                f"Agent run teardown failed: {teardown_error!r}"
+            )
+            raise primary_error from teardown_error
+
+        if primary_error is not None:
+            raise primary_error
+
+        logger.info("Problem run completed", problem=self.run_spec.problem.name)
+        return final_results
+
+    def _record_run_error(self, error: BaseException) -> None:
+        """Record a primary run error without masking it on reporting failure."""
+        try:
             tb_text = traceback.format_exc()
             logger.error(
                 "Error running problem",
                 problem=self.run_spec.problem.name,
-                error_type=type(e).__name__,
-                error_message=str(e),
+                error_type=type(error).__name__,
+                error_message=str(error),
                 traceback=tb_text,
                 exc_info=True,
             )
-            self.metrics_tracker.record_error(e, traceback_text=tb_text)
+            self.metrics_tracker.record_error(error, traceback_text=tb_text)
             self.metrics_tracker.state = AgentStateEnum.ERROR
-            raise
-        finally:
-            results = self.finish()
-        logger.info("Problem run completed", problem=self.run_spec.problem.name)
-        return results
+        except BaseException as record_error:  # noqa: BLE001
+            error.add_note(
+                f"Unable to record agent run error: {record_error!r}"
+            )
+
+    def _collect_teardown_error(
+        self,
+        errors: list[BaseException],
+        operation: str,
+        error: BaseException,
+    ) -> None:
+        """Log and collect a teardown failure without skipping later cleanup."""
+        logger.error(
+            "Agent run teardown failed",
+            problem=self.run_spec.problem.name,
+            operation=operation,
+            error_type=type(error).__name__,
+            error_message=str(error),
+            exc_info=True,
+        )
+        errors.append(error)
 
     def _setup_for_checkpoint(self, checkpoint: CheckpointConfig) -> None:
         # Update agent state for this checkpoint
@@ -666,30 +714,73 @@ class AgentRunner:
         )
         self.agent.finish_checkpoint(reset_context=True)
 
-    def finish(self) -> dict[str, Any]:
-        """Cleanup agent, stop monitoring, save final results."""
+    def finish(
+        self,
+        primary_error: BaseException | None = None,
+    ) -> dict[str, Any]:
+        """Clean up resources and persist results exactly once."""
+        if self._finish_completed:
+            if self._finish_error is not None:
+                raise self._finish_error
+            if self._final_results is None:
+                raise AgentRunnerError("Agent run results were not persisted")
+            return self._final_results
+
         logger.debug("Finishing agent run", problem=self.run_spec.problem.name)
+        errors: list[BaseException] = []
 
-        # Cleanup agent
-        self.agent.cleanup()
+        if not self._agent_cleanup_attempted:
+            self._agent_cleanup_attempted = True
+            try:
+                self.agent.cleanup()
+            except BaseException as error:  # noqa: BLE001
+                self._collect_teardown_error(errors, "agent cleanup", error)
 
-        # Close session
-        if self._session is not None:
-            self._session.__exit__(None, None, None)
+        if self._session_acquired and not self._session_exit_attempted:
+            self._session_exit_attempted = True
+            try:
+                self.session.__exit__(
+                    type(primary_error) if primary_error is not None else None,
+                    primary_error,
+                    (
+                        primary_error.__traceback__
+                        if primary_error is not None
+                        else None
+                    ),
+                )
+            except BaseException as error:  # noqa: BLE001
+                self._collect_teardown_error(errors, "session exit", error)
 
-        # Save final results
-        final_results = reporting.save_results(
-            self.results, self.metrics_tracker, self.run_spec, self.output_path
-        )
+        if not self._results_save_attempted:
+            self._results_save_attempted = True
+            try:
+                self._final_results = reporting.save_results(
+                    self.results,
+                    self.metrics_tracker,
+                    self.run_spec,
+                    self.output_path,
+                )
+            except BaseException as error:  # noqa: BLE001
+                self._collect_teardown_error(
+                    errors, "result persistence", error
+                )
+
+        self._finish_completed = True
+        if errors:
+            self._finish_error = BaseExceptionGroup(
+                "Agent run teardown failed", errors
+            )
+            raise self._finish_error
+        if self._final_results is None:
+            raise AgentRunnerError("Agent run results were not persisted")
 
         logger.info(
             "Agent run finished",
             problem=self.run_spec.problem.name,
             final_state=self.metrics_tracker.state.value,
-            passed=final_results["summary"]["passed_policy"],
+            passed=self._final_results["summary"]["passed_policy"],
         )
-
-        return final_results
+        return self._final_results
 
     def _should_early_stop(self, summary: AgentCheckpointSummary) -> bool:
         did_fail_tests = (

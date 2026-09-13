@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-f758dabed7-e_2b96f9d252",
+  "featureId": "feat_test-suite_f758dabed7",
+  "title": "Several behavioral tests never assert the computed result",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/metrics/language/py_symbols_test.py",
+      "startLine": 447,
+      "endLine": 458,
+      "symbol": "TestCountExpressions.test_nested_expressions",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/language/py_waste_test.py",
+      "startLine": 282,
+      "endLine": 300,
+      "symbol": "TestCallSiteDetection.test_method_call",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/language/py_waste_test.py",
+      "startLine": 434,
+      "endLine": 454,
+      "symbol": "TestWasteEdgeCases.test_decorated_function",
+      "quote": null
+    }
+  ],
+  "reasoning": "These scenarios exercise nested expression counting and waste detection for method calls and decorated functions, but do not check their results. They pass when the relevant counts or classifications are wrong, provided execution does not raise. In particular, the nested-expression test unpacks both counters without asserting either, leaving its stated distinction between top-level and total expressions unprotected.",
+  "reproduction": "For the nested-expression scenario, substitute any two incorrect numeric counts: the test still passes. Likewise, changing the waste classifications returned for the method-call and decorated-function scenarios cannot fail their existing assertions because there are none.",
+  "recommendation": "Extend these existing scenarios with assertions on the intended counters and classifications. Include positive and negative cases so the tests distinguish correct detection from constant or empty results.",
+  "whyTestsDoNotAlreadyCoverThis": "Nearby expression tests only check a lower bound on total expressions; these scenarios do not verify the top-level/total distinction. The cited waste scenarios discard the returned metrics. Other supplied waste tests cover ordinary and recursive functions, but do not assert these method-call and decorated-function outcomes.",
+  "suggestedRegressionTest": "Assert both expression counters for the existing nested fixture, then vary nesting while preserving the total number of calls. Extend the method and decorated-function fixtures across one and multiple call sites and assert the corresponding single-use classifications.",
+  "minimumFixScope": "Existing scenarios in tests/metrics/language/py_symbols_test.py and tests/metrics/language/py_waste_test.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171220-3ef136",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. The nested-expression scenario now asserts both counters at lines 457 and 469. The method scenario checks single-use membership and caller location at lines 303–308, with repeated-call exclusion at line 370. The decorated-function scenario moved to line 462 and checks membership at line 483, with repeated-call exclusion at line 508. These changes address the cited assertion gaps. No linked patch attempts or validation results were supplied. Targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory, so the repair cannot be marked fixed.",
+      "commands": [
+        "nl -ba tests/metrics/language/py_symbols_test.py | sed -n '447,475p'",
+        "nl -ba tests/metrics/language/py_waste_test.py | sed -n '282,385p;465,530p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/language/py_symbols_test.py::TestCountExpressions::test_nested_expressions tests/metrics/language/py_waste_test.py::TestCallSiteDetection::test_method_call tests/metrics/language/py_waste_test.py::TestCallSiteDetection::test_method_called_twice_is_not_single_use tests/metrics/language/py_waste_test.py::TestWasteEdgeCases::test_decorated_function tests/metrics/language/py_waste_test.py::TestWasteEdgeCases::test_decorated_function_called_twice_is_not_single_use"
+      ],
+      "createdAt": "2026-09-11T17:12:47.622Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:12:48.152Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-f758dabed7_e28ba373d0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:01:20.124Z",
+  "updatedAt": "2026-09-11T17:12:48.151Z"
+}

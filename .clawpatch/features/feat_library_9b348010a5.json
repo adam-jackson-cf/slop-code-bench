@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_9b348010a5",
+  "title": "Python source src/slop_code/execution/file_ops",
+  "summary": "Python source group src/slop_code/execution/file_ops with 5 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/execution/file_ops",
+      "symbol": "src/slop_code/execution/file_ops",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/execution/file_ops/__init__.py",
+      "reason": "source group src/slop_code/execution/file_ops"
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/entrypoint.py",
+      "reason": "source group src/slop_code/execution/file_ops"
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/models.py",
+      "reason": "source group src/slop_code/execution/file_ops"
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/raw_files.py",
+      "reason": "source group src/slop_code/execution/file_ops"
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/structured_files.py",
+      "reason": "source group src/slop_code/execution/file_ops"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/metrics/models_test.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/metrics/models_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-9b348010a5-1782_0b712e286e",
+    "fnd_sig-feat-library-9b348010a5-7f2b_790f45bda7",
+    "fnd_sig-feat-library-9b348010a5-cb5e_0204388d60",
+    "fnd_sig-feat-library-9b348010a5-a82d_de049b31b2",
+    "fnd_sig-feat-library-9b348010a5-4dba_f27d4f2ad2"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "5 finding(s); prompt=76632 bytes; approxTokens=19158; includedFiles=7; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:58:13.992Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-11T17:07:21.892Z"
+}

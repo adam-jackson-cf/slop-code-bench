@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-5f1fe93632-e664_d8d8014e63",
+  "featureId": "feat_library_5f1fe93632",
+  "title": "Problem setup failures escape per-problem error handling",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/problem_runner/driver.py",
+      "startLine": 60,
+      "endLine": 77,
+      "symbol": "_run_problem_worker",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/problem_runner/driver.py",
+      "startLine": 113,
+      "endLine": 132,
+      "symbol": "_run_problem_worker",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/problem_runner/driver.py",
+      "startLine": 213,
+      "endLine": 213,
+      "symbol": "_run_problems",
+      "quote": null
+    }
+  ],
+  "reasoning": "Directory creation, logging setup, and problem configuration loading happen before the try block. A missing or invalid problem configuration therefore raises through future.result() and aborts collection of the entire batch instead of producing the structured failure returned for execution errors. Successful sibling results are not returned to the caller.",
+  "reproduction": "Submit a batch containing a valid problem and a problem whose configuration cannot be loaded. The invalid problem's future raises during result collection, preventing run_problems from returning the batch's TaskResult list.",
+  "recommendation": "Include per-problem setup in the worker's exception boundary so setup failures also return a TaskResult with diagnostic information.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied executor test makes every future succeed and never invokes worker setup. Prepopulation tests do not exercise configuration-loading failures.",
+  "suggestedRegressionTest": "Exercise configuration, directory, and logging setup failures alongside a successful sibling and assert that the batch returns one structured result per problem.",
+  "minimumFixScope": "driver.py worker exception boundary and tests/entrypoints/problem_runner/test_driver.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T164900-9142ff",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original path and worker lines still exist, but setup is now inside the try block at driver.py:60–77, with structured failure results returned at lines 113–132. future.result() moved to line 228. Current tests cover directory, logging, and configuration setup failures alongside a successful worker, although not through batch collection. No linked patch attempts were supplied. The code supports the repair, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory; therefore fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/problem_runner/driver.py | sed -n '55,140p'",
+        "nl -ba tests/entrypoints/problem_runner/test_driver.py | sed -n '370,455p'",
+        "nl -ba src/slop_code/entrypoints/problem_runner/driver.py | sed -n '210,235p;295,325p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/problem_runner/test_driver.py"
+      ],
+      "createdAt": "2026-09-11T16:49:42.932Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:52:40.110Z"
+    }
+  ],
+  "signature": "sig_feat-library-5f1fe93632_e664a18aac",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:08.843Z",
+  "updatedAt": "2026-09-11T16:52:40.109Z"
+}

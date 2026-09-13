@@ -86,14 +86,9 @@ class TextHandler(FileHandler):
         """Read text file content."""
         try:
             with open_stream(
-                path, "r", compression=self.compression, encoding="utf-8"
+                path, "rt", compression=self.compression, encoding="utf-8"
             ) as f:
-                result = f.read()
-            if self.compression != Compression.NONE and isinstance(
-                result, bytes
-            ):
-                result = result.decode("utf-8")
-            return result
+                return f.read()
         except FileNotFoundError as e:
             raise InputFileReadError(f"File not found: {path}") from e
 

@@ -93,17 +93,19 @@ def update_tests(run_path):
     avg_pass = []
 
     for cat in cats:
-        passed = (
-            df[f"tests.{cat}.passed"].sum()
-            if f"tests.{cat}.passed" in df.columns
-            else 0
+        passed_col = f"tests.{cat}.passed"
+        total_col = f"tests.{cat}.total"
+        if passed_col not in df.columns or total_col not in df.columns:
+            avg_pass.append(None)
+            continue
+        measurements = df.loc[
+            df[total_col].gt(0) & df[passed_col].notna(),
+            [passed_col, total_col],
+        ]
+        total = measurements[total_col].sum()
+        avg_pass.append(
+            measurements[passed_col].sum() / total * 100 if total > 0 else None
         )
-        total = (
-            df[f"tests.{cat}.total"].sum()
-            if f"tests.{cat}.total" in df.columns
-            else 0
-        )
-        avg_pass.append((passed / total * 100) if total > 0 else 0)
 
     bar_fig = go.Figure(
         go.Bar(
@@ -134,20 +136,19 @@ def update_tests(run_path):
     }
 
     for cat in cats:
-        if f"tests.{cat}.passed" not in df.columns:
+        passed_col = f"tests.{cat}.passed"
+        total_col = f"tests.{cat}.total"
+        if passed_col not in df.columns or total_col not in df.columns:
             continue
 
-        # Calculate pass rate per row
-        df_norm[f"_rate_{cat}"] = (
-            df_norm[f"tests.{cat}.passed"]
-            / df_norm[f"tests.{cat}.total"].replace(0, 1)
-            * 100
+        df_norm[f"_rate_{cat}"] = np.where(
+            df_norm[total_col].gt(0) & df_norm[passed_col].notna(),
+            df_norm[passed_col] / df_norm[total_col] * 100,
+            np.nan,
         )
 
-        # Aggregate by bin
-        binned = (
-            df_norm.groupby("bin")[f"_rate_{cat}"].mean().reindex(bins).ffill()
-        )
+        # Keep bins with no measurement unavailable rather than imputing them.
+        binned = df_norm.groupby("bin")[f"_rate_{cat}"].mean().reindex(bins)
 
         evolution_fig.add_trace(
             go.Scatter(

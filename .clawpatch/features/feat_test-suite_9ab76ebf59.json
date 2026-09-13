@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_test-suite_9ab76ebf59",
+  "title": "Python test suite tests/entrypoints/commands",
+  "summary": "Python pytest files in tests/entrypoints/commands.",
+  "kind": "test-suite",
+  "source": "python-test-suite",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "tests/entrypoints/commands",
+      "symbol": "tests/entrypoints/commands",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "tests/entrypoints/commands/test_backfill_reports.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_cmd_common.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_combine_results.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_consolidate_runs.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_checkpoint_cli.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_run_dir.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_run_dir_writes_config.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_migrate_evaluation_format.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_resume_validation.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_run_agent.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_sync.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_variance.py",
+      "reason": "pytest file"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_backfill_reports.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_cmd_common.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_combine_results.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_consolidate_runs.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_checkpoint_cli.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_run_dir.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_run_dir_writes_config.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_migrate_evaluation_format.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_resume_validation.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_run_agent.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_sync.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_variance.py",
+      "reason": "nearby test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/entrypoints/commands/test_backfill_reports.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_cmd_common.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_combine_results.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_consolidate_runs.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_checkpoint_cli.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_run_dir.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_run_dir_writes_config.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_migrate_evaluation_format.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_resume_validation.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_run_agent.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_sync.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/entrypoints/commands/test_variance.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "test"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-test-suite-9ab76ebf59-3_0393f0dfc0",
+    "fnd_sig-feat-test-suite-9ab76ebf59-5_a9305d7693"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "2 finding(s); prompt=136828 bytes; approxTokens=34207; includedFiles=13; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T11:00:44.134Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:13:21.698Z"
+}

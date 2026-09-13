@@ -12,6 +12,7 @@ from slop_code.execution.assets import ResolvedStaticAsset
 from slop_code.execution.file_ops import FileType
 from slop_code.execution.file_ops import InputFile
 from slop_code.execution.local_streaming import LocalEnvironmentSpec
+from slop_code.execution.protocols import ExecRuntime
 from slop_code.execution.protocols import StreamingRuntime
 from slop_code.execution.session import Session
 from slop_code.execution.workspace import Workspace
@@ -556,3 +557,57 @@ class TestRestoreFromSnapshotDir:
             ).read_text() == "new"
         finally:
             session.cleanup()
+
+
+class TestSessionCleanupFailures:
+    """Tests for cleanup failure aggregation and exception preservation."""
+
+    def test_cleanup_attempts_every_resource_and_aggregates_failures(
+        self, session: Session
+    ) -> None:
+        exec_runtime = Mock(spec=ExecRuntime)
+        streaming_runtime = Mock(spec=StreamingRuntime)
+        exec_runtime.cleanup.side_effect = RuntimeError("exec cleanup")
+        streaming_runtime.cleanup.side_effect = ValueError("stream cleanup")
+        session._exec_runtimes = [exec_runtime]  # noqa: SLF001
+        session._streaming_runtimes = [streaming_runtime]  # noqa: SLF001
+
+        with (
+            patch.object(
+                session.workspace,
+                "cleanup",
+                side_effect=OSError("workspace cleanup"),
+            ) as workspace_cleanup,
+            pytest.raises(ExceptionGroup) as error,
+        ):
+            session.cleanup()
+
+        exec_runtime.cleanup.assert_called_once()
+        streaming_runtime.cleanup.assert_called_once()
+        workspace_cleanup.assert_called_once()
+        assert len(error.value.exceptions) == 3
+        assert all(exception.__notes__ for exception in error.value.exceptions)
+
+    def test_context_exit_preserves_original_exception_after_cleanup_failure(
+        self, session: Session
+    ) -> None:
+        runtime = Mock(spec=StreamingRuntime)
+        runtime.cleanup.side_effect = RuntimeError("runtime cleanup")
+        session._streaming_runtimes = [runtime]  # noqa: SLF001
+
+        with (
+            patch.object(
+                session.workspace,
+                "cleanup",
+                side_effect=OSError("workspace cleanup"),
+            ) as workspace_cleanup,
+            pytest.raises(ValueError) as error,
+            session,
+        ):
+            raise ValueError("original failure")
+
+        runtime.cleanup.assert_called_once()
+        workspace_cleanup.assert_called_once()
+        assert any(
+            "Session cleanup failed" in note for note in error.value.__notes__
+        )

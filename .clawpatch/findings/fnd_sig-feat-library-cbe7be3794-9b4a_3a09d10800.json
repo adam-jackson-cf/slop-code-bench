@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-cbe7be3794-9b4a_3a09d10800",
+  "featureId": "feat_library_cbe7be3794",
+  "title": "Bulk selection overwrites the grouping preference with a list",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/settings_callbacks.py",
+      "startLine": 56,
+      "endLine": 58,
+      "symbol": "_manage_run_selection_logic",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/settings_callbacks.py",
+      "startLine": 102,
+      "endLine": 109,
+      "symbol": "_manage_run_selection_logic",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/settings_callbacks.py",
+      "startLine": 179,
+      "endLine": 188,
+      "symbol": "_manage_run_selection_logic",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/settings_callbacks.py",
+      "startLine": 234,
+      "endLine": 247,
+      "symbol": "init_filters",
+      "quote": null
+    }
+  ],
+  "reasoning": "group_runs initially holds the boolean appearance preference, but bulk-selection branches reuse it for matching run dictionaries. That list is persisted as filter-settings-store.group_runs. On initialization, its truthiness determines whether aggregation is enabled, so selecting runs can silently enable or disable the user's grouping preference.",
+  "reproduction": "With grouping disabled, toggle a model switch whose index matches a run's parent directory. The returned saved settings contain a nonempty list for group_runs; restoring those settings enables grouping.",
+  "recommendation": "Keep the appearance boolean separate from the collection of matching runs and always persist group_runs as a boolean.",
+  "whyTestsDoNotAlreadyCoverThis": "No included test checks settings types or preservation of appearance preferences across selection events.",
+  "suggestedRegressionTest": "For each bulk-selection action, assert both enabled and disabled grouping preferences remain unchanged and boolean, regardless of how many runs match.",
+  "minimumFixScope": "Local variable naming and saved-settings invariants in _manage_run_selection_logic.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T202324-965004",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and symbols still exist, but current code supports the repair: group_runs is assigned a boolean at line 63, both bulk-selection branches use separate matching_runs lists at lines 106 and 134, and line 187 persists the unchanged boolean. Existing settings callback tests assert preservation of both True and False. No linked patch attempts were supplied. Targeted pytest validation exited 1 before collection because the read-only environment provides no writable temporary directory, so the finding cannot be marked fixed under the requested validation rule.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/dashboard/settings_callbacks.py | head -260",
+        "rg -n 'group_runs|bulk|appearance' tests/dashboard/*settings*",
+        "ls tests/dashboard/*settings*",
+        "cat tests/dashboard/settings_callbacks_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/settings_callbacks_test.py"
+      ],
+      "createdAt": "2026-09-12T20:23:51.232Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified bulk actions preserve enabled/disabled group_runs as bool independent of matched run lists; 11 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:24:26.619Z"
+    }
+  ],
+  "signature": "sig_feat-library-cbe7be3794_9b4aeea5fb",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:37.605Z",
+  "updatedAt": "2026-09-12T20:24:26.618Z"
+}

@@ -1,5 +1,6 @@
 import argparse
 import difflib
+import html
 import json
 from contextlib import suppress
 from pathlib import Path
@@ -78,9 +79,7 @@ def get_snapshot_files(snapshot_dir):
 
 def get_highlighted_line(line, lexer):
     if not HAS_PYGMENTS:
-        return (
-            line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        )
+        return html.escape(line)
     try:
         # highlight returns a full div/pre block usually, we need inner span
         # nowrap=True returns just the spans
@@ -88,7 +87,7 @@ def get_highlighted_line(line, lexer):
             line, lexer, HtmlFormatter(nowrap=True, noclasses=True)
         ).rstrip("\n")
     except (TypeError, ValueError):
-        return line
+        return html.escape(line)
 
 
 def generate_modern_diff(a, b, name_a, name_b, filename=""):
@@ -326,8 +325,8 @@ def generate_modern_diff(a, b, name_a, name_b, filename=""):
         <table class="diff">
             <thead>
                 <tr>
-                    <th colspan="2">{name_a}</th>
-                    <th colspan="2">{name_b}</th>
+                    <th colspan="2">{html.escape(name_a)}</th>
+                    <th colspan="2">{html.escape(name_b)}</th>
                 </tr>
             </thead>
             <tbody>

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-56a50662dd-99ad_6114817cb1",
+  "featureId": "feat_library_56a50662dd",
+  "title": "Configured max_turns is discarded during agent construction",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/claude_code/agent.py",
+      "startLine": 123,
+      "endLine": 126,
+      "symbol": "ClaudeCodeConfig.max_turns",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/claude_code/agent.py",
+      "startLine": 289,
+      "endLine": 312,
+      "symbol": "ClaudeCodeAgent._from_config",
+      "quote": null
+    }
+  ],
+  "reasoning": "The configuration accepts max_turns, but _from_config neither passes it to the constructor nor translates it into extra_args or settings. The constructed agent therefore cannot distinguish configurations with different turn limits, silently ignoring the requested execution bound.",
+  "reproduction": "Construct agents from otherwise identical configurations with max_turns set to different positive values. Both receive identical execution configuration.",
+  "recommendation": "Carry max_turns through agent construction and apply it to the CLI invocation.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; existing coverage of configuration propagation cannot be verified.",
+  "suggestedRegressionTest": "Exercise configuration-to-command propagation for several turn limits and the unset case, asserting that the resulting invocation preserves the configured bound.",
+  "minimumFixScope": "ClaudeCodeConfig-to-ClaudeCodeAgent propagation and CLI argument construction.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193813-ddd7be",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists. max_turns is now declared at line 122, accepted by the constructor at 175, stored at 203, propagated by _from_config at 309, and emitted as --max-turns at 888–889. Tests cover configured and unset values at lines 1202–1231. This supports an apparent repair, but targeted pytest validation exited 1 before collection because the read-only environment had no usable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "rg -n 'max_turns|max-turns|def .*command' src/slop_code/agent_runner/agents/claude_code/agent.py tests/agent_runner",
+        "sed -n '835,910p' src/slop_code/agent_runner/agents/claude_code/agent.py",
+        "sed -n '1150,1235p' tests/agent_runner/agents/claude_code_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/claude_code_agent_test.py -k 'configured_max_turns_reaches_cli_args or build_cli_args_for_retry_continues_latest_session'"
+      ],
+      "createdAt": "2026-09-12T19:38:49.077Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified max_turns propagates from config into CLI invocation; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:20.227Z"
+    }
+  ],
+  "signature": "sig_feat-library-56a50662dd_99adb24304",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:45.550Z",
+  "updatedAt": "2026-09-12T19:39:20.226Z"
+}

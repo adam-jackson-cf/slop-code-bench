@@ -169,27 +169,32 @@ def produce_production_graph(
         elif source_role != target_role:
             cross_role_edges.append(record)
 
-    membership: dict[str, tuple[str, ...]] = {}
-    sccs: list[dict[str, Any]] = []
-    for members in nx.strongly_connected_components(internal_graph):
+    membership: dict[str, int] = {}
+    component_members: list[tuple[str, ...]] = []
+    component_mass: dict[int, Decimal] = {}
+    for component_id, members in enumerate(
+        nx.strongly_connected_components(internal_graph)
+    ):
         ordered = tuple(
             sorted(members, key=lambda value: value.encode("utf-8"))
         )
+        component_members.append(ordered)
+        component_mass[component_id] = Decimal(0)
         for member in ordered:
-            membership[member] = ordered
+            membership[member] = component_id
+    for source, target, data in internal_graph.edges(data=True):
+        source_component = membership[source]
+        if source_component == membership[target]:
+            component_mass[source_component] += data["weight"]
+
+    sccs: list[dict[str, Any]] = []
+    for component_id, ordered in enumerate(component_members):
         singleton = len(ordered) == 1
         self_loop = singleton and internal_graph.has_edge(
             ordered[0], ordered[0]
         )
         cyclic = len(ordered) > 1 or self_loop
-        mass = sum(
-            (
-                data["weight"]
-                for source, target, data in internal_graph.edges(data=True)
-                if source in members and target in members
-            ),
-            Decimal(0),
-        )
+        mass = component_mass[component_id]
         sccs.append(
             {
                 "members": ordered,
@@ -200,9 +205,9 @@ def produce_production_graph(
         )
 
     for edge in all_edges:
-        source_members = membership[edge["source"]]
-        edge["cyclic"] = source_members == membership[edge["target"]] and (
-            len(source_members) > 1 or edge["self_loop"]
+        source_component = membership[edge["source"]]
+        edge["cyclic"] = source_component == membership[edge["target"]] and (
+            len(component_members[source_component]) > 1 or edge["self_loop"]
         )
     all_edges.sort(key=_edge_key)
     cross_role_edges.sort(key=_edge_key)

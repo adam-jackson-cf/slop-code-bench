@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_bbf603cd2d",
+  "title": "Python source src/slop_code/entrypoints/evaluation",
+  "summary": "Python source group src/slop_code/entrypoints/evaluation with 4 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/entrypoints/evaluation",
+      "symbol": "src/slop_code/entrypoints/evaluation",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/entrypoints/evaluation/__init__.py",
+      "reason": "source group src/slop_code/entrypoints/evaluation"
+    },
+    {
+      "path": "src/slop_code/entrypoints/evaluation/driver.py",
+      "reason": "source group src/slop_code/entrypoints/evaluation"
+    },
+    {
+      "path": "src/slop_code/entrypoints/evaluation/metrics.py",
+      "reason": "source group src/slop_code/entrypoints/evaluation"
+    },
+    {
+      "path": "src/slop_code/entrypoints/evaluation/utils.py",
+      "reason": "source group src/slop_code/entrypoints/evaluation"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/entrypoints/problem_runner/test_driver.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/evaluation/utils_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/metrics/rubric/driver_test.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/entrypoints/problem_runner/test_driver.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/evaluation/utils_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/rubric/driver_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-bbf603cd2d-de09_4c0c4271d8",
+    "fnd_sig-feat-library-bbf603cd2d-7ed8_9e38cfe373",
+    "fnd_sig-feat-library-bbf603cd2d-a176_911fa3d552"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "3 finding(s); prompt=90574 bytes; approxTokens=22644; includedFiles=9; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:59:13.328Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:13:21.364Z"
+}

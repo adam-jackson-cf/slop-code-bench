@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-6150408686-91b9_4b671e2183",
+  "featureId": "feat_library_6150408686",
+  "title": "Collection overwrites configured custom-marker classifications",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/evaluation/config.py",
+      "startLine": 69,
+      "endLine": 90,
+      "symbol": "MarkerConfig",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/evaluation/pytest_runner.py",
+      "startLine": 587,
+      "endLine": 600,
+      "symbol": "PytestRunner._determine_group_type",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/evaluation/collection.py",
+      "startLine": 364,
+      "endLine": 379,
+      "symbol": "collect_checkpoint_tc",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/evaluation/collection.py",
+      "startLine": 437,
+      "endLine": 446,
+      "symbol": "collect_checkpoint_tc",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/evaluation/collection.py",
+      "startLine": 513,
+      "endLine": 517,
+      "symbol": "apply_collection_inventory",
+      "quote": null
+    }
+  ],
+  "reasoning": "The runner honors problem.markers mappings, but collection queries and classifies only built-in markers. Reconciliation then unconditionally replaces the runner's classification. A current-checkpoint test carrying only a custom marker mapped to Error or Functionality becomes Core, changing group counts, collection hashes, and group-based policy outcomes.",
+  "reproduction": "Configure a custom marker mapped to Functionality and apply it to a current-checkpoint test. Execute through run_checkpoint_with_collection without a -k filter; reconciliation changes its group to Core.",
+  "recommendation": "Use one classification rule for collection and execution, including custom-marker mappings and the existing precedence rules.",
+  "whyTestsDoNotAlreadyCoverThis": "The included runner fixture defines no custom markers, and the collection tests do not exercise classification or reconciliation.",
+  "suggestedRegressionTest": "Exercise custom markers mapped to each group through collection and reconciliation, including combinations with built-in markers and prior-checkpoint tests.",
+  "minimumFixScope": "Collection marker discovery/classification, shared classification logic, and associated tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193939-48cce9",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "All original evidence files still exist, but the implementation changed: collection now discovers custom markers and shares classify_test_group with execution. The repair is incomplete. MarkerConfig uses use_enum_values=True (config.py:88), so classify_test_group returns a string for custom markers (line 112). Collection passes that string to _group_key (collection.py:458), which accesses .value (line 282). Targeted validation with a custom Functionality marker failed with AttributeError: 'str' object has no attribute 'value'. Thus the original Core overwrite has been replaced by a collection failure; the custom-marker contract remains broken. No linked patch attempts were supplied.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "rg -n 'custom|classif|marker|reconcil' tests/evaluation/collection_test.py tests/evaluation/config_test.py tests/evaluation/pytest_runner_test.py",
+        "nl -ba src/slop_code/evaluation/config.py | sed -n '73,130p'",
+        "nl -ba src/slop_code/evaluation/collection.py | sed -n '280,295p;368,390p;442,480p;535,542p'",
+        "sed -n '130,165p' tests/evaluation/collection_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c \"from slop_code.evaluation.config import MarkerConfig, classify_test_group; from slop_code.evaluation.collection import _group_key; from slop_code.evaluation.report import GroupType; config = MarkerConfig(description='custom marker', group=GroupType.FUNCTIONALITY); group = classify_test_group(test_checkpoint='checkpoint_1', current_checkpoint='checkpoint_1', markers=['custom'], custom_markers={'custom': config}); print('classified:', repr(group), 'type:', type(group).__name__); print(_group_key('checkpoint_1', group))\""
+      ],
+      "createdAt": "2026-09-12T19:40:18.998Z"
+    },
+    {
+      "runId": "20260912T194229-d7a2b3",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "All original evidence files still exist, with changed line locations. Collection now discovers custom markers (collection.py:363–373) and shares classify_test_group with execution (collection.py:437, pytest_runner.py:584). config.py:112 now converts custom mappings to GroupType; rerunning the historical reproducer succeeded, eliminating the previously observed AttributeError. Reconciliation still replaces classifications at collection.py:514, but uses the shared rule. The repair appears supported by current code, but targeted pytest validation failed before running tests because the read-only environment has no usable temporary directory, so fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "codegraph --version\ncodegraph status",
+        "nl -ba src/slop_code/evaluation/config.py | sed -n '73,118p'",
+        "rg -n 'custom|classif|reconcil' tests/evaluation/collection_test.py tests/evaluation/config_test.py tests/evaluation/pytest_runner_test.py",
+        "rg -n 'marker_names|classify_test_group|existing.group_type|def _determine_group_type|def collect_checkpoint_tc|def apply_collection_inventory' src/slop_code/evaluation/{collection,pytest_runner}.py",
+        "sed -n '1,210p' tests/evaluation/collection_test.py\nsed -n '275,340p' tests/evaluation/pytest_runner_test.py\nsed -n '355,380p;430,467p;508,540p' src/slop_code/evaluation/collection.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -m pytest -q -p no:cacheprovider tests/evaluation/collection_test.py tests/evaluation/config_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c \"from slop_code.evaluation.config import MarkerConfig, classify_test_group; from slop_code.evaluation.collection import _group_key; from slop_code.evaluation.report import GroupType; config = MarkerConfig(description='custom marker', group=GroupType.FUNCTIONALITY); group = classify_test_group(test_checkpoint='checkpoint_1', current_checkpoint='checkpoint_1', markers=['custom'], custom_markers={'custom': config}); print('classified:', repr(group), 'type:', type(group).__name__); print(_group_key('checkpoint_1', group))\""
+      ],
+      "createdAt": "2026-09-12T19:43:07.914Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified custom marker mappings normalize to GroupType and survive collection/reconciliation; 176 evaluation tests, Ruff, and ty pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:44:21.955Z"
+    }
+  ],
+  "signature": "sig_feat-library-6150408686_91b91229eb",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:21.383Z",
+  "updatedAt": "2026-09-12T19:44:21.954Z"
+}

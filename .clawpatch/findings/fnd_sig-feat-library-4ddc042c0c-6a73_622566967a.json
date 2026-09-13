@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-4ddc042c0c-6a73_622566967a",
+  "featureId": "feat_library_4ddc042c0c",
+  "title": "Host authentication variables override explicit invocation overrides",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/gemini/agent.py",
+      "startLine": 70,
+      "endLine": 73,
+      "symbol": "GeminiConfig.env",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/gemini/agent.py",
+      "startLine": 614,
+      "endLine": 619,
+      "symbol": "GeminiAgent._prepare_runtime_execution",
+      "quote": null
+    }
+  ],
+  "reasoning": "The configuration describes env as invocation overrides, but authentication values inherited from the host are applied afterward and overwrite explicit configuration. When both sources define an authentication variable, the invocation can use a different credential or credential file than requested. The later credential assignment only corrects its own destination key.",
+  "reproduction": "Set GOOGLE_APPLICATION_CREDENTIALS in both GeminiConfig.env and the host environment to different paths. The prepared environment contains the host path instead of the explicit override.",
+  "recommendation": "Treat host authentication variables as defaults, then apply explicit environment overrides and the deliberately selected provider credential in a documented precedence order.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included demonstrating precedence when host authentication and explicit configuration overlap.",
+  "suggestedRegressionTest": "Cover overlapping and non-overlapping host, config, and provider credential values, asserting that explicit configuration takes precedence over host defaults.",
+  "minimumFixScope": "Authentication environment merging in GeminiAgent._prepare_runtime_execution and precedence tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193626-c18cb9",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both original evidence ranges still exist. Current agent.py:615-634 applies host defaults, then provider credentials, then explicit invocation overrides, supporting the intended repair. A precedence test exists at tests/agent_runner/agents/gemini_agent_test.py:795-835. However, targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/gemini/agent.py | sed -n '65,76p;605,672p'",
+        "rg --files tests/agent_runner | rg gemini",
+        "rg -n 'precedence|overrid|host|credential|^def test' tests/agent_runner/agents/gemini_agent_test.py",
+        "sed -n '795,836p' tests/agent_runner/agents/gemini_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/gemini_agent_test.py -k prepare_runtime_execution"
+      ],
+      "createdAt": "2026-09-12T19:37:06.011Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified explicit invocation auth overrides host variables; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:37:36.568Z"
+    }
+  ],
+  "signature": "sig_feat-library-4ddc042c0c_6a731362f7",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:33.474Z",
+  "updatedAt": "2026-09-12T19:37:36.567Z"
+}

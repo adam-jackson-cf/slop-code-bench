@@ -1,6 +1,7 @@
 """Tests for evaluation configuration models."""
 
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -123,7 +124,10 @@ class TestCheckpointConfig:
 
     def test_state_values(self):
         """State field accepts valid literal values."""
-        for state in ["Draft", "Core Tests", "Full Tests", "Verified"]:
+        states: tuple[
+            Literal["Draft", "Core Tests", "Full Tests", "Verified"], ...
+        ] = ("Draft", "Core Tests", "Full Tests", "Verified")
+        for state in states:
             config = CheckpointConfig(
                 name="checkpoint_1",
                 version=1,

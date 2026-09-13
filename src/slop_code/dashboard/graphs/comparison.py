@@ -59,7 +59,6 @@ def build_problem_comparison_chart(
         context.color_map, context.base_color_map, variation_info
     )
 
-    # Sort runs according to the new logic
     sorted_unique_runs = (
         df[
             [
@@ -70,7 +69,6 @@ def build_problem_comparison_chart(
                 "run_date",
             ]
         ]
-        .drop_duplicates()
         .sort_values(
             by=[
                 "model_name",
@@ -79,6 +77,7 @@ def build_problem_comparison_chart(
                 "run_date",
             ]
         )
+        .drop_duplicates(subset="display_name")
     )
 
     for display_name in sorted_unique_runs["display_name"]:
@@ -90,20 +89,18 @@ def build_problem_comparison_chart(
         is_grouped = context.group_runs
 
         # Pre-calculate derived metrics
+        zeroes = pd.Series(0.0, index=run_df.index)
+
         # Total Rubric Flags
         run_df = run_df.copy()
         if "rubric_total_flags" in run_df.columns:
             run_df["_total_flags"] = run_df["rubric_total_flags"].fillna(0)
         else:
-            run_df["_total_flags"] = 0
+            run_df["_total_flags"] = zeroes
 
         # New Rubric Flags
-        total_flags = run_df.get(
-            "rubric_total_flags", pd.Series([0] * len(run_df))
-        ).fillna(0)
-        carried_over = run_df.get(
-            "rubric_carried_over", pd.Series([0] * len(run_df))
-        ).fillna(0)
+        total_flags = run_df.get("rubric_total_flags", zeroes).fillna(0)
+        carried_over = run_df.get("rubric_carried_over", zeroes).fillna(0)
         run_df["_new_flags"] = total_flags - carried_over
 
         # Test Pass Rates
@@ -128,7 +125,6 @@ def build_problem_comparison_chart(
         add_pass_rate_col("regression")
         add_pass_rate_col("error")
 
-        zeroes = pd.Series([0.0] * len(run_df), index=run_df.index)
         run_df["_mass_cc"] = run_df.get("mass.cc", zeroes)
         run_df["_delta_loc"] = run_df.get("delta.loc", zeroes)
         run_df["_delta_churn_ratio"] = run_df.get("delta.churn_ratio", zeroes)

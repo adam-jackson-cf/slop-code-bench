@@ -57,7 +57,10 @@ layout = dbc.Container(
 def build_histogram(df, col, title, color):
     if col not in df.columns:
         return empty_figure()
-    fig = go.Figure(data=[go.Histogram(x=df[col], marker_color=color)])
+    values = df[col].dropna()
+    if values.empty:
+        return empty_figure()
+    fig = go.Figure(data=[go.Histogram(x=values, marker_color=color)])
     fig.update_layout(
         title=title,
         xaxis_title="Value",
@@ -101,36 +104,33 @@ def update_quality(run_path):
         df, "mean_func_loc", "Mean Func LOC Distribution", "#17becf"
     )
 
-    # Compute normalized metrics on the fly
-    df = df.copy()
-    df["_mass_cc"] = df.get("mass.cc", 0)
-    df["_cc_concentration"] = df.get("cc_concentration", 0)
-
     cmp_loc_hist = build_histogram(
         df,
-        "_mass_cc",
+        "mass.cc",
         "CC Mass Distribution",
         "#e377c2",
     )
     try_loc_hist = build_histogram(
         df,
-        "_cc_concentration",
+        "cc_concentration",
         "CC Concentration Distribution",
         "#bcbd22",
     )
 
     # Scatter
     scatter = go.Figure()
-    scatter.add_trace(
-        go.Scatter(
-            x=df.get("loc", []),
-            y=df.get("lint_errors", []),
-            mode="markers",
-            text=df.get("problem", []),
-            hovertemplate="<b>Problem:</b> %{text}<br><b>LOC:</b> %{x}<br><b>Lint:</b> %{y}<extra></extra>",
-            marker=dict(size=8, color="#17becf", opacity=0.6),
+    if {"loc", "lint_errors"}.issubset(df.columns):
+        scatter_data = df.dropna(subset=["loc", "lint_errors"])
+        scatter.add_trace(
+            go.Scatter(
+                x=scatter_data["loc"],
+                y=scatter_data["lint_errors"],
+                mode="markers",
+                text=scatter_data.get("problem", []),
+                hovertemplate="<b>Problem:</b> %{text}<br><b>LOC:</b> %{x}<br><b>Lint:</b> %{y}<extra></extra>",
+                marker=dict(size=8, color="#17becf", opacity=0.6),
+            )
         )
-    )
     scatter.update_layout(
         title="Lint Errors vs Lines of Code (All Checkpoints)",
         xaxis_title="LOC",

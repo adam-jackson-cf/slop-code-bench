@@ -101,8 +101,10 @@ class TestRunSummaryCosts:
         )
 
         assert abs(summary.costs.total - 0.45) < 0.001
+        assert summary.costs.checkpoint.mean is not None
         assert abs(summary.costs.checkpoint.mean - 0.15) < 0.001
         # Problem costs: prob1=0.30, prob2=0.15
+        assert summary.costs.problem.mean is not None
         assert abs(summary.costs.problem.mean - 0.225) < 0.001
 
 
@@ -145,6 +147,55 @@ class TestRunSummarySolveRates:
 
         # 3 out of 4 checkpoints have pass_rate == 1.0
         assert summary.pct_checkpoints_solved == 75.0
+
+    def test_strict_and_isolated_solve_counts_remain_distinct(
+        self, mock_config
+    ):
+        """Isolated success does not satisfy strict all-cases assessment."""
+        checkpoints = [
+            {
+                "problem": "prob1",
+                "idx": 1,
+                "strict_pass_rate": 1.0,
+                "isolated_pass_rate": 1.0,
+            },
+            {
+                "problem": "prob1",
+                "idx": 2,
+                "strict_pass_rate": 0.5,
+                "isolated_pass_rate": 1.0,
+            },
+        ]
+
+        summary = compute_run_summary(
+            mock_config, checkpoints, expected_checkpoints=2
+        )
+
+        assert summary.checkpoints_solved == 1
+        assert summary.checkpoints_iso_solved == 2
+        assert summary.problem_solved == 0
+        assert summary.problem_partial == 1
+
+    def test_solve_families_are_independent_when_metrics_are_missing(
+        self, mock_config
+    ):
+        """Each available solve family retains its own count and percentage."""
+        checkpoints = [
+            {"problem": "strict", "idx": 1, "strict_pass_rate": 1.0},
+            {"problem": "isolated", "idx": 1, "isolated_pass_rate": 1.0},
+            {"problem": "core", "idx": 1, "core_pass_rate": 1.0},
+        ]
+
+        summary = compute_run_summary(
+            mock_config, checkpoints, expected_checkpoints=3
+        )
+
+        assert summary.checkpoints_solved == 1
+        assert summary.pct_checkpoints_solved == pytest.approx(100 / 3)
+        assert summary.checkpoints_iso_solved == 1
+        assert summary.pct_checkpoints_iso_solved == pytest.approx(100 / 3)
+        assert summary.checkpoints_core_solved == 1
+        assert summary.pct_checkpoints_core_solved == pytest.approx(100 / 3)
 
     def test_computes_problem_solve_rate(self, mock_config):
         """Test that summary computes problem solve rate correctly."""
@@ -436,6 +487,62 @@ class TestRunSummaryPassRates:
         # When no checkpoints have error tests, the rate should be 0.0
         # (not NaN or an error)
         assert summary.pass_rates.checkpoint.error == 0.0
+
+    def test_problem_rates_exclude_inapplicable_categories(self, mock_config):
+        """Problems lacking a category do not lower its problem-level mean."""
+        checkpoints = [
+            {
+                "problem": "has_error_tests",
+                "idx": 1,
+                "total_tests": 2,
+                "passed_tests": 1,
+                "error_total": 2,
+                "error_passed": 1,
+            },
+            {
+                "problem": "no_error_tests",
+                "idx": 1,
+                "total_tests": 1,
+                "passed_tests": 1,
+                "error_total": 0,
+                "error_passed": 0,
+            },
+        ]
+
+        summary = compute_run_summary(
+            mock_config, checkpoints, expected_checkpoints=2
+        )
+
+        assert summary.pass_rates.problem.error == 0.5
+
+    def test_problem_rates_default_only_when_every_problem_is_inapplicable(
+        self, mock_config
+    ):
+        """The empty-result default applies after filtering every problem."""
+        checkpoints = [
+            {
+                "problem": "first",
+                "idx": 1,
+                "total_tests": 1,
+                "passed_tests": 1,
+                "error_total": 0,
+                "error_passed": 0,
+            },
+            {
+                "problem": "second",
+                "idx": 1,
+                "total_tests": 1,
+                "passed_tests": 1,
+                "error_total": 0,
+                "error_passed": 0,
+            },
+        ]
+
+        summary = compute_run_summary(
+            mock_config, checkpoints, expected_checkpoints=2
+        )
+
+        assert summary.pass_rates.problem.error == 0.0
 
 
 class TestRunSummaryCcMetrics:

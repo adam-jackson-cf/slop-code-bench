@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a1c6cc683e-fb2b_9c958f47d4",
+  "featureId": "feat_library_a1c6cc683e",
+  "title": "The stdlib adapter bypasses logger-level and disabled-state filtering",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/logging.py",
+      "startLine": 193,
+      "endLine": 214,
+      "symbol": "StdlibLoggerAdapter._log",
+      "quote": null
+    },
+    {
+      "path": "tests/logging_test.py",
+      "startLine": 183,
+      "endLine": 194,
+      "symbol": "TestStdlibLoggerAdapter.test_adapter_logger_methods",
+      "quote": null
+    }
+  ],
+  "reasoning": "Calling Logger._log directly skips the isEnabledFor check performed by public logging methods. A WARNING-level logger can therefore emit adapter.debug messages through a DEBUG-level handler. The logging.disable threshold is also bypassed. Additionally, kwargs are serialized even when the message should be disabled.",
+  "reproduction": "Attach a DEBUG-level capture handler to a WARNING-level logger. Call StdlibLoggerAdapter(logger).debug('hidden'); a record reaches the handler despite adapter.isEnabledFor(DEBUG) returning false.",
+  "recommendation": "After determining the effective level, check isEnabledFor before formatting kwargs or creating a record, or use the public logger.log method.",
+  "whyTestsDoNotAlreadyCoverThis": "Tests verify the reported effective level and isEnabledFor result, but never assert that disabled messages are actually suppressed.",
+  "suggestedRegressionTest": "Extend adapter filtering coverage across logger thresholds, logging.disable, and VERBOSE conversion; assert suppressed calls neither emit records nor serialize structured values.",
+  "minimumFixScope": "StdlibLoggerAdapter._log and adapter logging tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165634-734f0f",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files still exist. logging.py:184-191 now converts VERBOSE before checking logger.isEnabledFor, preceding serialization and record creation. The original adapter-method test moved to logging_test.py:242; new tests at 189-229 cover threshold/global suppression, skipped serialization, and VERBOSE filtering. These changes support the repair, but targeted pytest validation failed before collection because the read-only environment has no writable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/logging.py | sed -n '174,240p'",
+        "nl -ba tests/logging_test.py | sed -n '180,270p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/logging_test.py"
+      ],
+      "createdAt": "2026-09-11T16:56:55.657Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:56:56.242Z"
+    }
+  ],
+  "signature": "sig_feat-library-a1c6cc683e_fb2b3e2f16",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:19.528Z",
+  "updatedAt": "2026-09-11T16:56:56.238Z"
+}

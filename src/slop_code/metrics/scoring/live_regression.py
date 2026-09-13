@@ -56,16 +56,8 @@ def _validate_live_oracle(
     checkpoint_id: str,
     problem: ProblemConfig,
 ) -> dict[str, Any]:
-    """Require every saved artifact and canonical parity record."""
-    artifacts = _committed_artifacts(checkpoint_dir, checkpoint_id, problem)
-    expected = {
-        common.EVALUATION_FILENAME,
-        f"{common.QUALITY_DIR}/{common.QUALITY_METRIC_SAVENAME}",
-        f"{common.QUALITY_DIR}/{common.FILES_QUALITY_SAVENAME}",
-        f"{common.QUALITY_DIR}/{common.SYMBOLS_QUALITY_SAVENAME}",
-    }
-    if set(artifacts) != expected:
-        raise ValueError("canonical_provenance_unavailable")
+    """Require a complete digest-verified oracle and its parity record."""
+    _committed_artifacts(checkpoint_dir, checkpoint_id, problem)
     problem_key = hashlib.sha256(problem.name.encode("utf-8")).hexdigest()
     oracle_dir = (
         run_dir
@@ -493,11 +485,27 @@ def produce_live_regression_evidence(
                         reasons=("canonical_artifact_invalid",),
                     )
                 try:
+                    _committed_artifacts(prior_dir, prior_id, problem)
+                    _committed_artifacts(current_dir, current_id, problem)
                     prior_parity = _historical_checkpoint_parity(
                         historical[0], problem, prior_id
                     )
                     current_parity = _historical_checkpoint_parity(
                         historical[0], problem, current_id
+                    )
+                except ValueError as error:
+                    code = str(error)
+                    return sidecars, Eligibility(
+                        eligible=False,
+                        reasons=(
+                            code
+                            if code
+                            in {
+                                "canonical_artifact_invalid",
+                                "canonical_provenance_unavailable",
+                            }
+                            else "canonical_artifact_invalid",
+                        ),
                     )
                 except (OSError, json.JSONDecodeError):
                     prior_parity = current_parity = None

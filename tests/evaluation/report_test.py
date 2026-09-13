@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
 from slop_code.evaluation.report import CorrectnessResults
 from slop_code.evaluation.report import GroupType
+from slop_code.evaluation.report import PassPolicy
 from slop_code.evaluation.report import TestResult as EvalTestResult
 
 
@@ -77,7 +79,10 @@ class TestTestResult:
     def test_status_validation(self):
         """Status field accepts only valid values."""
         # Valid statuses
-        for status in ["passed", "failed", "skipped", "error"]:
+        valid_statuses: tuple[
+            Literal["passed", "failed", "skipped", "error"], ...
+        ] = ("passed", "failed", "skipped", "error")
+        for status in valid_statuses:
             result = EvalTestResult(
                 id="test",
                 checkpoint="checkpoint_1",
@@ -94,7 +99,7 @@ class TestTestResult:
                 id="test",
                 checkpoint="checkpoint_1",
                 group_type=GroupType.CORE,
-                status="invalid_status",
+                status="invalid_status",  # type: ignore[arg-type]
                 duration_ms=1.0,
                 file_path="tests/test.py",
             )
@@ -229,6 +234,58 @@ class TestCorrectnessResults:
         assert results.total_counts[GroupType.CORE] == 1
         assert results.pass_counts[GroupType.CORE] == 1
         assert len(results.tests) == 2
+
+    def test_all_cases_counts_only_executed_cases(self):
+        """Strict all-cases succeeds only when every executed case passes."""
+        results = CorrectnessResults(
+            problem_name="test",
+            problem_version=1,
+            checkpoint_name="checkpoint_1",
+            checkpoint_version=1,
+            duration=5.0,
+            entrypoint="python main.py",
+            pytest_exit_code=0,
+            pytest_collected=2,
+        )
+        results.add_test_result(
+            EvalTestResult(
+                id="test_pass",
+                checkpoint="checkpoint_1",
+                group_type=GroupType.CORE,
+                status="passed",
+                duration_ms=1.0,
+                file_path="tests/test.py",
+            )
+        )
+        results.add_test_result(
+            EvalTestResult(
+                id="test_skip",
+                checkpoint="checkpoint_1",
+                group_type=GroupType.FUNCTIONALITY,
+                status="skipped",
+                duration_ms=1.0,
+                file_path="tests/test.py",
+            )
+        )
+
+        assert PassPolicy.ALL_CASES.check(
+            results.pass_counts, results.total_counts
+        )
+
+        results.add_test_result(
+            EvalTestResult(
+                id="test_failure",
+                checkpoint="checkpoint_1",
+                group_type=GroupType.ERROR,
+                status="failed",
+                duration_ms=1.0,
+                file_path="tests/test.py",
+            )
+        )
+
+        assert not PassPolicy.ALL_CASES.check(
+            results.pass_counts, results.total_counts
+        )
 
     def test_passes_policy_core_cases_skipped_not_failed(self):
         """Skipped CORE tests do not cause core-cases policy to fail."""

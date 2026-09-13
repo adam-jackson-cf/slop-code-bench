@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a779b6f7f0-2438_1f7041d1ab",
+  "featureId": "feat_library_a779b6f7f0",
+  "title": "Synchronous stdin writes can deadlock before timeout enforcement",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/docker_runtime/exec.py",
+      "startLine": 242,
+      "endLine": 247,
+      "symbol": "DockerExecRuntime._write_stdin",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/docker_runtime/exec.py",
+      "startLine": 303,
+      "endLine": 316,
+      "symbol": "DockerExecRuntime.execute",
+      "quote": null
+    },
+    {
+      "path": "tests/execution/docker_runtime/exec_test.py",
+      "startLine": 573,
+      "endLine": 589,
+      "symbol": "test_execute_with_stdin",
+      "quote": null
+    }
+  ],
+  "reasoning": "All stdin is written before communicate starts draining stdout and stderr or enforcing the timeout. Large input blocks indefinitely if the command does not read stdin. A command that produces enough output before consuming its input can also deadlock against the undrained output pipes.",
+  "reproduction": "Execute a command that sleeps without reading stdin, provide input larger than pipe capacity, and set timeout=1. Execution can remain blocked in pipe.write beyond the timeout.",
+  "recommendation": "Pass encoded input to communicate so input delivery and output draining run together under the timeout, and ensure exceptional paths terminate and reap the execution.",
+  "whyTestsDoNotAlreadyCoverThis": "The stdin test sends a short string to cat; the timeout test supplies no stdin.",
+  "suggestedRegressionTest": "Expand stdin coverage to large input, commands that do not consume input, and simultaneous large output, asserting bounded timeout and cleanup.",
+  "minimumFixScope": "DockerExecRuntime stdin handling and execute lifecycle.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170125-a16fb2",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence files exist, but the implementation changed: _write_stdin was replaced by _encode_stdin at exec.py:233–236, and execute now passes input directly to communicate with timeout at lines 304–307. Timeout and finally paths kill/reap the client and invoke container removal. The original stdin test moved to line 643; a communicate contract test exists at lines 526–557. Targeted validation of the current methods with real subprocess pipes passed: 4 MiB input to a nonreader timed out in 1.00s; simultaneous large output before input consumption completed in 0.05s. Client reaping and cleanup invocation were verified; actual Docker container removal was not exercised. An initial heredoc invocation was blocked by read-only restrictions; the equivalent in-memory invocation passed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/execution/docker_runtime/exec.py | sed -n '230,350p'",
+        "rg -n 'stdin|timeout|communicate' tests/execution/docker_runtime/exec_test.py",
+        ".venv/bin/python -B -c '<in-memory harness loading current execute and _encode_stdin via AST; real subprocess tests for 4 MiB unread stdin with timeout=1 and large stdout/stderr before input consumption; assertions for timing, output, reaping, and cleanup invocation>'"
+      ],
+      "createdAt": "2026-09-11T17:02:17.872Z"
+    }
+  ],
+  "signature": "sig_feat-library-a779b6f7f0_243850d599",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:39.908Z",
+  "updatedAt": "2026-09-11T17:02:17.872Z"
+}

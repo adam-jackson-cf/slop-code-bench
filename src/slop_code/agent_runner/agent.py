@@ -18,7 +18,9 @@ from typing import (
     get_type_hints,
 )
 
+from jinja2 import StrictUndefined
 from jinja2 import Template
+from jinja2 import TemplateError
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -150,9 +152,37 @@ class AgentConfigBase(BaseModel):
         if self.docker_template is None:
             return None
 
-        return Template(self.docker_template.read_text()).render(
-            base_image=base_image
-        )
+        try:
+            template_text = self.docker_template.read_text()
+            return Template(template_text, undefined=StrictUndefined).render(
+                base_image=base_image,
+                version=self.version,
+            )
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(
+                f"Unable to read Docker template for agent '{self.type}': "
+                f"{self.docker_template}"
+            ) from exc
+        except TemplateError as exc:
+            raise ValueError(
+                f"Invalid Docker template for agent '{self.type}': {exc}"
+            ) from exc
+
+
+def build_prompt_context(
+    *,
+    is_first_checkpoint: bool,
+    agent_type: str | None = None,
+    agent_version: str | None = None,
+    model_name: str | None = None,
+) -> dict[str, bool | str | None]:
+    """Build the context used to render checkpoint prompts."""
+    return {
+        "is_continuation": not is_first_checkpoint,
+        "agent_type": agent_type,
+        "agent_version": agent_version or "",
+        "model_name": model_name,
+    }
 
 
 class CheckpointInferenceResult(BaseModel):

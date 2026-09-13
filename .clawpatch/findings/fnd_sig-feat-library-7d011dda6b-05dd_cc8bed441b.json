@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-7d011dda6b-05dd_cc8bed441b",
+  "featureId": "feat_library_7d011dda6b",
+  "title": "Malformed step_type values crash format detection",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/miniswe/parser.py",
+      "startLine": 34,
+      "endLine": 40,
+      "symbol": "MinisweParser.can_parse",
+      "quote": null
+    }
+  ],
+  "reasoning": "A valid JSON object can contain an array or object as step_type. Testing either value for membership in the frozenset raises TypeError, which the exception handler does not catch. Consequently, probing an incompatible or malformed artifact raises instead of returning False, potentially interrupting parser selection.",
+  "reproduction": "Call can_parse on a JSONL file whose first nonblank line is {\"step_type\": []}. It raises TypeError: unhashable type: 'list'.",
+  "recommendation": "Check that step_type is a string before testing membership in _step_types.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included in the review context; coverage of malformed discriminator types could not be verified.",
+  "suggestedRegressionTest": "Exercise format detection with each JSON value type for step_type, including arrays, objects, null, numbers, and strings. Assert that unsupported types return False without raising and supported strings remain recognized.",
+  "minimumFixScope": "MinisweParser.can_parse discriminator validation and the relevant parser detection tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193813-68e887",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The original path and lines still exist. Lines 37–40 now check isinstance(step_type, str) before frozenset membership, preventing the reported TypeError. Existing tests cover arrays, objects, null, integers, and all supported strings. Targeted execution of the current can_parse passed 14 discriminator cases using in-memory file input. An initial heredoc was blocked by sandbox temporary-file restrictions; rerunning via python -c succeeded. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/miniswe/parser.py | head -65",
+        "rg -n 'step_type|can_parse' tests/agent_runner -g '*miniswe*'",
+        "sed -n '1,130p' tests/agent_runner/agents/miniswe_parser_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c 'import io,json; from pathlib import Path; from unittest.mock import patch; from slop_code.agent_runner.agents.miniswe.parser import MinisweParser\nparser=MinisweParser()\nvalues=[[],{},None,False,True,0,1,1.5,\"\",\"unsupported\",\"user\",\"agent\",\"thinking\",\"tool_use\"]\nfor value in values:\n with patch.object(MinisweParser,\"_find_jsonl_file\",return_value=Path(\"trajectory.jsonl\")), patch.object(Path,\"open\",return_value=io.StringIO(\"\\n\"+json.dumps({\"step_type\":value})+\"\\n\")):\n  result=parser.can_parse(Path(\".\"))\n assert result is (isinstance(value,str) and value in parser._step_types)\nprint(\"PASS: all 14 discriminator cases through current can_parse\")'"
+      ],
+      "createdAt": "2026-09-12T19:38:55.185Z"
+    }
+  ],
+  "signature": "sig_feat-library-7d011dda6b_05dd78e7b9",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:34.958Z",
+  "updatedAt": "2026-09-12T19:38:55.185Z"
+}

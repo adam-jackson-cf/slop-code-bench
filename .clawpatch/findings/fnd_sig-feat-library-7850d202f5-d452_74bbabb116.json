@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-7850d202f5-d452_74bbabb116",
+  "featureId": "feat_library_7850d202f5",
+  "title": "Require complete artifact verification before producing score evidence",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/scoring/live_evidence.py",
+      "startLine": 155,
+      "endLine": 166,
+      "symbol": "_committed_artifacts",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/live_evidence.py",
+      "startLine": 285,
+      "endLine": 317,
+      "symbol": "produce_checkpoint_evidence",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/live_regression.py",
+      "startLine": 389,
+      "endLine": 418,
+      "symbol": "_historical_checkpoint_parity",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/live_regression.py",
+      "startLine": 495,
+      "endLine": 522,
+      "symbol": "produce_live_regression_evidence",
+      "quote": null
+    }
+  ],
+  "reasoning": "Artifact verification is incomplete in two scoring paths. Checkpoint production accepts an oracle with an empty or incomplete artifacts list and subsequently reads quality and correctness files that were never verified. The historical regression branch checks the bundle hash and recorded metadata but never verifies the saved checkpoint artifact bytes against that bundle before scheduling measurement. Consequently, omitted or modified canonical inputs can enter score production despite the committed-input requirement. The live regression branch already demonstrates the intended completeness check by requiring an exact artifact set.",
+  "reproduction": "For checkpoint production, supply an otherwise valid, correctly hash-named live oracle with artifacts=[] and existing quality files; the provenance check succeeds. For historical regression, modify a checkpoint quality file after creating the historical bundle; historical parity validation still accepts the target without checking the modified file's digest.",
+  "recommendation": "Centralize required-artifact completeness and digest validation in the shared verifier, and invoke it for both historical regression endpoints before measurement.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included, so coverage cannot be established. The supplied code contains no equivalent verification in these paths.",
+  "suggestedRegressionTest": "Exercise live and historical provenance with complete, omitted, missing, and modified required artifacts. Assert that only complete matching inputs can reach evidence production or evaluator execution.",
+  "minimumFixScope": "Shared artifact validation in live_evidence.py and historical target validation in live_regression.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T195848-9adca0",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files and symbols still exist, with shifted lines. Current code supports the intended repair: live_evidence.py:64-110 requires the exact artifact set and validates presence, size, and SHA-256 for both provenance formats; checkpoint production invokes verification at line 359. Historical regression verifies both endpoints at live_regression.py:488-489 before scheduling measurement. No linked patch attempts were supplied. Relevant coverage exists in scoring_oracle_test.py:393, but targeted pytest exited 1 before collection because the read-only environment provided no usable temporary directory. The repair therefore cannot be classified as fixed under the requested validation rule.",
+      "commands": [
+        "rg -n 'def _validate_required_artifacts|def _committed_artifacts|def produce_checkpoint_evidence|def _historical_checkpoint_parity|def produce_live_regression_evidence|_committed_artifacts\\(' src/slop_code/metrics/scoring/live*.py",
+        "sed -n '49,114p' src/slop_code/metrics/scoring/live_evidence.py",
+        "sed -n '198,246p' src/slop_code/metrics/scoring/live_evidence.py",
+        "sed -n '477,530p' src/slop_code/metrics/scoring/live_regression.py",
+        "sed -n '380,510p' tests/metrics/scoring_oracle_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/scoring_oracle_test.py::test_committed_oracle_requires_complete_unmodified_artifacts"
+      ],
+      "createdAt": "2026-09-12T19:59:30.208Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified shared completeness and digest preflight blocks live and historical evidence before evaluator execution; 132 focused scoring tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:04:14.297Z"
+    }
+  ],
+  "signature": "sig_feat-library-7850d202f5_d45279b000",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:36.673Z",
+  "updatedAt": "2026-09-12T20:04:14.295Z"
+}

@@ -500,12 +500,16 @@ def _resolve_call(
 
     # Case 1: Qualified call (e.g., module.func() or obj.method())
     if qualifier:
-        # Special case: 'self' - method call within the same file
-        if qualifier == "self":
-            # Look for method in same file
-            for file_path, qual_name in candidates:
-                if file_path == caller_file:
-                    return f"{file_path.as_posix()}::{qual_name}"
+        if qualifier == "self" and caller_qual_name and "." in caller_qual_name:
+            current_class = caller_qual_name.rsplit(".", 1)[0]
+            for class_name in (
+                current_class,
+                *class_hierarchy.get(current_class, []),
+            ):
+                expected_name = f"{class_name}.{called_name}"
+                for file_path, qual_name in candidates:
+                    if file_path == caller_file and qual_name == expected_name:
+                        return f"{file_path.as_posix()}::{qual_name}"
 
         # Special case: 'super()' - call to parent class method
         if (

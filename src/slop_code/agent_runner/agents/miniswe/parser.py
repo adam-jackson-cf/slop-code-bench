@@ -32,9 +32,12 @@ class MinisweParser(TrajectoryParser):
                     if not line.strip():
                         continue
                     event = json.loads(line)
+                    if not isinstance(event, dict):
+                        return False
+                    step_type = event.get("step_type")
                     return (
-                        isinstance(event, dict)
-                        and event.get("step_type") in self._step_types
+                        isinstance(step_type, str)
+                        and step_type in self._step_types
                     )
         except (json.JSONDecodeError, OSError):
             return False

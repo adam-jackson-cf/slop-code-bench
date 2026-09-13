@@ -114,6 +114,7 @@ for run_path in available_run_paths:
         KeyError,
         OSError,
         TypeError,
+        ValueError,
         UnicodeError,
         yaml.YAMLError,
     ) as e:

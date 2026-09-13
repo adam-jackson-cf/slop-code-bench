@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,8 +20,11 @@ from slop_code.agent_runner.models import AgentError
 from slop_code.common.llms import APIPricing
 from slop_code.common.llms import APIPricingTier
 from slop_code.common.llms import ModelDefinition
+from slop_code.execution import DockerConfig
 from slop_code.execution import DockerEnvironmentSpec
+from slop_code.execution import Session
 from slop_code.execution.runtime import RuntimeEvent
+from slop_code.execution.runtime import RuntimeResult
 
 
 class FakeRuntime:
@@ -112,7 +117,7 @@ class TestGeminiConfig:
     def test_version_is_required(self, mock_cost_limits):
         """Version field is required for docker template."""
         with pytest.raises(Exception):  # Pydantic validation error
-            GeminiConfig(
+            GeminiConfig(  # type: ignore[missing-argument]
                 type="gemini",
                 cost_limits=mock_cost_limits,
                 # Missing version
@@ -247,7 +252,7 @@ class TestGeminiAgent:
         with pytest.raises(Exception):
             _ = agent.session
 
-        agent.setup(session)
+        agent.setup(cast("Session", session))
 
         # After setup, session should be accessible
         assert agent.session == session
@@ -360,7 +365,21 @@ class TestGeminiAgent:
             '"total_tokens":151500}}}}'
         )
         runtime = FakeRuntime()
-        runtime.events = [RuntimeEvent(kind="stdout", text=f"{result_line}\n")]
+        runtime.events = [
+            RuntimeEvent(kind="stdout", text=f"{result_line}\n"),
+            RuntimeEvent(
+                kind="finished",
+                result=RuntimeResult(
+                    exit_code=0,
+                    stdout=result_line,
+                    stderr="",
+                    setup_stdout="",
+                    setup_stderr="",
+                    elapsed=1.0,
+                    timed_out=False,
+                ),
+            ),
+        ]
         session = FakeSession(runtime=runtime, working_dir=tmp_path)
         agent = GeminiAgent(
             problem_name="test-problem",
@@ -375,7 +394,7 @@ class TestGeminiAgent:
             extra_args=[],
             env={},
         )
-        agent.setup(session)
+        agent.setup(cast("Session", session))
 
         result = agent._run_invocation("solve task")
         agent._sync_usage(result.usage_totals)
@@ -385,6 +404,66 @@ class TestGeminiAgent:
         assert result.usage_totals["reasoning_tokens"] == 1000
         assert result.usage_totals["cost_micros"] == 456000
         assert agent.usage.cost == pytest.approx(0.456)
+
+    def test_run_checkpoint_accumulates_retry_usage_and_enforces_limits(
+        self, tmp_path, mock_pricing
+    ):
+        """Retries retain prior consumption while final tokens stay local."""
+        result_line = (
+            '{"type":"result","status":"success",'
+            '"stats":{"input_tokens":2000000,"output_tokens":0}}'
+        )
+        failed_result = RuntimeResult(
+            exit_code=1,
+            stdout=result_line,
+            stderr="failed",
+            setup_stdout="",
+            setup_stderr="",
+            elapsed=1.0,
+            timed_out=False,
+        )
+        runtime = FakeRuntime()
+        runtime.events = [
+            RuntimeEvent(kind="stdout", text=f"{result_line}\n"),
+            RuntimeEvent(kind="finished", result=failed_result),
+        ]
+        limits = AgentCostLimits(
+            step_limit=10,
+            cost_limit=0.5,
+            net_cost_limit=1.0,
+            max_retries=2,
+        )
+        session = FakeSession(
+            runtime=runtime,
+            working_dir=tmp_path,
+            spec=DockerEnvironmentSpec(
+                name="test",
+                docker=DockerConfig(image="test-image"),
+            ),
+        )
+        agent = GeminiAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+            cost_limits=limits,
+            pricing=mock_pricing,
+            credential=None,
+            binary="gemini",
+            model="gemini-2.5-flash",
+            timeout=60,
+            extra_args=[],
+            env={},
+        )
+        agent.setup(cast("Session", session))
+
+        result = agent.run_checkpoint("solve task")
+
+        assert result.had_error is True
+        assert agent.usage.cost == pytest.approx(0.9)
+        assert agent.usage.net_tokens.input == 6000000
+        assert agent.usage.current_tokens.input == 2000000
+        assert result.error_message is not None
+        assert "exceeded configured usage limits" in result.error_message
 
     def test_reset_clears_state(self, tmp_path, mock_cost_limits, mock_pricing):
         """reset() clears internal state."""
@@ -405,7 +484,7 @@ class TestGeminiAgent:
             env={},
         )
 
-        agent.setup(session)
+        agent.setup(cast("Session", session))
 
         # Set some state
         agent._last_prompt = "some prompt"
@@ -554,6 +633,33 @@ class TestGeminiAgent:
 
         assert command.count("--skip-trust") == 1
 
+    def test_prepare_runtime_execution_serializes_complex_argv(
+        self, mock_cost_limits, mock_pricing
+    ):
+        """Shell serialization preserves each raw Gemini CLI argument."""
+        agent = GeminiAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+            cost_limits=mock_cost_limits,
+            pricing=mock_pricing,
+            credential=None,
+            binary="/opt/Gemini CLI/bin/gemini",
+            model='google/gemini "preview"',
+            timeout=None,
+            extra_args=[
+                "--label",
+                'value with spaces and "quotes"',
+                "$HOME; echo literal",
+            ],
+            env={},
+        )
+        prompt = 'solve "$HOME"; do not expand'
+
+        command, _ = agent._prepare_runtime_execution(prompt)
+
+        assert shlex.split(command) == agent._build_command(prompt)
+
     def test_prepare_runtime_execution_passes_google_auth_env_vars(
         self, mock_cost_limits, mock_pricing, monkeypatch
     ):
@@ -686,6 +792,48 @@ class TestGeminiAgent:
         assert env_overrides["GOOGLE_API_KEY"] == "host-gemini-key"
         assert "GEMINI_API_KEY" not in env_overrides
 
+    def test_prepare_runtime_execution_auth_precedence(
+        self, mock_cost_limits, mock_pricing, monkeypatch
+    ):
+        """Explicit, provider, host, then CLI defaults win in that order."""
+        auth_key = "GOOGLE_APPLICATION_CREDENTIALS"
+        monkeypatch.setenv(auth_key, "host-credential")
+        credential = ProviderCredential(
+            provider="google",
+            credential_type=CredentialType.ENV_VAR,
+            value="provider-credential",
+            source=auth_key,
+            destination_key=auth_key,
+        )
+        agent = GeminiAgent(
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+            cost_limits=mock_cost_limits,
+            pricing=mock_pricing,
+            credential=credential,
+            binary="gemini",
+            model="gemini-2.5-flash",
+            timeout=None,
+            extra_args=[],
+            env={auth_key: "explicit-credential"},
+        )
+
+        _, env_overrides = agent._prepare_runtime_execution("do something")
+        assert env_overrides[auth_key] == "explicit-credential"
+
+        agent.env = {}
+        _, env_overrides = agent._prepare_runtime_execution("do something")
+        assert env_overrides[auth_key] == "provider-credential"
+
+        agent.credential = None
+        _, env_overrides = agent._prepare_runtime_execution("do something")
+        assert env_overrides[auth_key] == "host-credential"
+
+        monkeypatch.delenv(auth_key)
+        _, env_overrides = agent._prepare_runtime_execution("do something")
+        assert auth_key not in env_overrides
+
     def test_prepare_runtime_execution_requires_vertex_env_vars(
         self, mock_cost_limits, mock_pricing, monkeypatch
     ):
@@ -732,7 +880,7 @@ class TestGeminiAgent:
             env={},
         )
 
-        agent.setup(session)
+        agent.setup(cast("Session", session))
         agent._last_prompt = "test prompt"
         agent._payloads = [
             {"type": "message", "role": "assistant", "content": "Hello"},

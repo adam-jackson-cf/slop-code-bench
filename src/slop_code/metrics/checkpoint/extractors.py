@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import statistics
-from collections.abc import Generator
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -61,25 +61,26 @@ def _load_json_file(
 
 
 def _compute_distributions(
-    file_metrics_iter: Generator[dict, None, None],
-    symbol_metrics_iter: Generator[dict, None, None],
+    file_metrics_iter: Iterable[dict],
+    symbol_metrics_iter: Iterable[dict],
     diff: dict | None,
+    prior_file_paths: set[str] | None = None,
 ) -> dict[str, Any]:
     """Compute metrics that require iterating through files or symbols."""
     lines_added = 0
     lines_removed = 0
+    eligible_file_paths = {
+        file_metrics["file_path"] for file_metrics in file_metrics_iter
+    }
+    if prior_file_paths:
+        eligible_file_paths.update(prior_file_paths)
 
-    # Process file metrics for diff tracking
     if diff is not None:
-        file_diffs = diff["file_diffs"]
-        for fm in file_metrics_iter:
-            if (file_path := fm["file_path"]) in file_diffs:
-                file_diff = file_diffs[file_path]
-                lines_added += file_diff["lines_added"]
-                lines_removed += file_diff["lines_removed"]
-    else:
-        # Consume iterator even if diff is None
-        list(file_metrics_iter)
+        for file_path, file_diff in diff["file_diffs"].items():
+            if file_path not in eligible_file_paths:
+                continue
+            lines_added += file_diff["lines_added"]
+            lines_removed += file_diff["lines_removed"]
 
     # Extract function metrics from symbols
     func_lines = []
@@ -121,11 +122,13 @@ def _build_metrics_from_snapshot(
         # Lines
         "loc": total_loc,
         "sloc": source_loc,
-        "total_lines": lines["total_lines"],
+        "total_lines": total_loc,
         "single_comments": lines["single_comment"],
         # Lint
         "lint_errors": lint["errors"],
         "lint_fixable": lint["fixable"],
+        "lint_available": lint.get("available", True),
+        "lint_unavailable_reason": lint.get("unavailable_reason"),
         "files": file_count,
         # Symbols
         "functions": symbols["functions"],
@@ -152,7 +155,7 @@ def _build_metrics_from_snapshot(
     }
 
     # Per-LOC normalized metrics
-    if total_loc > 0:
+    if total_loc > 0 and isinstance(lint["errors"], int | float):
         result["lint_per_loc"] = lint["errors"] / total_loc
 
     # Graph metrics (optional, may be None for non-Python)
@@ -269,6 +272,7 @@ def get_quality_metrics(
     checkpoint_dir: Path,
     quality_file_name: str = QUALITY_METRIC_SAVENAME,
     thresholds: MetricsThresholds | None = None,
+    prior_checkpoint_dir: Path | None = None,
 ) -> dict:
     """Extract and aggregate quality metrics into a flat structure.
 
@@ -295,14 +299,25 @@ def get_quality_metrics(
     if snapshot_data is None:
         return {}
 
-    # Compute distributions from file-level and symbol-level data
+    # Compute distributions from file-level and symbol-level data. Deleted
+    # source files exist only in the prior checkpoint, so their paths remain
+    # eligible for churn even though they have no current metric row.
     diff = load_diff_metrics(checkpoint_dir)
-    file_metrics_iter = load_file_metrics(checkpoint_dir)
+    file_metrics = list(load_file_metrics(checkpoint_dir))
+    prior_file_paths = (
+        {
+            file_metrics["file_path"]
+            for file_metrics in load_file_metrics(prior_checkpoint_dir)
+        }
+        if prior_checkpoint_dir is not None
+        else set()
+    )
     symbol_metrics_iter = load_symbol_metrics(checkpoint_dir)
     distributions = _compute_distributions(
-        file_metrics_iter,
+        iter(file_metrics),
         symbol_metrics_iter,
         diff,
+        prior_file_paths,
     )
 
     # Compute mass metrics (needs separate iterator since we consume it)

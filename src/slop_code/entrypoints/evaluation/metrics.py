@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +38,7 @@ def get_run_summary(submission_dir: Path) -> dict[str, Any] | None:
 
     try:
         with run_info_path.open("r") as f:
-            run_info = yaml.safe_load(f)
+            run_info: object = yaml.safe_load(f)
     except yaml.YAMLError as e:
         logger.warning(
             "Failed to parse run_info.yaml",
@@ -46,8 +47,31 @@ def get_run_summary(submission_dir: Path) -> dict[str, Any] | None:
         )
         return None
 
-    # Extract summary section if present
+    if not isinstance(run_info, Mapping):
+        logger.warning(
+            "Invalid run_info.yaml metadata",
+            submission_dir=str(submission_dir),
+            error="Root must be a mapping",
+        )
+        return None
+
     summary = run_info.get("summary", {})
+    if not isinstance(summary, Mapping):
+        logger.warning(
+            "Invalid run_info.yaml metadata",
+            submission_dir=str(submission_dir),
+            error="Summary must be a mapping",
+        )
+        return None
+
+    checkpoints = summary.get("checkpoints", {})
+    if not isinstance(checkpoints, Mapping):
+        logger.warning(
+            "Invalid run_info.yaml metadata",
+            submission_dir=str(submission_dir),
+            error="Summary checkpoints must be a mapping",
+        )
+        return None
     return {
         # Run spec fields
         "seed": run_info.get("seed"),
@@ -63,7 +87,7 @@ def get_run_summary(submission_dir: Path) -> dict[str, Any] | None:
         "passed": summary.get("passed"),
         "passed_policy": summary.get("passed_policy"),
         "overall_pass_rate": summary.get("overall_pass_rate"),
-        "checkpoints": summary.get("checkpoints", {}),
+        "checkpoints": checkpoints,
         "error_type": summary.get("error_type"),
         "error_message": summary.get("error_message"),
     }
@@ -162,13 +186,22 @@ def create_problem_reports(
                 (checkpoint_name, f"File not found: {checkpoint_dir}")
             )
             continue
-        metrics = get_checkpoint_metrics(
-            checkpoint_dir,
-            prior_metrics=prior_metrics,
-            prior_checkpoint_dir=prior_checkpoint_dir,
-            is_first=idx == 0,
-            is_last=idx == len(problem.checkpoints) - 1,
-        )
+        try:
+            metrics = get_checkpoint_metrics(
+                checkpoint_dir,
+                prior_metrics=prior_metrics,
+                prior_checkpoint_dir=prior_checkpoint_dir,
+                is_first=idx == 0,
+                is_last=idx == len(problem.checkpoints) - 1,
+            )
+        except MetricsError as e:
+            logger.error(
+                "Failed to collect metrics for checkpoint",
+                checkpoint_name=checkpoint_name,
+                error=str(e),
+            )
+            errors.append((checkpoint_name, str(e)))
+            continue
 
         out.append(
             {

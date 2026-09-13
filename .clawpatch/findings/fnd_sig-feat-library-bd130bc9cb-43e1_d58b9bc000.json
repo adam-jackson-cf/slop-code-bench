@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bd130bc9cb-43e1_d58b9bc000",
+  "featureId": "feat_library_bd130bc9cb",
+  "title": "Stream iterator failures are lost and can stall the consumer",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/stream_processor.py",
+      "startLine": 58,
+      "endLine": 69,
+      "symbol": "start_stream_pump",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/stream_processor.py",
+      "startLine": 148,
+      "endLine": 168,
+      "symbol": "process_stream",
+      "quote": null
+    }
+  ],
+  "reasoning": "If stream iteration raises, the pump thread terminates without enqueueing a completion or error event. The consumer can remain in queue.get for the remaining command budget, which defaults to two hours, and never receives the original transport error.",
+  "reproduction": "Use an iterator that raises OSError on its first read and a poll_fn that returns None. The consumer waits until its timeout instead of promptly reporting OSError.",
+  "recommendation": "Send pump exceptions through the queue and ensure every pump termination signals the consumer; propagate the failure after cleanup.",
+  "whyTestsDoNotAlreadyCoverThis": "No included test exercises an iterator exception or error propagation between the pump and consumer.",
+  "suggestedRegressionTest": "Exercise iterator failures both before output and after partial output, verifying prompt error propagation and completed cleanup.",
+  "minimumFixScope": "Pump event protocol and process_stream error handling.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central E05 verification passed: 67 focused tests, Ruff, and ty are green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:48:23.711Z"
+    }
+  ],
+  "signature": "sig_feat-library-bd130bc9cb_43e10cbf09",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:36.106Z",
+  "updatedAt": "2026-09-12T07:48:23.710Z"
+}

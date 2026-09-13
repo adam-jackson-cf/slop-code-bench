@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shlex
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -12,6 +15,33 @@ from slop_code.execution.local_streaming import LocalEnvironmentSpec
 from slop_code.execution.models import CommandConfig
 from slop_code.execution.models import SetupConfig
 from slop_code.execution.runtime import RuntimeResult
+
+
+def _wait_for_process_exit(pid: int, timeout: float = 2.0) -> None:
+    """Assert that a process is gone before the deadline."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.02)
+    pytest.fail(f"Process {pid} outlived its process group")
+
+
+def _descendant_command(child_pid_file: Path) -> str:
+    """Build a shell command that records a background child PID."""
+    script = f"sleep 60 & echo $! > {shlex.quote(str(child_pid_file))}; wait"
+    return f"sh -c {shlex.quote(script)}"
+
+
+def _exiting_parent_command(child_pid_file: Path) -> str:
+    """Build a command whose parent exits after spawning a child."""
+    script = (
+        "sleep 60 </dev/null >/dev/null 2>&1 & "
+        f"echo $! > {shlex.quote(str(child_pid_file))}"
+    )
+    return f"sh -c {shlex.quote(script)}"
 
 
 @pytest.fixture
@@ -317,6 +347,25 @@ class TestLocalExecRuntimeExecute:
         # Process should be killed, so elapsed should be close to timeout
         assert result.elapsed < 1.0
 
+    def test_execute_timeout_terminates_descendants(
+        self, local_spec: LocalEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Timeout terminates a child that inherits the parent's pipes."""
+        child_pid_file = tmp_path / "timeout-child.pid"
+        runtime = LocalExecRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+            command=_descendant_command(child_pid_file),
+        )
+        try:
+            started = time.monotonic()
+            result = runtime.execute(env={}, stdin=None, timeout=0.2)
+            assert time.monotonic() - started < 3
+            assert result.timed_out is True
+            _wait_for_process_exit(int(child_pid_file.read_text()))
+        finally:
+            runtime.cleanup()
+
     def test_execute_uses_working_directory(
         self, local_spec: LocalEnvironmentSpec, tmp_path: Path
     ) -> None:
@@ -372,6 +421,31 @@ class TestLocalExecRuntimeKill:
         # Should not raise
         runtime.kill()
 
+    def test_kill_terminates_direct_child_when_group_kill_is_denied(
+        self,
+        local_spec: LocalEnvironmentSpec,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Kill the direct child when process-group signaling is denied."""
+        runtime = LocalExecRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+            command="echo test",
+        )
+        proc = MagicMock()
+        proc.poll.return_value = None
+
+        def deny_group_kill(*_args: object) -> None:
+            raise PermissionError
+
+        monkeypatch.setattr(os, "killpg", deny_group_kill)
+        runtime._process_group_id = 123
+        runtime._terminate_process_group(proc)
+
+        proc.kill.assert_called_once_with()
+        proc.wait.assert_called_once_with(timeout=5)
+
 
 class TestLocalExecRuntimeCleanup:
     """Tests for LocalExecRuntime.cleanup()."""
@@ -390,6 +464,27 @@ class TestLocalExecRuntimeCleanup:
         runtime.cleanup()
         runtime.cleanup()
         runtime.cleanup()
+
+    def test_cleanup_terminates_descendant_after_parent_exits(
+        self, local_spec: LocalEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Cleanup kills descendants after execute has reaped their parent."""
+        child_pid_file = tmp_path / "exited-parent-child.pid"
+        runtime = LocalExecRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+            command=_exiting_parent_command(child_pid_file),
+        )
+        try:
+            result = runtime.execute(env={}, stdin=None, timeout=2)
+            assert result.exit_code == 0
+            assert child_pid_file.exists()
+            started = time.monotonic()
+            runtime.cleanup()
+            assert time.monotonic() - started < 3
+            _wait_for_process_exit(int(child_pid_file.read_text()))
+        finally:
+            runtime.cleanup()
 
 
 class TestLocalExecRuntimeIntegration:

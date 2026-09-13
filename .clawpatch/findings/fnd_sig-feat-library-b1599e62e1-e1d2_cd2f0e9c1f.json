@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-b1599e62e1-e1d2_cd2f0e9c1f",
+  "featureId": "feat_library_b1599e62e1",
+  "title": "Resume validation regenerates prompts without agent and model context",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/runner.py",
+      "startLine": 206,
+      "endLine": 218,
+      "symbol": "get_task_for_checkpoint",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/resume.py",
+      "startLine": 75,
+      "endLine": 102,
+      "symbol": "_generate_expected_prompt",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/resume.py",
+      "startLine": 160,
+      "endLine": 175,
+      "symbol": "_check_prompt_mismatch",
+      "quote": null
+    }
+  ],
+  "reasoning": "Execution supplies agent_type, agent_version, and model_name to prompt rendering, but resume validation supplies only is_continuation. An unchanged template using these supported fields consequently renders differently during resume, invalidating completed checkpoints and every subsequent checkpoint unnecessarily.",
+  "reproduction": "Save a prompt through get_task_for_checkpoint using a template containing model_name and a nonempty model name. Validate the same checkpoint and template through detect_resume_point with prompt validation enabled; the expected prompt lacks the model context and mismatches.",
+  "recommendation": "Share prompt context construction between execution and resume, and pass the same agent and model metadata through the resume validation API.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied resume tests cover artifact presence, errors, and usage aggregation but do not compare execution-generated prompts against resume rendering with agent or model metadata.",
+  "suggestedRegressionTest": "Round-trip execution-generated prompts through resume validation for all supported context fields and continuation states; unchanged inputs must remain valid, while changed rendered inputs must invalidate dependent checkpoints.",
+  "minimumFixScope": "Resume prompt-generation parameters and shared context construction with get_task_for_checkpoint.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T191945-4d00d4",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original paths and symbols still exist, but their code now supports the repair: runner.py:207 and resume.py:91 share build_prompt_context; resume.py:170-173 forwards agent and model metadata. Both resume detection branches and CLI/worker callers propagate that metadata. tests/agent_runner/resume_test.py:705 covers execution/resume equivalence for initial and continuation prompts, plus dependent invalidation after a model change. No linked patch attempts were supplied. However, targeted pytest validation exited 1 before collection because the read-only environment provided no usable temporary directory. The repair appears implemented, but failed validation prevents a fixed verdict.",
+      "commands": [
+        "rg -n 'detect_resume_point|build_prompt_context|prompt_context|agent_version|model_name' tests/agent_runner/resume_test.py src/slop_code/entrypoints src/slop_code/agent_runner/resume.py src/slop_code/agent_runner/runner.py",
+        "sed -n '690,800p' tests/agent_runner/resume_test.py",
+        "sed -n '118,141p' src/slop_code/entrypoints/problem_runner/worker.py",
+        "sed -n '1488,1507p' src/slop_code/entrypoints/commands/run_agent.py",
+        "sed -n '1538,1555p' src/slop_code/entrypoints/commands/run_agent.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/resume_test.py"
+      ],
+      "createdAt": "2026-09-12T19:20:13.543Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified shared execution/resume prompt context and migrated callers; A01 suite passed 523 tests, changed-file Ruff and ty passed.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:21:12.933Z"
+    }
+  ],
+  "signature": "sig_feat-library-b1599e62e1_e1d284b8ba",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:56.856Z",
+  "updatedAt": "2026-09-12T19:21:12.932Z"
+}

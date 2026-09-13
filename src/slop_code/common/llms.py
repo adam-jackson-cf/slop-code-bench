@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import yaml
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import TypeAdapter
 from pydantic import ValidationError
 from pydantic import model_validator
 
@@ -183,14 +184,54 @@ class ModelDefinition(BaseModel):
 
     @model_validator(mode="after")
     def validate_thinking_config(self) -> ModelDefinition:
-        """Ensure thinking and max_thinking_tokens are mutually exclusive."""
-        if self.thinking is not None and self.max_thinking_tokens is not None:
-            raise ValueError(
-                "Cannot specify both 'thinking' and 'max_thinking_tokens'. "
-                "Use 'thinking' for presets or 'max_thinking_tokens' for "
-                "fine-grained control."
+        """Validate top-level and agent-specific thinking configuration."""
+        self._validate_thinking_values(
+            self.thinking,
+            self.max_thinking_tokens,
+        )
+        for agent_type, settings in self.agent_specific.items():
+            thinking, max_thinking_tokens = self._validate_thinking_values(
+                settings.get("thinking"),
+                settings.get("max_thinking_tokens"),
+                agent_type=agent_type,
             )
+            if "thinking" in settings:
+                settings["thinking"] = thinking
+            if "max_thinking_tokens" in settings:
+                settings["max_thinking_tokens"] = max_thinking_tokens
         return self
+
+    @staticmethod
+    def _validate_thinking_values(
+        thinking: Any,
+        max_thinking_tokens: Any,
+        *,
+        agent_type: str | None = None,
+    ) -> tuple[ThinkingPreset | None, int | None]:
+        """Ensure a thinking configuration uses one supported setting."""
+        location = (
+            f" for agent_specific.{agent_type}"
+            if agent_type is not None
+            else ""
+        )
+        try:
+            preset = TypeAdapter(ThinkingPreset | None).validate_python(
+                thinking
+            )
+            max_tokens = TypeAdapter(int | None).validate_python(
+                max_thinking_tokens
+            )
+        except ValidationError as exc:
+            raise ValueError(
+                f"Invalid thinking configuration{location}: {exc}"
+            ) from exc
+        if preset is not None and max_tokens is not None:
+            raise ValueError(
+                "Cannot specify both 'thinking' and 'max_thinking_tokens'"
+                f"{location}. Use 'thinking' for presets or "
+                "'max_thinking_tokens' for fine-grained control."
+            )
+        return preset, max_tokens
 
     def get_thinking_config(
         self,

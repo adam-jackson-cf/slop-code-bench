@@ -30,12 +30,14 @@ import difflib
 import fnmatch
 import hashlib
 import os
+import posixpath
 import tarfile
 from collections.abc import Generator
 from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from pathlib import PurePosixPath
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -121,6 +123,27 @@ def _tar_read_mode(compression: str) -> str:
             f"Choose one of {list(mode_map.keys())}."
         )
     return mode_map[compression]
+
+
+def _archive_member_path(name: str) -> Path:
+    """Return a validated archive-relative path."""
+    path = PurePosixPath(name)
+    if path.is_absolute() or not path.parts or ".." in path.parts:
+        raise ExecutionError(f"Unsafe archive member path: {name!r}")
+    return Path(*path.parts)
+
+
+def _validated_link_target(member: tarfile.TarInfo) -> Path:
+    """Validate a relative link target stays within the archive root."""
+    target = PurePosixPath(member.linkname)
+    if target.is_absolute():
+        raise ExecutionError(f"Unsafe archive link target: {member.linkname!r}")
+    resolved = posixpath.normpath(
+        (PurePosixPath(member.name).parent / target).as_posix()
+    )
+    if resolved == ".." or resolved.startswith("../"):
+        raise ExecutionError(f"Unsafe archive link target: {member.linkname!r}")
+    return _archive_member_path(resolved)
 
 
 def _resolve_archive_path(
@@ -408,21 +431,84 @@ class Snapshot(BaseModel):
             verbose=True,
         )
 
-        # get your target uid/gid (e.g., from env vars set by Docker)
-        if not IS_WINDOWS:
-            uid = int(os.environ.get("HUID", os.getuid()))
-            gid = int(os.environ.get("HGID", os.getgid()))
+        with tarfile.open(  # type: ignore[arg-type]
+            self.archive, _tar_read_mode(self.compression)
+        ) as tf:
+            members = tf.getmembers()
+            member_paths: dict[Path, tarfile.TarInfo] = {}
+            for member in members:
+                path = _archive_member_path(member.name)
+                if path in member_paths:
+                    raise ExecutionError(
+                        f"Duplicate archive member path: {member.name!r}"
+                    )
+                if not (
+                    member.isfile()
+                    or member.isdir()
+                    or member.issym()
+                    or member.islnk()
+                ):
+                    raise ExecutionError(
+                        f"Unsupported archive member type: {member.name!r}"
+                    )
+                member_paths[path] = member
+            for member in members:
+                if member.issym():
+                    _validated_link_target(member)
+                elif member.islnk():
+                    link_path = _archive_member_path(member.linkname)
+                    link_member = member_paths.get(link_path)
+                    if link_member is None or not link_member.isfile():
+                        raise ExecutionError(
+                            f"Hard link target is not a regular file: "
+                            f"{member.linkname!r}"
+                        )
 
-        file_count = 0
-        for path, data in self._extract_contents():
-            out_path = target_dir / path
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-
-            out_path.write_bytes(data)
+            # get your target uid/gid (e.g., from env vars set by Docker)
             if not IS_WINDOWS:
-                os.chown(out_path, uid, gid)
-                os.chown(out_path.parent, uid, gid)
-            file_count += 1
+                uid = int(os.environ.get("HUID", os.getuid()))
+                gid = int(os.environ.get("HGID", os.getgid()))
+
+            file_count = 0
+            for member in members:
+                path = _archive_member_path(member.name)
+                out_path = target_dir / path
+                if member.isdir():
+                    out_path.mkdir(parents=True, exist_ok=True)
+                elif member.isfile():
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    extracted = tf.extractfile(member)
+                    if extracted is None:
+                        raise ExecutionError(
+                            f"Could not extract archive member: {member.name!r}"
+                        )
+                    out_path.write_bytes(extracted.read())
+                    out_path.chmod(member.mode)
+                    file_count += 1
+
+                if not IS_WINDOWS and out_path.exists():
+                    os.chown(out_path, uid, gid)
+
+            for member in members:
+                if not (member.issym() or member.islnk()):
+                    continue
+                path = _archive_member_path(member.name)
+                out_path = target_dir / path
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                if member.issym():
+                    out_path.symlink_to(member.linkname)
+                else:
+                    os.link(
+                        target_dir / _archive_member_path(member.linkname),
+                        out_path,
+                    )
+                file_count += 1
+
+            for member in members:
+                if member.isdir():
+                    (target_dir / _archive_member_path(member.name)).chmod(
+                        member.mode
+                    )
 
         if not IS_WINDOWS:
             os.chown(target_dir, uid, gid)

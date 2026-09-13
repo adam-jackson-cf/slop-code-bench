@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-9b348010a5-cb5e_0204388d60",
+  "featureId": "feat_library_9b348010a5",
+  "title": "Binary fallback retains the text handler for materialization",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/file_ops/entrypoint.py",
+      "startLine": 65,
+      "endLine": 81,
+      "symbol": "read_file_content",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/entrypoint.py",
+      "startLine": 165,
+      "endLine": 186,
+      "symbol": "InputFile.from_path",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/raw_files.py",
+      "startLine": 100,
+      "endLine": 114,
+      "symbol": "TextHandler.write",
+      "quote": null
+    }
+  ],
+  "reasoning": "The advertised binary fallback returns bytes but does not update the detected TEXT file type. Materialization subsequently passes those bytes to TextHandler.write, which opens an uncompressed text stream and writes bytes directly. This raises TypeError after opening and potentially truncating the destination.",
+  "reproduction": "Read an unknown-extension file containing invalid UTF-8 through InputFile.from_path, then materialize it. Reading succeeds through the fallback, but writing fails with TypeError.",
+  "recommendation": "Propagate the effective BINARY signature when fallback reading succeeds so subsequent writes preserve the bytes.",
+  "whyTestsDoNotAlreadyCoverThis": "The included metrics tests do not cover reading and materializing unknown file formats.",
+  "suggestedRegressionTest": "Round-trip unknown-extension files containing valid UTF-8 and arbitrary binary bytes through both InputFile constructors and materialization; assert byte preservation for binary fallback.",
+  "minimumFixScope": "Binary fallback signature propagation through InputFile construction.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170648-440d1f",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Original evidence paths still exist, but the fallback now returns a BINARY signature at entrypoint.py:76-80, and both constructors propagate it at lines 128-133 and 170-175. This supports the intended repair despite TextHandler.write retaining its original bytes behavior. Tests at tests/execution/file_ops_test.py:440-469 cover UTF-8 and binary round trips through both constructors. Targeted validation exited 1 before running tests because the read-only environment has no usable temporary directory, so fixed cannot be confirmed. No linked patch attempts or successful validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/execution/file_ops/entrypoint.py | sed -n '40,190p'",
+        "rg -n 'fallback|unknown|binary' tests/execution",
+        "sed -n '430,480p' tests/execution/file_ops_test.py",
+        "nl -ba src/slop_code/execution/file_ops/raw_files.py | sed -n '95,135p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/execution/file_ops_test.py -k unknown_extension_materialization_preserves_bytes"
+      ],
+      "createdAt": "2026-09-11T17:07:21.135Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:07:21.790Z"
+    }
+  ],
+  "signature": "sig_feat-library-9b348010a5_cb5e7636b9",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:13.990Z",
+  "updatedAt": "2026-09-11T17:07:21.787Z"
+}

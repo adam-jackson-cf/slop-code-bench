@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-42cc4cda50-e3e7_19d4cb341d",
+  "featureId": "feat_library_42cc4cda50",
+  "title": "Deleted files are omitted from checkpoint churn",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/checkpoint/extractors.py",
+      "startLine": 72,
+      "endLine": 79,
+      "symbol": "_compute_distributions",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/checkpoint/delta.py",
+      "startLine": 83,
+      "endLine": 90,
+      "symbol": "compute_checkpoint_delta",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 406,
+      "endLine": 419,
+      "symbol": "TestMeasureSnapshotQuality.test_measure_snapshot_quality_aggregates_metrics",
+      "quote": null
+    }
+  ],
+  "reasoning": "Diff totals are accumulated only for paths present in the current snapshot's file metrics. A deleted file has no current file-metrics row, so its removed lines are ignored even when present in file_diffs. This understates lines_removed and delta.churn_ratio, including reporting zero churn for a deletion-only checkpoint.",
+  "reproduction": "Pass current file metrics containing only keep.py and a diff containing deleted.py with lines_added=0 and lines_removed=100. The extractor returns lines_removed=0; with previous total_lines=200, churn is 0 instead of 0.5.",
+  "recommendation": "Include deleted-file diff entries when aggregating churn. If churn is restricted to measured source files, determine eligibility using both previous and current snapshot paths.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied quality tests measure files present in a single snapshot. They do not exercise checkpoint diff aggregation or file deletion.",
+  "suggestedRegressionTest": "Extend checkpoint churn coverage across additions, modifications, deletions, and mixed changes, asserting that eligible removed paths contribute their full line counts.",
+  "minimumFixScope": "Update _compute_distributions and its checkpoint diff aggregation coverage; supply previous snapshot eligibility if filtering requires it.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200114-084129",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "All original evidence files still exist. The code supports a repair: extractors.py:72-83 aggregates diffs over current and prior measured paths; get_quality_metrics loads prior paths, checkpoint/driver.py forwards the prior directory, and entrypoints/evaluation/metrics.py supplies it between checkpoints. delta.py:75-85 includes removed lines in churn. The original snapshot aggregation test moved to driver_test.py:450; checkpoint_results_test.py:956 now covers additions, modifications, deletions, and excluded paths. No linked patch attempts were supplied. Targeted pytest validation exited 1 before collection because the read-only environment has no writable temporary directory, so the repair cannot be marked fixed.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "rg -n 'churn|prior_checkpoint_dir|get_checkpoint_metrics\\(' tests/metrics src/slop_code",
+        "nl -ba src/slop_code/metrics/checkpoint/extractors.py | sed -n '63,90p;306,337p'",
+        "nl -ba src/slop_code/metrics/checkpoint/delta.py | sed -n '74,92p'",
+        "rg -n 'test_measure_snapshot_quality_aggregates_metrics' tests/metrics/driver_test.py",
+        "sed -n '950,990p' tests/metrics/checkpoint_results_test.py",
+        "sed -n '140,188p' src/slop_code/entrypoints/evaluation/metrics.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/checkpoint_results_test.py -k 'churn'"
+      ],
+      "createdAt": "2026-09-12T20:01:52.434Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified eligible deleted files contribute full prior line counts to checkpoint churn; 123 focused tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:58.118Z"
+    }
+  ],
+  "signature": "sig_feat-library-42cc4cda50_e3e7f361bc",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:22.193Z",
+  "updatedAt": "2026-09-12T20:03:58.117Z"
+}

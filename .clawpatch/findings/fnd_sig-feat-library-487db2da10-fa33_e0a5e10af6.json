@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-487db2da10-fa33_e0a5e10af6",
+  "featureId": "feat_library_487db2da10",
+  "title": "Category backfill can destroy existing grades if writing fails",
+  "category": "data-loss",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/backfill_categories.py",
+      "startLine": 38,
+      "endLine": 42,
+      "symbol": "_save_grades",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/backfill_categories.py",
+      "startLine": 116,
+      "endLine": 118,
+      "symbol": "_process_single_run",
+      "quote": null
+    }
+  ],
+  "reasoning": "Opening the existing rubric file with mode \"w\" truncates it before the replacement grades are written. A disk-full error, interrupted process, or other write failure can therefore leave historical grades empty or partially written. This turns a metadata backfill failure into loss of the original benchmark results.",
+  "reproduction": "Inject an OSError during writing after the destination has been opened, then inspect the rubric file: its original contents have already been truncated.",
+  "recommendation": "Write the complete replacement to a temporary file in the same directory, flush and close it successfully, then atomically replace the original. Clean up the temporary file on failure.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests exercise report configuration ordering and historical finalization sequencing; they do not exercise category persistence or failed writes.",
+  "suggestedRegressionTest": "Test the persistence invariant across failures during writing and before replacement: the original rubric must remain byte-for-byte intact. Also verify that successful replacement produces the complete, parseable grade set.",
+  "minimumFixScope": "Change _save_grades to publish replacements atomically and add behavioral coverage for successful and failed persistence.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200512-bbe4ee",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the unsafe write has changed: _save_grades at lines 41–63 writes to a same-directory temporary file, flushes, fsyncs, closes, and then replaces the original, cleaning up on exceptions. _process_single_run calls it at line 139. This supports the intended repair. Tests now cover successful publication and preservation on serialization and replacement failures, although the writing-failure test does not inject an actual partial write. No linked patch attempts were supplied. Targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory; therefore fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/entrypoints/commands/backfill_categories.py | head -155",
+        "rg --files tests/entrypoints/commands | rg backfill",
+        "cat tests/entrypoints/commands/test_backfill_categories.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/commands/test_backfill_categories.py"
+      ],
+      "createdAt": "2026-09-12T20:05:52.499Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified sibling-temp write/fsync/atomic replace preserves original bytes on write or publish failure; 35 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:06:29.159Z"
+    }
+  ],
+  "signature": "sig_feat-library-487db2da10_fa333e7121",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:16.314Z",
+  "updatedAt": "2026-09-12T20:06:29.157Z"
+}

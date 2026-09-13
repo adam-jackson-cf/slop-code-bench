@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-c79ab5abca-5_2a4309cdc5",
+  "featureId": "feat_test-suite_c79ab5abca",
+  "title": "Grouped runs can produce duplicate bars and legend entries",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/graphs/test_pass.py",
+      "startLine": 40,
+      "endLine": 62,
+      "symbol": "build_test_pass_rate_bars",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/graphs/test_pass.py",
+      "startLine": 76,
+      "endLine": 85,
+      "symbol": "get_test_stats",
+      "quote": null
+    }
+  ],
+  "reasoning": "The iteration table deduplicates all five selected columns, including run_date, but the loop selects data using only display_name. When grouped runs share a display_name and have different dates, the loop processes that group repeatedly, adding identical aggregate bars to every panel and repeatedly requesting a legend entry.",
+  "reproduction": "Provide grouped checkpoint data with two run_path values sharing a display_name but having different run_date values. The function adds ten traces instead of five for that display group.",
+  "recommendation": "Sort the run metadata first, then deduplicate by the display-group identity used by the loop so each group is rendered once.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied file contains chart implementation, not pytest tests. No supplied test asserts trace counts for grouped runs with different dates.",
+  "suggestedRegressionTest": "Exercise grouped data with varying run dates and multiple display groups; assert exactly five traces per display group and verify each aggregate includes every constituent run once.",
+  "minimumFixScope": "The sorted_unique_runs construction in build_test_pass_rate_bars and behavioral chart coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T203254-f1bde4",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path and relevant code still exist. Lines 49–57 now sort metadata before deduplicating by display_name, matching the loop identity and addressing the reported duplication. Aggregation at lines 75–79 still includes constituent runs. Existing coverage in tests/dashboard/graphs/quality_test.py checks two display groups with different run dates, ten traces, and aggregate rates of 75% and 70%. However, targeted pytest validation exited 1 before executing tests because the read-only environment had no usable temporary directory. No linked patch attempts were supplied. The code supports the repair, but failed validation prevents confirming fixed.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/graphs/test_pass.py | head -95",
+        "rg -n 'test_pass_rate|grouped.*bars|trace.*group' tests/dashboard",
+        "sed -n '150,280p' tests/dashboard/graphs/quality_test.py",
+        "sed -n '1,95p' tests/dashboard/graphs/quality_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/graphs/quality_test.py::test_grouped_chart_traces_render_each_display_name_once"
+      ],
+      "createdAt": "2026-09-12T20:33:21.676Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified each display group renders exactly five traces and each aggregate includes all constituent runs once; 7 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:33:59.811Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-c79ab5abca_5f53c7626d",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:01:04.413Z",
+  "updatedAt": "2026-09-12T20:33:59.810Z"
+}

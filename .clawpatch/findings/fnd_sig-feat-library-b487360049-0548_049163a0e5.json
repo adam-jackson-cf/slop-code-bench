@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-b487360049-0548_049163a0e5",
+  "featureId": "feat_library_b487360049",
+  "title": "Entrypoint substitutions interpret literal backslashes as regex replacement syntax",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/common/render.py",
+      "startLine": 166,
+      "endLine": 170,
+      "symbol": "replace_spec_placeholders",
+      "quote": null
+    },
+    {
+      "path": "tests/common/render_test.py",
+      "startLine": 11,
+      "endLine": 26,
+      "symbol": "test_render_prompt_applies_placeholders_and_context",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both replacement values are passed directly to re.Pattern.sub, which parses backslash escapes and group references. Valid command text containing a literal backslash-n is altered into a newline, while other backslash sequences can raise re.error. The substitution contract requires inserting the provided path and command literally.",
+  "reproduction": "Pass an entry_command containing the literal characters '\\\\n', such as a printf command: the returned specification contains an actual newline instead. A replacement containing '\\\\1' raises an invalid group reference error.",
+  "recommendation": "Use literal string replacement or callable regex replacements for both placeholders.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied placeholder test uses a simple filename and command without backslashes.",
+  "suggestedRegressionTest": "Parameterize the existing placeholder scenario with paths and commands containing literal backslashes, escape sequences, and group-reference-like text; assert exact preservation.",
+  "minimumFixScope": "Change replace_spec_placeholders and extend the existing prompt substitution test.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165745-cacd9d",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. render.py:166-174 now uses callable replacements for both placeholders, which preserves literal backslashes. render_test.py:13-40 extends the existing scenario with backslashes, \\n, \\1, and \\g<name>. This supports the intended repair, but targeted pytest validation exited 1 before executing tests because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/common/render.py | sed -n '160,180p'",
+        "nl -ba tests/common/render_test.py | sed -n '1,48p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/common/render_test.py::test_render_prompt_applies_placeholders_and_context"
+      ],
+      "createdAt": "2026-09-11T16:58:06.503Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:58:07.067Z"
+    }
+  ],
+  "signature": "sig_feat-library-b487360049_0548ee4224",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:11.870Z",
+  "updatedAt": "2026-09-11T16:58:07.067Z"
+}

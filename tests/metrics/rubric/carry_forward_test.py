@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from slop_code.metrics.rubric.carry_forward import DiffHunk
 from slop_code.metrics.rubric.carry_forward import carry_forward_all_files
 from slop_code.metrics.rubric.carry_forward import carry_forward_grades
 from slop_code.metrics.rubric.carry_forward import compute_line_offset
 from slop_code.metrics.rubric.carry_forward import is_span_unchanged
 from slop_code.metrics.rubric.carry_forward import parse_diff_hunks
+from slop_code.metrics.rubric.carry_forward import process_problem_carry_forward
 
 
 class TestParseDiffHunks:
@@ -161,6 +165,13 @@ class TestComputeLineOffset:
         assert new_line == 60  # 50 + 10 from first hunk
         assert is_changed is False
 
+    def test_zero_context_insertion_preserves_boundary_line(self) -> None:
+        """An insertion after a line shifts only later old-file lines."""
+        hunks = [DiffHunk(old_start=3, old_count=0, new_start=4, new_count=2)]
+
+        assert compute_line_offset(hunks, 3) == (3, False)
+        assert compute_line_offset(hunks, 4) == (6, False)
+
 
 class TestIsSpanUnchanged:
     """Tests for is_span_unchanged function."""
@@ -234,6 +245,23 @@ class TestIsSpanUnchanged:
         is_unchanged, new_start, new_end = is_span_unchanged(hunks, 105, None)
 
         assert is_unchanged is False
+
+    def test_zero_context_insertions_respect_span_boundaries(self) -> None:
+        """Only insertions between a span's endpoints make it ineligible."""
+        middle = [DiffHunk(old_start=3, old_count=0, new_start=4, new_count=2)]
+        assert is_span_unchanged(middle, 1, 3) == (True, 1, 3)
+        assert is_span_unchanged(middle, 3, 5) == (False, 3, 7)
+        assert is_span_unchanged(middle, 4, 5) == (True, 6, 7)
+
+        at_file_start = [
+            DiffHunk(old_start=0, old_count=0, new_start=1, new_count=2)
+        ]
+        assert is_span_unchanged(at_file_start, 1, None) == (True, 3, None)
+
+        at_file_end = [
+            DiffHunk(old_start=5, old_count=0, new_start=6, new_count=1)
+        ]
+        assert is_span_unchanged(at_file_end, 5, None) == (True, 5, None)
 
 
 class TestCarryForwardGrades:
@@ -533,3 +561,51 @@ class TestCarryForwardAllFiles:
         assert len(carried) == 1
         assert carried[0]["start"] == 50
         assert carried[0]["carried_over"] == "checkpoint_1"
+
+
+class TestProcessProblemCarryForward:
+    """Tests for persisted carry-forward recomputation."""
+
+    def test_removes_stale_carried_grades_from_later_checkpoints(
+        self, tmp_path: Path
+    ) -> None:
+        """An ineligible carried grade is removed from disk and downstream."""
+        checkpoint_1 = tmp_path / "checkpoint_1"
+        checkpoint_2 = tmp_path / "checkpoint_2"
+        checkpoint_3 = tmp_path / "checkpoint_3"
+        for checkpoint in (checkpoint_1, checkpoint_2, checkpoint_3):
+            checkpoint.mkdir()
+
+        original = {
+            "criteria": "overdoc",
+            "start": 1,
+            "file_name": "main.py",
+        }
+        stale_carried = {**original, "carried_over": "checkpoint_1"}
+        (checkpoint_1 / "rubric.jsonl").write_text(json.dumps(original) + "\n")
+        (checkpoint_2 / "rubric.jsonl").write_text(
+            json.dumps(stale_carried) + "\n"
+        )
+        (checkpoint_3 / "rubric.jsonl").write_text(
+            json.dumps(stale_carried) + "\n"
+        )
+        (checkpoint_2 / "diff.json").write_text(
+            json.dumps(
+                {
+                    "file_diffs": {
+                        "main.py": {
+                            "diff_text": "@@ -1 +1 @@\n-change\n+change"
+                        }
+                    }
+                }
+            )
+        )
+
+        results = process_problem_carry_forward(
+            tmp_path, lambda _: [checkpoint_1, checkpoint_2, checkpoint_3]
+        )
+
+        assert results["checkpoint_2"]["carried"] == 0
+        assert results["checkpoint_3"]["carried"] == 0
+        assert (checkpoint_2 / "rubric.jsonl").read_text() == ""
+        assert (checkpoint_3 / "rubric.jsonl").read_text() == ""

@@ -132,6 +132,9 @@ def run_agent_on_problem(
             environment=config.env_spec,
             entry_file=problem_config.entry_file,
             checkpoints=checkpoints,
+            agent_type=config.agent_config.type,
+            agent_version=config.agent_config.version,
+            model_name=config.model_def.name,
         )
         if resume_info:
             # Check if all checkpoints are already completed
@@ -144,10 +147,22 @@ def run_agent_on_problem(
                 _send_completed_progress(
                     problem_name, resume_info, output_path, progress_queue
                 )
+                evaluation_results = [
+                    runner._load_eval_result(output_path / checkpoint_name)
+                    for checkpoint_name in resume_info.completed_checkpoints
+                ]
+                passed_policy = config.disable_evaluation or all(
+                    evaluation_result is not None
+                    and config.assessment_policy.check(
+                        evaluation_result.pass_counts,
+                        evaluation_result.total_counts,
+                    )
+                    for evaluation_result in evaluation_results
+                )
                 return {
                     "summary": {
-                        "state": "skipped",
-                        "passed_policy": True,
+                        "state": "completed",
+                        "passed_policy": passed_policy,
                         "usage": resume_info.prior_usage.model_dump()
                         if hasattr(resume_info.prior_usage, "model_dump")
                         else {},

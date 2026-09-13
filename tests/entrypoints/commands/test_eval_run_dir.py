@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
+import pytest
 import yaml
 
 from slop_code.common import CHECKPOINT_RESULTS_FILENAME
@@ -199,6 +200,38 @@ class TestEvaluationSchemaHelpers:
 
         assert _is_evaluation_schema_current(checkpoint_dir) is False
 
+    @pytest.mark.parametrize("payload", [[], "stale", 1])
+    def test_schema_current_rejects_non_object_metadata(
+        self, tmp_path: Path, payload: object
+    ) -> None:
+        _create_checkpoint(tmp_path, "checkpoint_1", schema_current=True)
+        checkpoint_dir = tmp_path / "checkpoint_1"
+        (checkpoint_dir / "evaluation.json").write_text(json.dumps(payload))
+
+        assert _is_evaluation_schema_current(checkpoint_dir) is False
+
+    @pytest.mark.parametrize(
+        "schema_version",
+        [
+            None,
+            False,
+            "1",
+            EVALUATION_SCHEMA_VERSION - 1,
+            EVALUATION_SCHEMA_VERSION + 1,
+        ],
+    )
+    def test_schema_current_rejects_invalid_schema_version(
+        self, tmp_path: Path, schema_version: object
+    ) -> None:
+        _create_checkpoint(tmp_path, "checkpoint_1", schema_current=True)
+        checkpoint_dir = tmp_path / "checkpoint_1"
+        evaluation_path = checkpoint_dir / "evaluation.json"
+        data = json.loads(evaluation_path.read_text())
+        data["schema_version"] = schema_version
+        evaluation_path.write_text(json.dumps(data))
+
+        assert _is_evaluation_schema_current(checkpoint_dir) is False
+
     def test_problem_fully_evaluated_requires_current_schema(
         self, tmp_path: Path
     ) -> None:
@@ -207,6 +240,31 @@ class TestEvaluationSchemaHelpers:
         _create_checkpoint(problem_dir, "checkpoint_1", schema_current=False)
 
         assert _is_problem_fully_evaluated(problem_dir) is False
+
+
+def test_rejects_non_strict_policy_before_loading_environment(
+    tmp_path: Path, monkeypatch
+) -> None:
+    resolve_environment = MagicMock()
+    monkeypatch.setattr(
+        eval_run_dir.config_loader,
+        "resolve_environment",
+        resolve_environment,
+    )
+
+    with pytest.raises(eval_run_dir.typer.Exit):
+        eval_run_dir.evaluate_agent_run(
+            ctx=_ctx(tmp_path),
+            agent_run_dir=tmp_path / "does-not-exist",
+            problem_names=[],
+            assessment_policy="any-case",
+            env_config=None,
+            live_progress=False,
+            num_workers=1,
+            overwrite=False,
+        )
+
+    resolve_environment.assert_not_called()
 
 
 class TestEvaluateSelectionBehavior:
@@ -261,6 +319,52 @@ class TestEvaluateSelectionBehavior:
             for _, problem_dir in evaluate_mock.call_args.kwargs["problems"]
         }
         assert evaluated == {"missing_problem", "outdated_problem"}
+
+    def test_malformed_metadata_reselects_without_aborting_other_problems(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        agent_run_dir = _create_run_dir(tmp_path)
+
+        malformed_problem_dir = agent_run_dir / "malformed_problem"
+        malformed_problem_dir.mkdir()
+        _create_checkpoint(
+            malformed_problem_dir, "checkpoint_1", schema_current=True
+        )
+        (malformed_problem_dir / "checkpoint_1" / "evaluation.json").write_text(
+            "[]"
+        )
+
+        missing_problem_dir = agent_run_dir / "missing_problem"
+        missing_problem_dir.mkdir()
+        (missing_problem_dir / "checkpoint_1").mkdir()
+
+        evaluate_mock = _stub_eval_dependencies(
+            monkeypatch,
+            tmp_path,
+            {
+                "malformed_problem": _mock_source_problem("malformed_problem"),
+                "missing_problem": _mock_source_problem("missing_problem"),
+            },
+        )
+
+        eval_run_dir.evaluate_agent_run(
+            ctx=_ctx(tmp_path),
+            agent_run_dir=agent_run_dir,
+            problem_names=[],
+            assessment_policy=PassPolicy.ALL_CASES,
+            env_config=None,
+            live_progress=False,
+            num_workers=1,
+            overwrite=False,
+        )
+
+        evaluated = {
+            problem_dir.name
+            for _, problem_dir in evaluate_mock.call_args.kwargs["problems"]
+        }
+        assert evaluated == {"malformed_problem", "missing_problem"}
 
     def test_overwrite_evaluates_all_selected_problems(
         self,

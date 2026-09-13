@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-566aaab053-dc34_b159acc174",
+  "featureId": "feat_library_566aaab053",
+  "title": "Checker execution failures are reported as clean metrics",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/languages/python/lint_metrics.py",
+      "startLine": 95,
+      "endLine": 107,
+      "symbol": "calculate_lint_metrics",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/type_check.py",
+      "startLine": 95,
+      "endLine": 112,
+      "symbol": "calculate_type_check_metrics",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both functions discard the subprocess exit status and stderr. If uv or the checker fails with an operational error and produces no stdout, they return zero diagnostics, indistinguishable from successful analysis. This can incorrectly improve benchmark quality results when analysis never ran.",
+  "reproduction": "Have the command runner return (2, \"\", \"configuration error\"); both metrics functions return zero diagnostics.",
+  "recommendation": "Validate checker-specific exit statuses and output before constructing metrics. Propagate operational failures or represent analysis as unavailable rather than clean.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied test exercises dictionary merging, not checker execution or failure handling.",
+  "suggestedRegressionTest": "Cover successful clean output, valid findings, operational failure, and malformed output for both checkers; assert failures cannot become successful zero metrics.",
+  "minimumFixScope": "Execution-result handling in lint_metrics.py and type_check.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170953-c4ada2",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "Both original evidence paths and line ranges still exist. lint_metrics.py:96 and type_check.py:95 discard exit status and stderr; empty stdout returns clean metrics at lines 105–107 and 97–99 respectively. Targeted execution against the current modules, mocking the runner to return (2, \"\", \"configuration error\"), confirmed both return zero diagnostics. No linked patch attempts were supplied. The initial heredoc command was blocked by filesystem restrictions; the equivalent inline validation succeeded.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/languages/python/lint_metrics.py | sed -n '75,145p'",
+        "nl -ba src/slop_code/metrics/languages/python/type_check.py | sed -n '78,135p'",
+        ".venv/bin/python -B -c 'from importlib import import_module; from pathlib import Path; from unittest.mock import patch\nfor name, function in [(\"lint_metrics\", \"calculate_lint_metrics\"), (\"type_check\", \"calculate_type_check_metrics\")]:\n module = import_module(\"slop_code.metrics.languages.python.\" + name)\n with patch.object(module, \"_resolve_uv_executable\", return_value=Path(\"/test/uv\")), patch.object(module, \"_run_with_captured_output\", return_value=(2, \"\", \"configuration error\")):\n  result = getattr(module, function)(Path(\"example.py\"))\n  print(name, result.model_dump())\n  assert result.errors == 0 and result.counts == {}\n'"
+      ],
+      "createdAt": "2026-09-11T17:10:21.823Z"
+    },
+    {
+      "runId": "20260912T200116-c936ec",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence paths still exist, but their original line ranges have changed. lint_metrics.py:107–130 and type_check.py:108–126 now inspect exit status and represent operational failures as available=false with errors=null. Targeted execution passed 10 cases covering the original (2, \"\", \"configuration error\") reproduction, empty failure output, malformed JSON, clean results, and valid findings across both checkers. No linked patch attempts were supplied; this conclusion rests on current files and successful direct validation.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/languages/python/lint_metrics.py | sed -n '75,185p'",
+        "nl -ba src/slop_code/metrics/languages/python/type_check.py | sed -n '90,185p'",
+        "rg -n 'operational_failure|malformed_output|unavailable|calculate_lint_metrics|calculate_type_check_metrics' tests/metrics src/slop_code/metrics/models.py",
+        ".venv/bin/python -B -c 'from importlib import import_module; from pathlib import Path; from unittest.mock import patch\nfor name, function, findings in [(\"lint_metrics\", \"calculate_lint_metrics\", \"[{\\\"code\\\":\\\"F401\\\",\\\"count\\\":1,\\\"fixable\\\":true}]\"), (\"type_check\", \"calculate_type_check_metrics\", \"[{\\\"severity\\\":\\\"major\\\",\\\"check_name\\\":\\\"invalid-type\\\"}]\")]:\n module = import_module(\"slop_code.metrics.languages.python.\" + name)\n for status, stdout, reason in [(2, \"\", \"checker_operational_failure\"), (1, \"\", \"checker_malformed_output\"), (0, \"invalid\", \"checker_malformed_output\"), (0, \"[]\", None), (1, findings, None)]:\n  with patch.object(module, \"_resolve_uv_executable\", return_value=Path(\"/test/uv\")), patch.object(module, \"_run_with_captured_output\", return_value=(status, stdout, \"configuration error\" if status == 2 else \"\")):\n   result = getattr(module, function)(Path(\"example.py\"))\n   assert result.available == (reason is None), result\n   assert result.unavailable_reason == reason, result\n   assert result.errors == (None if reason else int(status == 1)), result\n print(name, \"5 validation cases passed\")'"
+      ],
+      "createdAt": "2026-09-12T20:01:51.001Z"
+    }
+  ],
+  "signature": "sig_feat-library-566aaab053_dc3441498d",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:01.548Z",
+  "updatedAt": "2026-09-12T20:01:51.001Z"
+}

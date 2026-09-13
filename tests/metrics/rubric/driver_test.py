@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from slop_code.metrics.driver import batch_files_by_size as _batch_files_by_size
@@ -115,6 +116,14 @@ class TestBatchFilesBySize:
         )
 
         assert len(result) == 3  # Each file in own batch
+        assert Counter(file for batch in result for file in batch) == Counter(
+            [file1, file2, file3]
+        )
+        assert all(
+            sum(_count_file_lines(file) for file in batch) <= 500
+            for batch in result
+        )
+        assert all(len(batch) <= 10 for batch in result)
 
     def test_respects_max_batch_files(self, tmp_path: Path) -> None:
         """Batches are split when max files exceeded."""
@@ -132,4 +141,11 @@ class TestBatchFilesBySize:
         )
 
         assert len(result) == 3  # 6 files / 2 per batch = 3 batches
+        assert Counter(file for batch in result for file in batch) == Counter(
+            files
+        )
+        assert all(
+            sum(_count_file_lines(file) for file in batch) <= 10000
+            for batch in result
+        )
         assert all(len(batch) <= 2 for batch in result)

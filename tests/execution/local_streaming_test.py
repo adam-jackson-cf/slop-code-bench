@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import shlex
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -14,6 +18,33 @@ from slop_code.execution.models import SetupConfig
 from slop_code.execution.runtime import RuntimeEvent
 from slop_code.execution.runtime import RuntimeResult
 from slop_code.execution.runtime import SolutionRuntimeError
+
+
+def _wait_for_process_exit(pid: int, timeout: float = 2.0) -> None:
+    """Assert that a process is gone before the deadline."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.02)
+    pytest.fail(f"Process {pid} outlived its process group")
+
+
+def _descendant_command(child_pid_file: Path) -> str:
+    """Build a shell command that records a background child PID."""
+    script = f"sleep 60 & echo $! > {shlex.quote(str(child_pid_file))}; wait"
+    return f"sh -c {shlex.quote(script)}"
+
+
+def _exiting_parent_command(child_pid_file: Path) -> str:
+    """Build a command whose parent exits after spawning a child."""
+    script = (
+        "sleep 60 </dev/null >/dev/null 2>&1 & "
+        f"echo $! > {shlex.quote(str(child_pid_file))}"
+    )
+    return f"sh -c {shlex.quote(script)}"
 
 
 @pytest.fixture
@@ -184,7 +215,9 @@ class TestLocalStreamingRuntimeStream:
                 runtime.stream("echo hello_world", env={}, timeout=10)
             )
             stdout_events = [e for e in events if e.kind == "stdout"]
-            stdout_text = "".join(e.text for e in stdout_events if e.text)
+            stdout_text = "".join(
+                e.text for e in stdout_events if e.text is not None
+            )
             assert "hello_world" in stdout_text
         finally:
             runtime.cleanup()
@@ -202,7 +235,9 @@ class TestLocalStreamingRuntimeStream:
                 runtime.stream("sh -c 'echo error_msg >&2'", env={}, timeout=10)
             )
             stderr_events = [e for e in events if e.kind == "stderr"]
-            stderr_text = "".join(e.text for e in stderr_events if e.text)
+            stderr_text = "".join(
+                e.text for e in stderr_events if e.text is not None
+            )
             assert "error_msg" in stderr_text
         finally:
             runtime.cleanup()
@@ -248,7 +283,9 @@ class TestLocalStreamingRuntimeStream:
         try:
             events = list(runtime.stream("sh -c 'exit 42'", env={}, timeout=10))
             finished = events[-1]
-            assert finished.result.exit_code == 42
+            result = finished.result
+            assert result is not None
+            assert result.exit_code == 42
         finally:
             runtime.cleanup()
 
@@ -269,8 +306,37 @@ class TestLocalStreamingRuntimeStream:
                 )
             )
             stdout_events = [e for e in events if e.kind == "stdout"]
-            stdout_text = "".join(e.text for e in stdout_events if e.text)
+            stdout_text = "".join(
+                e.text for e in stdout_events if e.text is not None
+            )
             assert "test_value" in stdout_text
+        finally:
+            runtime.cleanup()
+
+    def test_stream_merges_spawn_and_command_environment(
+        self, local_spec: LocalEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Spawn variables persist and command variables take precedence."""
+        runtime = LocalStreamingRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+            env_vars={"SPAWN_ONLY": "spawn", "SHARED": "spawn"},
+        )
+        try:
+            events = list(
+                runtime.stream(
+                    'sh -c \'printf "%s:%s:%s" "$SPAWN_ONLY" '
+                    '"$COMMAND_ONLY" "$SHARED"\'',
+                    env={"COMMAND_ONLY": "command", "SHARED": "command"},
+                    timeout=10,
+                )
+            )
+            stdout = "".join(
+                event.text
+                for event in events
+                if event.kind == "stdout" and event.text is not None
+            )
+            assert stdout == "spawn:command:command"
         finally:
             runtime.cleanup()
 
@@ -285,7 +351,9 @@ class TestLocalStreamingRuntimeStream:
         try:
             events = list(runtime.stream("pwd", env={}, timeout=10))
             stdout_events = [e for e in events if e.kind == "stdout"]
-            stdout_text = "".join(e.text for e in stdout_events if e.text)
+            stdout_text = "".join(
+                e.text for e in stdout_events if e.text is not None
+            )
             assert str(tmp_path) in stdout_text
         finally:
             runtime.cleanup()
@@ -310,18 +378,24 @@ class TestLocalStreamingRuntimeStream:
             # Check output from finished result (more reliable than events)
             result1 = events1[-1].result
             result2 = events2[-1].result
+            assert result1 is not None
+            assert result2 is not None
             assert result1.exit_code == 0
             assert result2.exit_code == 0
             # Output should be captured in either events or result
             stdout1 = (
                 "".join(
-                    e.text for e in events1 if e.kind == "stdout" and e.text
+                    e.text
+                    for e in events1
+                    if e.kind == "stdout" and e.text is not None
                 )
                 or result1.stdout
             )
             stdout2 = (
                 "".join(
-                    e.text for e in events2 if e.kind == "stdout" and e.text
+                    e.text
+                    for e in events2
+                    if e.kind == "stdout" and e.text is not None
                 )
                 or result2.stdout
             )
@@ -378,21 +452,56 @@ class TestLocalStreamingRuntimeKill:
     def test_kill_terminates_running_process(
         self, local_spec: LocalEnvironmentSpec, tmp_path: Path
     ) -> None:
-        """Kill terminates a running process."""
+        """Kill terminates a ready parent and its descendant within a deadline."""
+        child_pid_file = tmp_path / "child.pid"
         runtime = LocalStreamingRuntime.spawn(
             environment=local_spec,
             working_dir=tmp_path,
         )
+        proc = runtime._start_process(
+            _descendant_command(child_pid_file),
+            env={},
+        )
         try:
-            # Start a long-running process but don't consume all output
-            stream = runtime.stream("sleep 60", env={}, timeout=None)
-            # Get first event
-            next(stream, None)
-            # Kill it
+            deadline = time.monotonic() + 2
+            while not child_pid_file.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert child_pid_file.exists()
+            assert proc.poll() is None
+            child_pid = int(child_pid_file.read_text())
             runtime.kill()
-            # Process should be gone
+            assert proc.wait(timeout=2) is not None
+            _wait_for_process_exit(child_pid)
         finally:
             runtime.cleanup()
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
+
+    def test_kill_terminates_direct_child_when_group_kill_is_denied(
+        self,
+        local_spec: LocalEnvironmentSpec,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Kill the direct child when process-group signaling is denied."""
+        runtime = LocalStreamingRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+        )
+        proc = MagicMock()
+        proc.poll.return_value = None
+
+        def deny_group_kill(*_args: object) -> None:
+            raise PermissionError
+
+        monkeypatch.setattr(os, "killpg", deny_group_kill)
+        runtime._process_group_id = 123
+        runtime._terminate_process_group(proc)
+
+        proc.kill.assert_called_once_with()
+        proc.wait.assert_called_once_with(timeout=5)
 
 
 class TestLocalStreamingRuntimeCleanup:
@@ -411,6 +520,63 @@ class TestLocalStreamingRuntimeCleanup:
         runtime.cleanup()
         runtime.cleanup()
         runtime.cleanup()
+
+    def test_cleanup_terminates_process_group(
+        self, local_spec: LocalEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Cleanup terminates a parent and its descendant within a deadline."""
+        child_pid_file = tmp_path / "cleanup-child.pid"
+        runtime = LocalStreamingRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+        )
+        proc = runtime._start_process(
+            _descendant_command(child_pid_file),
+            env={},
+        )
+        try:
+            deadline = time.monotonic() + 2
+            while not child_pid_file.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert child_pid_file.exists()
+            started = time.monotonic()
+            runtime.cleanup()
+            assert time.monotonic() - started < 3
+            assert proc.wait(timeout=2) is not None
+            _wait_for_process_exit(int(child_pid_file.read_text()))
+        finally:
+            runtime.cleanup()
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
+
+    def test_cleanup_terminates_descendant_after_parent_exits(
+        self, local_spec: LocalEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Cleanup kills descendants after their direct parent exits."""
+        child_pid_file = tmp_path / "exited-parent-child.pid"
+        runtime = LocalStreamingRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+        )
+        proc = runtime._start_process(
+            _exiting_parent_command(child_pid_file),
+            env={},
+        )
+        try:
+            assert proc.wait(timeout=2) == 0
+            assert child_pid_file.exists()
+            started = time.monotonic()
+            runtime.cleanup()
+            assert time.monotonic() - started < 3
+            _wait_for_process_exit(int(child_pid_file.read_text()))
+        finally:
+            runtime.cleanup()
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
 
 
 class TestLocalStreamingRuntimeProcess:
@@ -444,9 +610,13 @@ class TestLocalStreamingRuntimeIntegration:
                 runtime.stream("echo integration_test", env={}, timeout=10)
             )
             finished = events[-1]
-            assert finished.result.exit_code == 0
+            result = finished.result
+            assert result is not None
+            assert result.exit_code == 0
             stdout_text = "".join(
-                e.text for e in events if e.kind == "stdout" and e.text
+                e.text
+                for e in events
+                if e.kind == "stdout" and e.text is not None
             )
             assert "integration_test" in stdout_text
         finally:
@@ -468,7 +638,9 @@ class TestLocalStreamingRuntimeIntegration:
                 runtime.stream("cat test_input.txt", env={}, timeout=10)
             )
             stdout_text = "".join(
-                e.text for e in events if e.kind == "stdout" and e.text
+                e.text
+                for e in events
+                if e.kind == "stdout" and e.text is not None
             )
             assert "input content" in stdout_text
         finally:
@@ -485,7 +657,9 @@ class TestLocalStreamingRuntimeIntegration:
         try:
             events = list(runtime.stream("seq 1 1000", env={}, timeout=10))
             stdout_text = "".join(
-                e.text for e in events if e.kind == "stdout" and e.text
+                e.text
+                for e in events
+                if e.kind == "stdout" and e.text is not None
             )
             lines = stdout_text.strip().split("\n")
             assert len(lines) == 1000
@@ -505,10 +679,14 @@ class TestLocalStreamingRuntimeIntegration:
             cmd = "sh -c 'echo stdout_line_1; echo stderr_line_1 >&2; echo stdout_line_2; echo stderr_line_2 >&2'"
             events = list(runtime.stream(cmd, env={}, timeout=10))
             stdout_text = "".join(
-                e.text for e in events if e.kind == "stdout" and e.text
+                e.text
+                for e in events
+                if e.kind == "stdout" and e.text is not None
             )
             stderr_text = "".join(
-                e.text for e in events if e.kind == "stderr" and e.text
+                e.text
+                for e in events
+                if e.kind == "stderr" and e.text is not None
             )
             # Check that stdout was captured
             assert "stdout_line_1" in stdout_text
@@ -523,6 +701,39 @@ class TestLocalStreamingRuntimeIntegration:
         finally:
             runtime.cleanup()
 
+    def test_mixed_output_drains_without_blocking(
+        self, local_spec: LocalEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Ready bytes are decoded incrementally while stderr drains fully."""
+        runtime = LocalStreamingRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+        )
+        command = (
+            'sh -c \'printf "\\342"; sleep 0.05; '
+            'printf "\\202\\254marker\\n"; '
+            "yes x | head -c 131072 >&2'"
+        )
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                events = executor.submit(
+                    lambda: list(runtime.stream(command, env={}, timeout=3))
+                ).result(timeout=5)
+            stdout = "".join(
+                event.text
+                for event in events
+                if event.kind == "stdout" and event.text is not None
+            )
+            stderr = "".join(
+                event.text
+                for event in events
+                if event.kind == "stderr" and event.text is not None
+            )
+            assert "€marker" in stdout
+            assert len(stderr) == 131072
+        finally:
+            runtime.cleanup()
+
     def test_timeout_during_stream(
         self, local_spec: LocalEnvironmentSpec, tmp_path: Path
     ) -> None:
@@ -534,7 +745,34 @@ class TestLocalStreamingRuntimeIntegration:
         try:
             events = list(runtime.stream("sleep 10", env={}, timeout=0.5))
             finished = events[-1]
-            assert finished.result.timed_out is True
+            result = finished.result
+            assert result is not None
+            assert result.timed_out is True
+        finally:
+            runtime.cleanup()
+
+    def test_timeout_terminates_process_group(
+        self, local_spec: LocalEnvironmentSpec, tmp_path: Path
+    ) -> None:
+        """Timeout reaps a parent and descendant that inherit output pipes."""
+        child_pid_file = tmp_path / "timeout-child.pid"
+        runtime = LocalStreamingRuntime.spawn(
+            environment=local_spec,
+            working_dir=tmp_path,
+        )
+        command = _descendant_command(child_pid_file)
+        try:
+            started = time.monotonic()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                events = executor.submit(
+                    lambda: list(runtime.stream(command, env={}, timeout=0.2))
+                ).result(timeout=3)
+            assert time.monotonic() - started < 3
+            finished = events[-1]
+            result = finished.result
+            assert result is not None
+            assert result.timed_out is True
+            _wait_for_process_exit(int(child_pid_file.read_text()))
         finally:
             runtime.cleanup()
 
@@ -559,7 +797,9 @@ class TestLocalStreamingRuntimeIntegration:
                 runtime.stream("cat testfile.txt", env={}, timeout=10)
             )
             stdout_text = "".join(
-                e.text for e in events if e.kind == "stdout" and e.text
+                e.text
+                for e in events
+                if e.kind == "stdout" and e.text is not None
             )
             assert "test" in stdout_text
         finally:
@@ -569,19 +809,25 @@ class TestLocalStreamingRuntimeIntegration:
 class TestLocalStreamingRuntimeDemuxedStream:
     """Tests for _create_demuxed_stream method."""
 
-    def test_demuxed_stream_yields_tuples(
-        self, local_spec: LocalEnvironmentSpec, tmp_path: Path
+    def test_demuxed_echo_cleanup_handles_denied_group_kill(
+        self,
+        local_spec: LocalEnvironmentSpec,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
-        """Demuxed stream yields (stdout, stderr) tuples."""
+        """Cleanup succeeds after demuxing echo when group signaling is denied."""
         runtime = LocalStreamingRuntime.spawn(
             environment=local_spec,
             working_dir=tmp_path,
         )
+
+        def deny_group_kill(*_args: object) -> None:
+            raise PermissionError
+
         try:
             proc = runtime._start_process("echo test", env={})
-            for chunk in runtime._create_demuxed_stream(proc):
-                assert isinstance(chunk, tuple)
-                assert len(chunk) == 2
-                break  # Just test one iteration
+            chunks = list(runtime._create_demuxed_stream(proc))
+            assert chunks == [("test\n", "")]
+            monkeypatch.setattr(os, "killpg", deny_group_kill)
         finally:
             runtime.cleanup()

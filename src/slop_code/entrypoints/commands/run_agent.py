@@ -186,6 +186,10 @@ def _check_problem_needs_rerun(
     problem_path: Path,
     prompt_template: str,
     environment: EnvironmentSpecType,
+    *,
+    agent_type: str | None = None,
+    agent_version: str | None = None,
+    model_name: str | None = None,
 ) -> tuple[bool, str | None]:
     """Check if a problem needs to be run based on checkpoint state.
 
@@ -242,6 +246,9 @@ def _check_problem_needs_rerun(
         environment=environment,
         entry_file=problem_config.entry_file,
         checkpoints=checkpoints,
+        agent_type=agent_type,
+        agent_version=agent_version,
+        model_name=model_name,
     )
 
     # No valid state found at all
@@ -271,6 +278,9 @@ def _filter_problems_for_execution(
     overwrite: bool,
     resume: bool,
     clear_outputs: bool,
+    agent_type: str | None = None,
+    agent_version: str | None = None,
+    model_name: str | None = None,
 ) -> tuple[list[str], list[str], dict[str, str]]:
     """Filter problems based on completion status and prompt changes.
 
@@ -309,6 +319,9 @@ def _filter_problems_for_execution(
             problem_path / p,
             prompt_template,
             environment,
+            agent_type=agent_type,
+            agent_version=agent_version,
+            model_name=model_name,
         )
         if needs_rerun:
             to_run.append(p)
@@ -507,6 +520,10 @@ def _preview_dry_run(
     problem_path: Path,
     prompt_template: str,
     env_spec: EnvironmentSpecType,
+    *,
+    agent_type: str | None = None,
+    agent_version: str | None = None,
+    model_name: str | None = None,
 ) -> None:
     """Preview what would be executed without making changes.
 
@@ -557,6 +574,9 @@ def _preview_dry_run(
             environment=env_spec,
             entry_file=problem_config.entry_file,
             checkpoints=checkpoints,
+            agent_type=agent_type,
+            agent_version=agent_version,
+            model_name=model_name,
         )
 
         # Skip fully completed problems (silently)
@@ -1478,6 +1498,9 @@ def run_agent(
             overwrite=ctx.obj.overwrite,
             resume=is_resuming,
             clear_outputs=not dry_run,
+            agent_type=agent_config.type,
+            agent_version=agent_config.version,
+            model_name=model_def.name,
         )
 
         if not ctx.obj.overwrite:
@@ -1522,6 +1545,9 @@ def run_agent(
             problem_root,
             run_cfg.prompt_content,
             env_spec,
+            agent_type=agent_config.type,
+            agent_version=agent_config.version,
+            model_name=model_def.name,
         )
         return
 

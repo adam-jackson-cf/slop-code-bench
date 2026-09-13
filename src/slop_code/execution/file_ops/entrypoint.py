@@ -4,7 +4,6 @@ from pathlib import Path
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
-from pydantic import JsonValue
 
 from slop_code.execution.file_ops import raw_files
 from slop_code.execution.file_ops import structured_files
@@ -14,6 +13,7 @@ from slop_code.execution.file_ops.models import FileHandler
 from slop_code.execution.file_ops.models import FileSignature
 from slop_code.execution.file_ops.models import FileType
 from slop_code.execution.file_ops.models import InputFileReadError
+from slop_code.execution.file_ops.models import InputFileWriteError
 from slop_code.logging import get_logger
 
 logger = get_logger(__name__)
@@ -42,18 +42,15 @@ def detect_file_signature(path: Path) -> FileSignature:
 
 
 def read_file_content(path: Path, signature: FileSignature) -> FileContent:
-    """Read the content of a file.
+    """Read file content using its detected signature."""
+    content, _ = _read_file_content_with_signature(path, signature)
+    return content
 
-    Args:
-        path: Path to the file.
-        signature: File signature determined for the file.
 
-    Returns:
-        JsonValue: The content of the file.
-
-    Raises:
-        ExecutionError: If the file cannot be read.
-    """
+def _read_file_content_with_signature(
+    path: Path, signature: FileSignature
+) -> tuple[FileContent, FileSignature]:
+    """Read file content and return the signature used to decode it."""
     logger.debug(
         "Reading file content",
         path=path,
@@ -62,28 +59,28 @@ def read_file_content(path: Path, signature: FileSignature) -> FileContent:
         verbose=True,
     )
 
-    # For text files with unknown extensions, try text first, then binary
     if (
         signature.file_type == FileType.TEXT
         and signature.compression == Compression.NONE
     ):
         try:
             handler = _REGISTRY.get_handler(FileType.TEXT, Compression.NONE)
-            return handler.read(path)
-        except (UnicodeDecodeError, InputFileReadError) as e:
+            return handler.read(path), signature
+        except (UnicodeDecodeError, InputFileReadError) as exc:
             logger.debug(
                 "Failed to read as text, falling back to binary",
                 path=path,
-                error=str(e),
+                error=str(exc),
                 verbose=True,
             )
-            handler = _REGISTRY.get_handler(FileType.BINARY, Compression.NONE)
-            return handler.read(path)
-    else:
-        handler = _REGISTRY.get_handler(
-            signature.file_type, signature.compression
-        )
-        return handler.read(path)
+            binary_signature = FileSignature(FileType.BINARY, Compression.NONE)
+            handler = _REGISTRY.get_handler(
+                binary_signature.file_type, binary_signature.compression
+            )
+            return handler.read(path), binary_signature
+
+    handler = _REGISTRY.get_handler(signature.file_type, signature.compression)
+    return handler.read(path), signature
 
 
 class InputFile(BaseModel):
@@ -129,11 +126,13 @@ class InputFile(BaseModel):
         signature = FileSignature(file_type=file_type, compression=compression)
 
         if content is None:
-            actual_content: FileContent = cls._read_content_from_file(
+            actual_content, signature = cls._read_content_from_file(
                 path, signature
             )
+            file_type = signature.file_type
+            compression = signature.compression
         else:
-            actual_content: FileContent = content
+            actual_content = content
 
         return cls(
             path=save_path,
@@ -146,7 +145,7 @@ class InputFile(BaseModel):
     def from_path(
         cls,
         path: Path,
-        content: JsonValue = None,
+        content: FileContent | None = None,
         file_type: FileType | str | None = None,
         compression: Compression | str | None = None,
         relative_to: Path | None = None,
@@ -169,11 +168,13 @@ class InputFile(BaseModel):
         signature = FileSignature(file_type=file_type, compression=compression)
 
         if content is None:
-            actual_content: FileContent = cls._read_content_from_file(
+            actual_content, signature = cls._read_content_from_file(
                 path, signature, relative_to=relative_to
             )
+            file_type = signature.file_type
+            compression = signature.compression
         else:
-            actual_content: FileContent = content
+            actual_content = content
 
         if relative_to is not None:
             path = cls._normalize_path(relative_to, path)
@@ -223,7 +224,7 @@ class InputFile(BaseModel):
         path: Path,
         signature: FileSignature,
         relative_to: Path | None = None,
-    ) -> FileContent:
+    ) -> tuple[FileContent, FileSignature]:
         use_path = path
         if not use_path.exists():
             if relative_to is None:
@@ -231,7 +232,7 @@ class InputFile(BaseModel):
                     "relative_to is required if path does not exist"
                 )
             use_path = relative_to / use_path
-        return read_file_content(use_path, signature)
+        return _read_file_content_with_signature(use_path, signature)
 
     @classmethod
     def _normalize_path(cls, relative_to: Path, path: Path) -> Path:
@@ -332,22 +333,35 @@ def materialize_input_files(files: list[InputFile], cwd: Path) -> None:
         cwd=cwd,
     )
 
+    working_directory = cwd.resolve()
     for input_file in files:
+        if input_file.path.is_absolute():
+            raise InputFileWriteError(
+                f"Input file path must be relative: {input_file.path}"
+            )
+
+        file_path = working_directory / input_file.path
+        resolved_path = file_path.resolve()
+        try:
+            resolved_path.relative_to(working_directory)
+        except ValueError as exc:
+            raise InputFileWriteError(
+                f"Input file path escapes working directory: {input_file.path}"
+            ) from exc
+
         handler = _REGISTRY.get_handler(
             input_file.file_type, input_file.compression
         )
-        file_path = cwd / input_file.path
         logger.debug(
             "Writing input file",
             path=input_file.path,
             file_type=input_file.file_type,
             compression=input_file.compression,
-            target_path=file_path,
+            target_path=resolved_path,
             verbose=True,
         )
-        # Ensure the parent directory exists
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        handler.write(file_path, input_file.content)
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+        handler.write(resolved_path, input_file.content)
         logger.debug(
             "Successfully materialized input file",
             path=input_file.path,

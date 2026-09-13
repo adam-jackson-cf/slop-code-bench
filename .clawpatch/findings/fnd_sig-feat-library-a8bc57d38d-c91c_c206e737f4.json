@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a8bc57d38d-c91c_c206e737f4",
+  "featureId": "feat_library_a8bc57d38d",
+  "title": "Malformed evaluation metadata aborts the entire evaluation run",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/eval_run_dir.py",
+      "startLine": 56,
+      "endLine": 72,
+      "symbol": "_is_evaluation_schema_current",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/eval_run_dir.py",
+      "startLine": 245,
+      "endLine": 252,
+      "symbol": "evaluate_agent_run",
+      "quote": null
+    },
+    {
+      "path": "tests/entrypoints/commands/test_eval_run_dir.py",
+      "startLine": 195,
+      "endLine": 209,
+      "symbol": "TestEvaluationSchemaHelpers",
+      "quote": null
+    }
+  ],
+  "reasoning": "The validity check handles unreadable files and invalid JSON syntax, but assumes decoded JSON is a mapping and schema_version is comparable to an integer. Valid JSON such as null or [] raises AttributeError; a string or object schema_version raises TypeError. These exceptions escape problem selection, stopping the entire run instead of treating the checkpoint as requiring evaluation.",
+  "reproduction": "Set a checkpoint's evaluation.json to null, or set schema_version to a string, then run evaluation without --overwrite.",
+  "recommendation": "Validate the decoded top-level type and schema-version type before accessing or comparing them. Return false for malformed metadata so normal reevaluation can proceed.",
+  "whyTestsDoNotAlreadyCoverThis": "The schema-helper tests cover a missing version only. Their fixtures always contain a dictionary and use a correctly typed version when present.",
+  "suggestedRegressionTest": "Expand schema-validation scenarios across non-object JSON, invalid version types, missing fields, and valid metadata; assert invalid artifacts are selected for reevaluation without preventing other problems from being evaluated.",
+  "minimumFixScope": "_is_evaluation_schema_current and existing schema-helper and selection tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T202547-3ab9d2",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence files still exist. eval_run_dir.py:61-70 now rejects non-object JSON and non-integer, boolean, or mismatched schema versions before further access. Selection at lines 254-265 therefore schedules malformed checkpoints for reevaluation. Existing tests now cover malformed metadata and continued selection of other problems. Targeted in-memory execution of the current helper passed 15 invalid scenarios, including null and object-valued versions, plus a valid control. The initial heredoc was blocked by read-only restrictions; rerunning without a heredoc passed. Full pytest was not run. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/commands/eval_run_dir.py | sed -n '47,100p;250,270p'",
+        "nl -ba tests/entrypoints/commands/test_eval_run_dir.py | sed -n '195,247p;335,397p'",
+        "python3 -B -c '<AST-extracted current schema helper; filesystem mocks; 15 malformed metadata scenarios and valid control>'"
+      ],
+      "createdAt": "2026-09-12T20:26:26.688Z"
+    }
+  ],
+  "signature": "sig_feat-library-a8bc57d38d_c91c5ecb55",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:30.109Z",
+  "updatedAt": "2026-09-12T20:26:26.688Z"
+}

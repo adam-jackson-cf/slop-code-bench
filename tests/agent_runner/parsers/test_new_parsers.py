@@ -1,5 +1,7 @@
 """Tests for the new simplified trajectory parsers."""
 
+import io
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -327,6 +329,22 @@ class TestParseTrajectory:
         """Test error on nonexistent path."""
         with pytest.raises(ValueError):
             parse_trajectory(tmp_path / "nonexistent")
+
+    def test_rejects_traversal_archive_without_outside_write(
+        self, tmp_path: Path
+    ) -> None:
+        archive = tmp_path / "agent.tar.gz"
+        outside_path = tmp_path.parent / "escaped.txt"
+        with tarfile.open(archive, "w:gz") as tar:
+            info = tarfile.TarInfo("../../escaped.txt")
+            payload = b"not allowed"
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+
+        with pytest.raises(ParseError, match="safely extract"):
+            parse_trajectory(archive)
+
+        assert not outside_path.exists()
 
 
 class TestGeminiParser:

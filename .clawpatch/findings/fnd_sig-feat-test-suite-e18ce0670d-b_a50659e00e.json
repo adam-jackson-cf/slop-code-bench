@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-e18ce0670d-b_a50659e00e",
+  "featureId": "feat_test-suite_e18ce0670d",
+  "title": "Live step tracking test checks state only after streaming finishes",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/agent_runner/agents/kimi_cli_agent_test.py",
+      "startLine": 529,
+      "endLine": 575,
+      "symbol": "TestKimiCliAgent.test_run_invocation_increments_live_steps_during_stream",
+      "quote": null
+    }
+  ],
+  "reasoning": "The test supplies the entire wire conversation in one stdout event and checks step counters only after _run_invocation returns. An implementation that updates all counters after the stream ends would satisfy these assertions. This leaves the explicitly intended during-stream accounting unprotected, including its availability for enforcing step limits while an invocation is running.",
+  "reproduction": null,
+  "recommendation": "Extend this scenario with a controlled streaming generator that checks agent.usage.steps after a StepBegin event has been consumed and before yielding subsequent events or process completion.",
+  "whyTestsDoNotAlreadyCoverThis": "The fake runtime yields a prebuilt event list, and every accounting assertion runs after invocation completion; none observes intermediate state.",
+  "suggestedRegressionTest": "Yield multiple StepBegin events separately and assert the corresponding counter between yields, then verify final reconciliation does not count those steps again.",
+  "minimumFixScope": "Extend the existing Kimi live-step scenario and its streaming test double.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193626-8a1aea",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file exists, but the scenario moved from lines 529–575 to 571–635 and now addresses the reported gap: a controlled generator asserts steps == 1 and steps == 2 between separate StepBegin events, before completion, then verifies reconciliation does not double-count. Current agent.py increments steps inside the streaming loop and subtracts live steps during reconciliation. No linked patch attempts were supplied. The repair appears present, but targeted validation exited 2 because the read-only sandbox denied access to uv's cache; therefore fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba tests/agent_runner/agents/kimi_cli_agent_test.py | sed -n '529,635p'",
+        "nl -ba src/slop_code/agent_runner/agents/kimi_cli/agent.py | sed -n '379,425p;769,784p'",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/agent_runner/agents/kimi_cli_agent_test.py::TestKimiCliAgent::test_run_invocation_increments_live_steps_during_stream"
+      ],
+      "createdAt": "2026-09-12T19:36:55.593Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified live-stream observation coverage exercises in-flight step state; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:37:37.541Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-e18ce0670d_bd177996e3",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:01:03.351Z",
+  "updatedAt": "2026-09-12T19:37:37.540Z"
+}

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a1860c398b-9426_6377cb3631",
+  "featureId": "feat_library_a1860c398b",
+  "title": "Generation ID is reread separately from verified scoring evidence",
+  "category": "concurrency",
+  "severity": "medium",
+  "confidence": "medium",
+  "triage": "risk",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/utils.py",
+      "startLine": 278,
+      "endLine": 289,
+      "symbol": "_verified_score_projection",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/utils.py",
+      "startLine": 331,
+      "endLine": 340,
+      "symbol": "_verified_score_projection",
+      "quote": null
+    }
+  ],
+  "reasoning": "The function first obtains a verified manifest and evidence, then independently rereads the mutable current-generation pointer. If another process publishes a generation between those operations, the returned projection combines the earlier generation's score, eligibility, and formula with the newer generation's ID. This undermines the saved summary's provenance. The excerpts do not establish whether external synchronization prevents concurrent publication, so confidence is medium.",
+  "reproduction": "Arrange for the current pointer to advance from generation A to B after load_verified_current_generation_state returns A's manifest and evidence but before read_bytes executes. The projection reports A's score under B's generation ID.",
+  "recommendation": "Obtain the generation ID from the same verified snapshot as the manifest and evidence, or verify that the pointer remained unchanged and reject or retry if it advanced.",
+  "whyTestsDoNotAlreadyCoverThis": "The included test exercises dictionary merging and has no generation-publication or summary-provenance coverage.",
+  "suggestedRegressionTest": "Exercise pointer changes during projection and assert that the result either contains one internally consistent generation or reports scoring unavailable.",
+  "minimumFixScope": "_verified_score_projection and the verified-state return contract if it does not already expose the verified generation ID.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165355-148f28",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The evidence file and function still exist. Lines 280–289 now retry when the generation ID changes, addressing a single A-to-B advance. However, an A-to-B-to-A publication during loading passes the equality check and returns B's verified score labeled A at line 342. generation.py:802–829 explicitly permits republishing an existing generation, so IDs need not advance monotonically. An in-memory execution of the current function reproduced this mismatch. Existing tests cover stable, advancing, and continuously changing pointers, but not this ABA interleaving. No linked patch attempts were provided. CodeGraph was unavailable; direct source inspection was used.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba src/slop_code/entrypoints/utils.py | sed -n '270,365p'",
+        "rg -n 'def load_verified_current_generation_state' src",
+        "sed -n '260,410p' src/slop_code/metrics/scoring/generation.py",
+        "sed -n '730,860p' src/slop_code/metrics/scoring/generation.py",
+        "sed -n '280,400p' tests/entrypoints/test_utils_summary.py",
+        "python3 -B -c '<AST-extracted current _verified_score_projection; simulated outer pointer reads A and verified loader returning B; asserted B score labeled A>'"
+      ],
+      "createdAt": "2026-09-11T16:54:39.584Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central behavioral verification passed for this implemented fix, with focused pytest plus changed-path Ruff and ty green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked until 2026-09-17; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:41:30.313Z"
+    }
+  ],
+  "signature": "sig_feat-library-a1860c398b_942642420d",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:59.352Z",
+  "updatedAt": "2026-09-12T07:41:30.313Z"
+}

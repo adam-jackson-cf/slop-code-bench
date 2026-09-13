@@ -725,6 +725,29 @@ class TestAdvancedResolution:
             child_process, base_process
         ), "Should resolve super().process() to Base.process"
 
+    def test_self_call_stays_with_caller_class(self, tmp_path):
+        """self calls resolve by class, independently of candidate ordering."""
+        (tmp_path / "main.py").write_text(
+            "class First:\n"
+            "    def helper(self):\n"
+            "        return 'first'\n"
+            "\n"
+            "class Second:\n"
+            "    def helper(self):\n"
+            "        return 'second'\n"
+            "\n"
+            "    def run(self):\n"
+            "        return self.helper()\n"
+        )
+
+        graph = build_dependency_graph(tmp_path, tmp_path / "main.py")
+
+        run_node = [n for n in graph.nodes if "Second.run" in n][0]
+        first_helper = [n for n in graph.nodes if "First.helper" in n][0]
+        second_helper = [n for n in graph.nodes if "Second.helper" in n][0]
+        assert graph.has_edge(run_node, second_helper)
+        assert not graph.has_edge(run_node, first_helper)
+
 
 # =============================================================================
 # Integration Tests

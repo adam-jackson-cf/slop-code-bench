@@ -13,6 +13,7 @@ from slop_code.common import WORKSPACE_TEST_DIR
 from slop_code.evaluation.collection import CheckpointTestCollection
 from slop_code.evaluation.collection import CollectedTestCase
 from slop_code.evaluation.config import CheckpointConfig
+from slop_code.evaluation.config import MarkerConfig
 from slop_code.evaluation.config import ProblemConfig
 from slop_code.evaluation.pytest_runner import EXIT_INTERNALERROR
 from slop_code.evaluation.pytest_runner import EXIT_INTERRUPTED
@@ -195,9 +196,10 @@ class TestPytestRunner:
         assert runner.checkpoint == mock_checkpoint_config
         assert runner.environment == mock_environment
         assert runner.submission_path == Path("test")
-        assert runner.evaluator_environment_parent == Path(
-            "measurement_analysis"
-        ).resolve()
+        assert (
+            runner.evaluator_environment_parent
+            == Path("measurement_analysis").resolve()
+        )
 
     def test_get_entrypoint_command(self, pytest_runner, mock_environment):
         """_get_entrypoint_command returns formatted command."""
@@ -312,6 +314,22 @@ class TestPytestRunner:
             current_checkpoint="checkpoint_2",
         )
         assert group_type == GroupType.REGRESSION
+
+    def test_determine_group_type_configured_custom_marker(self, pytest_runner):
+        pytest_runner.problem.markers = {
+            "custom_error": MarkerConfig(
+                description="custom error tests",
+                group=GroupType.ERROR,
+            )
+        }
+
+        group_type = pytest_runner._determine_group_type(
+            test_checkpoint="checkpoint_2",
+            markers=["functionality", "custom_error"],
+            current_checkpoint="checkpoint_2",
+        )
+
+        assert group_type == GroupType.ERROR
 
     def test_generate_pytest_ini(self, pytest_runner, tmp_path):
         """_generate_pytest_ini creates valid pytest.ini with built-in markers."""
@@ -2047,6 +2065,7 @@ def docker_available() -> bool:
     """Check if Docker is available and running."""
     try:
         import docker
+        import docker.errors  # pyright: ignore[reportMissingModuleSource]
 
         client = docker.from_env()
         client.ping()

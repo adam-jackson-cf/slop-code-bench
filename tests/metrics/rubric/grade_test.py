@@ -7,7 +7,13 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
+from slop_code.metrics.rubric.bedrock_grade import (
+    _extract_grades as extract_bedrock_grades,
+)
 from slop_code.metrics.rubric.llm_grade import OPENROUTER_API_URL
+from slop_code.metrics.rubric.llm_grade import (
+    _extract_grades as extract_openrouter_grades,
+)
 from slop_code.metrics.rubric.llm_grade import _parse_json_text
 from slop_code.metrics.rubric.llm_grade import grade_file_async
 from slop_code.metrics.rubric.router import (
@@ -131,6 +137,29 @@ async def test_grade_file_routes_multi_file_response(
 
 
 @pytest.mark.asyncio
+async def test_router_preserves_openrouter_defaults(
+    mock_openrouter_response,
+) -> None:
+    """Omitted router overrides leave OpenRouter's defaults intact."""
+    mock_client = MagicMock(spec=httpx.AsyncClient)
+    mock_client.post.return_value = mock_openrouter_response("[]")
+
+    await route_grade_file_async(
+        prompt_prefix="test prefix",
+        criteria_text="test criteria",
+        file_name="app.py",
+        model="anthropic/claude-3.5-sonnet",
+        client=mock_client,
+    )
+
+    assert mock_client.post.call_args.args[0] == OPENROUTER_API_URL
+    assert (
+        mock_client.post.call_args.kwargs["headers"]["Authorization"]
+        == "Bearer test-key"
+    )
+
+
+@pytest.mark.asyncio
 async def test_grade_file_respects_temperature(
     mock_openrouter_response,
 ) -> None:
@@ -235,44 +264,73 @@ def test_parse_json_text_returns_none_on_invalid() -> None:
     assert result is None
 
 
-@pytest.mark.asyncio
-async def test_grade_file_retries_on_rate_limit(
-    mock_openrouter_response,
+@pytest.mark.parametrize(
+    "extract_grades",
+    [extract_openrouter_grades, extract_bedrock_grades],
+    ids=["openrouter", "bedrock"],
+)
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (
+            '[{"criteria": "plain", "start": 1}]',
+            [{"criteria": "plain", "start": 1, "file_name": "app.py"}],
+        ),
+        (
+            '```json\n[{"criteria": "fenced", "start": 2}]\n```',
+            [{"criteria": "fenced", "start": 2, "file_name": "app.py"}],
+        ),
+        ("[]", []),
+        (
+            "=== FILE: first.py ===\n"
+            '[{"criteria": "multi", "start": 3}]\n'
+            "=== END FILE ===",
+            [{"criteria": "multi", "start": 3, "file_name": "first.py"}],
+        ),
+    ],
+)
+def test_extract_grades_supports_documented_response_shapes(
+    extract_grades,
+    content: str,
+    expected: list[dict],
 ) -> None:
-    """Ensure grade_file_async retries on rate limit errors."""
-    mock_response = mock_openrouter_response("[]")
-    mock_client = MagicMock(spec=httpx.AsyncClient)
+    """Both providers preserve single-file and multi-file grade identities."""
+    response = {"choices": [{"message": {"content": content}}]}
 
-    call_count = 0
+    assert extract_grades(response, "app.py") == expected
 
-    request = httpx.Request("POST", OPENROUTER_API_URL)
-    rate_limit_response = httpx.Response(
-        429, request=request, json={"error": "Rate limit exceeded"}
+
+@pytest.mark.asyncio
+async def test_grade_file_retries_on_rate_limit() -> None:
+    """A real 429 response triggers one retry against the transport."""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(429, json={"error": "Rate limit exceeded"})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "[]"}}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        grades, _ = await grade_file_async(
+            prompt_prefix="test prefix",
+            criteria_text="test criteria",
+            file_name="app.py",
+            model="anthropic/claude-3.5-sonnet",
+            client=client,
+        )
+
+    assert len(requests) == 2
+    assert all(
+        request.url == httpx.URL(OPENROUTER_API_URL) for request in requests
     )
-    rate_limit_error = httpx.HTTPStatusError(
-        "Rate limit exceeded",
-        request=request,
-        response=rate_limit_response,
-    )
-
-    def mock_post(*_args, **_kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise rate_limit_error
-        return mock_response
-
-    mock_client.post.side_effect = mock_post
-
-    grades, _ = await grade_file_async(
-        prompt_prefix="test prefix",
-        criteria_text="test criteria",
-        file_name="app.py",
-        model="anthropic/claude-3.5-sonnet",
-        client=mock_client,
-    )
-
-    assert call_count == 2
     assert grades == []
 
 

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-553e2630dd-e_4e82a2d109",
+  "featureId": "feat_test-suite_553e2630dd",
+  "title": "Workspace reset content assertions check paths against the wrong directory",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/execution/workspace_test.py",
+      "startLine": 181,
+      "endLine": 186,
+      "symbol": "TestWorkspace.test_reset_recreates_workspace_new_files",
+      "quote": null
+    },
+    {
+      "path": "tests/execution/workspace_test.py",
+      "startLine": 199,
+      "endLine": 204,
+      "symbol": "TestWorkspace.test_reset_recreates_workspace_deleted_files",
+      "quote": null
+    },
+    {
+      "path": "tests/execution/workspace_test.py",
+      "startLine": 217,
+      "endLine": 222,
+      "symbol": "TestWorkspace.test_reset_recreates_workspace_modified_files",
+      "quote": null
+    }
+  ],
+  "reasoning": "The existence and content assertions resolve each path under workspace.working_dir, but the intervening f.is_file() check resolves relative paths against pytest's current directory. When those files do not exist there, the content assertions are skipped. A reset that preserves modified content while restoring file existence can therefore pass these scenarios.",
+  "reproduction": "Use relative initial_files keys with no corresponding files in pytest's current directory. A reset that leaves an existing file's modified contents unchanged passes the guarded content checks.",
+  "recommendation": "Resolve the workspace path once and use it consistently for existence, file-type, and content checks. Assert content unconditionally where the fixture represents files.",
+  "whyTestsDoNotAlreadyCoverThis": "All three reset scenarios repeat the same misplaced guard; the session reset integration test checks existence rather than restored contents.",
+  "suggestedRegressionTest": "Strengthen the existing reset scenarios to verify every restored file's exact original content, including modified and deleted files, independently of pytest's current directory.",
+  "minimumFixScope": "The three workspace reset scenarios in tests/execution/workspace_test.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170906-3a19b2",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and all three scenarios still exist. Current assertions at lines 182–189, 203–210, and 224–231 consistently use restored_path = working_dir / f for existence, file type, and content. Content checks now depend on expected is not None, removing the reported current-directory guard. This supports a repair, but targeted pytest validation exited 2 before running tests because sandbox permissions blocked uv cache access. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md\nnl -ba tests/execution/workspace_test.py | sed -n '165,240p'\nrg -n -A 65 'def initial_files|def modified_workspace' tests/execution/conftest.py",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/execution/workspace_test.py -k reset_recreates_workspace"
+      ],
+      "createdAt": "2026-09-11T17:09:27.157Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded after the Clawpatch sandbox-only validation failure: focused first-wave pytest passed all 1018 tests; changed-file Ruff and ty both passed. Clawpatch static inspection supports the implemented repair.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:35:13.365Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-553e2630dd_ecf5d202bf",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:31.925Z",
+  "updatedAt": "2026-09-12T07:35:13.365Z"
+}

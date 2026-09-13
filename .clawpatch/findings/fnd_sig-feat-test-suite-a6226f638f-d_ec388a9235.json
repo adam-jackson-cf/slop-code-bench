@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-a6226f638f-d_ec388a9235",
+  "featureId": "feat_test-suite_a6226f638f",
+  "title": "Managed-catalog tests inherit the caller's problem-path override",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "tests/problem_catalog_test.py",
+      "startLine": 139,
+      "endLine": 160,
+      "symbol": "test_ensure_catalog_installed_uses_env_override_without_sync",
+      "quote": null
+    },
+    {
+      "path": "tests/problem_catalog_test.py",
+      "startLine": 351,
+      "endLine": 382,
+      "symbol": "test_ensure_catalog_installed_bootstraps_and_recovers_partial_install",
+      "quote": null
+    },
+    {
+      "path": "tests/problem_catalog_test.py",
+      "startLine": 385,
+      "endLine": 430,
+      "symbol": "test_validate_resume_catalog_accepts_matching_commit",
+      "quote": null
+    }
+  ],
+  "reasoning": "The override tests explicitly establish that SCBENCH_PROBLEMS_PATH takes precedence over the supplied managed home and bypasses synchronization. However, the bootstrap and managed resume tests do not clear that environment variable. When a developer runs pytest with a valid local problem override configured, these tests exercise the override branch instead of their temporary managed installation, causing incorrect failures.",
+  "reproduction": "Set SCBENCH_PROBLEMS_PATH to a valid flat problem directory and run test_ensure_catalog_installed_bootstraps_and_recovers_partial_install. Its expected fake_sync calls are bypassed by the documented override behavior.",
+  "recommendation": "Add an autouse fixture that removes SCBENCH_PROBLEMS_PATH with monkeypatch before each catalog test; allow override-specific tests to set their own temporary value.",
+  "whyTestsDoNotAlreadyCoverThis": "Override scenarios set the variable explicitly, but managed-catalog scenarios assume it was absent before pytest started. Monkeypatch restores the caller's environment after each override test.",
+  "suggestedRegressionTest": "Run the catalog module with an externally configured valid override and verify that managed scenarios remain isolated while explicit override scenarios still pass.",
+  "minimumFixScope": "tests/problem_catalog_test.py environment isolation",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165545-961e54",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Current code supports the repair: tests/problem_catalog_test.py:13-15 now has an autouse fixture clearing SCBENCH_PROBLEMS_PATH before every test, while override tests explicitly set their own values. Original evidence symbols still exist at lines 144, 396, and 430; they moved rather than disappeared. No linked patch attempts were supplied. Targeted module validation exited 1 before collection because the read-only environment has no usable temporary directory, so the repair cannot be reported as verified fixed.",
+      "commands": [
+        "nl -ba tests/problem_catalog_test.py | sed -n '1,22p;140,170p;395,490p'",
+        "sed -n '1,110p' tests/conftest.py",
+        "sed -n '160,250p' src/slop_code/problem_catalog.py",
+        ".venv/bin/python -B -m pytest -q -p no:cacheprovider tests/problem_catalog_test.py"
+      ],
+      "createdAt": "2026-09-11T16:56:11.428Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:56:12.035Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-a6226f638f_d8a29c1657",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:54.449Z",
+  "updatedAt": "2026-09-11T16:56:12.034Z"
+}

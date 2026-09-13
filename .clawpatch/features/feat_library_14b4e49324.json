@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_14b4e49324",
+  "title": "Python source src/slop_code/metrics/scoring",
+  "summary": "Python source group src/slop_code/metrics/scoring with 12 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/metrics/scoring",
+      "symbol": "src/slop_code/metrics/scoring",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/metrics/scoring/__init__.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/contract.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/finalization.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/generation.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/historical.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/inventory.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/lineage.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/models.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/oracle.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/regression.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/schema.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/sensitivity.py",
+      "reason": "source group src/slop_code/metrics/scoring"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/metrics/models_test.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/metrics/models_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-14b4e49324-0da9_4e321d7e46",
+    "fnd_sig-feat-library-14b4e49324-4ad3_3aa2b4b9b6",
+    "fnd_sig-feat-library-14b4e49324-5148_8fa9b3da96"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "3 finding(s); prompt=212407 bytes; approxTokens=53102; includedFiles=14; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:56:05.165Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:04:14.843Z"
+}

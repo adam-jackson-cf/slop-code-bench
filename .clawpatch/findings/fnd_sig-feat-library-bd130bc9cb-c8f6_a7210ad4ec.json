@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bd130bc9cb-c8f6_a7210ad4ec",
+  "featureId": "feat_library_bd130bc9cb",
+  "title": "Snapshot restoration drops executable permissions and links",
+  "category": "data-loss",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/snapshot.py",
+      "startLine": 312,
+      "endLine": 320,
+      "symbol": "Snapshot.from_directory",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/snapshot.py",
+      "startLine": 377,
+      "endLine": 383,
+      "symbol": "Snapshot._extract_contents",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/snapshot.py",
+      "startLine": 416,
+      "endLine": 424,
+      "symbol": "Snapshot.extract_to_path",
+      "quote": null
+    }
+  ],
+  "reasoning": "Archive creation preserves file modes and can store symbolic or hard links, but restoration only reads regular-file contents and writes new files with default permissions. Executable scripts lose their execute bits, and archived links disappear. Workspace preparation/reset and checkpoint export therefore change runnable filesystem state despite preserving ordinary file bytes.",
+  "reproduction": "Snapshot a directory containing an executable script and a symbolic link to a regular file, then extract into a fresh directory. The script is no longer executable and the link is absent.",
+  "recommendation": "Restore supported filesystem entry types and executable permissions using a containment-safe extraction policy. Explicitly reject unsupported entries instead of silently dropping them.",
+  "whyTestsDoNotAlreadyCoverThis": "Included snapshot-backed workspace tests verify ordinary file existence and text contents, without permission or link round-trip assertions.",
+  "suggestedRegressionTest": "Expand workspace snapshot round-trip scenarios to executable files and safe relative links, checking equivalent behavior after prepare and reset.",
+  "minimumFixScope": "Snapshot archive restoration and filesystem metadata handling.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170748-6e2ac0",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and symbols still exist, but the cited lines have shifted. Current snapshot.py:434–511 restores file modes with chmod, recreates symbolic and hard links, and rejects unsupported archive entries. Restoration no longer uses the regular-file-only _extract_contents helper. A workspace prepare/reset regression scenario exists at tests/execution/workspace_test.py:507–539. However, targeted pytest validation failed before collection because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so the apparent repair cannot be marked fixed.",
+      "commands": [
+        "nl -ba src/slop_code/execution/snapshot.py | sed -n '300,535p'",
+        "rg -n 'symlink|hardlink|hard_link|executable|chmod|permission|snapshot' tests/execution/workspace_test.py",
+        "sed -n '500,550p' tests/execution/workspace_test.py",
+        "rg -n 'def test_.*(link|mode|permission|extract|unsupported)' tests/execution/snapshot_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/execution/workspace_test.py -k restores_executable_and_links"
+      ],
+      "createdAt": "2026-09-11T17:08:12.556Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:08:13.137Z"
+    }
+  ],
+  "signature": "sig_feat-library-bd130bc9cb_c8f61839be",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:36.106Z",
+  "updatedAt": "2026-09-11T17:08:13.137Z"
+}

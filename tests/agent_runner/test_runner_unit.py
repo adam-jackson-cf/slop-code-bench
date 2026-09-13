@@ -189,7 +189,7 @@ def test_run_checkpoint_logs_exact_agent_error_message() -> None:
         errors=[AgentError("provider said: rate limit exceeded")],
     )
     logger = CapturingLogger()
-    agent.log = logger  # type: ignore[assignment]
+    agent.log = logger
 
     agent.run_checkpoint("full checkpoint prompt")
 
@@ -724,7 +724,12 @@ def test_load_checkpoint_summary_captures_oracle_for_valid_evaluation(
         output_path=tmp_path,
         progress_queue=queue.Queue(),
     )
-    checkpoint = StubCheckpoint("checkpoint_1", "")
+    checkpoint = CheckpointConfig(
+        name="checkpoint_1",
+        version=1,
+        order=1,
+        spec_override="",
+    )
     checkpoint_dir = tmp_path / checkpoint.name
     checkpoint_dir.mkdir()
     with (checkpoint_dir / INFERENCE_RESULT_FILENAME).open("w") as f:
@@ -1005,3 +1010,50 @@ def test_failed_assessment_can_continue_without_changing_assessment() -> None:
     assert should_stop is False
     assert agent_runner.run_spec.assessment_policy == PassPolicy.ALL_CASES
     assert agent_runner.metrics_tracker.state == runner.AgentStateEnum.RUNNING
+
+
+def test_run_preserves_setup_error_while_finishing_all_resources(
+    tmp_path: Path,
+) -> None:
+    primary_error = RuntimeError("setup failed")
+    cleanup_error = RuntimeError("agent cleanup failed")
+    exit_error = RuntimeError("session exit failed")
+    save_error = RuntimeError("result save failed")
+    agent = Mock(spec=Agent)
+    agent.cleanup.side_effect = cleanup_error
+    session = Mock()
+    session.__exit__ = Mock(side_effect=exit_error)
+    run_spec = Mock()
+    run_spec.problem.name = "problem"
+    agent_runner = runner.AgentRunner(
+        run_spec=run_spec,
+        agent=agent,
+        output_path=tmp_path,
+        progress_queue=queue.Queue(),
+    )
+
+    def fail_setup() -> None:
+        agent_runner._session = session
+        agent_runner._session_acquired = True
+        raise primary_error
+
+    with (
+        patch.object(agent_runner, "setup", side_effect=fail_setup),
+        patch(
+            "slop_code.agent_runner.runner.reporting.save_results",
+            side_effect=save_error,
+        ) as save_results,
+        pytest.raises(RuntimeError) as caught,
+    ):
+        agent_runner.run()
+
+    assert caught.value is primary_error
+    assert isinstance(primary_error.__cause__, BaseExceptionGroup)
+    assert set(primary_error.__cause__.exceptions) == {
+        cleanup_error,
+        exit_error,
+        save_error,
+    }
+    agent.cleanup.assert_called_once_with()
+    session.__exit__.assert_called_once()
+    save_results.assert_called_once()

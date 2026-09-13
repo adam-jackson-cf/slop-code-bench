@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-e7dd745c57-16d8_09bda8887a",
+  "featureId": "feat_library_e7dd745c57",
+  "title": "Reprocessing leaves obsolete carried grades on disk when none remain eligible",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/rubric/carry_forward.py",
+      "startLine": 502,
+      "endLine": 526,
+      "symbol": "process_problem_carry_forward",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/rubric/carry_forward.py",
+      "startLine": 536,
+      "endLine": 544,
+      "symbol": "process_problem_carry_forward",
+      "quote": null
+    }
+  ],
+  "reasoning": "Existing carried grades are removed only from the in-memory list. The rewritten list is saved only when carried is nonempty. If a rerun finds that all previous carried grades are now ineligible, their stale records remain on disk while returned totals exclude them. Subsequent checkpoints reload that stale file and can propagate the obsolete grades.",
+  "reproduction": "Process checkpoints once to persist a carried grade, then update the current diff to modify its span and rerun. The reported carried count becomes zero, but the old carried record remains in rubric.jsonl.",
+  "recommendation": "Persist the recomputed merged result whenever it differs from the current file, including when no grades are carried.",
+  "whyTestsDoNotAlreadyCoverThis": "The included carry-forward tests cover pure helpers but never process_problem_carry_forward or persistence across reruns.",
+  "suggestedRegressionTest": "Test repeated processing as eligibility changes from nonempty to empty, checking disk contents, returned totals, and downstream checkpoint propagation.",
+  "minimumFixScope": "process_problem_carry_forward persistence and checkpoint-processing tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201349-90bd24",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original evidence path and line ranges still exist, but the persistence logic has changed: carry_forward.py:540–544 saves the recomputed merged list whenever it differs from current grades, including when no carried grades remain. The regression at carry_forward_test.py:569–611 checks removal from disk and downstream checkpoints. No linked patch attempts were supplied. The code supports the proposed repair, but targeted validation exited 1 before running tests because the read-only environment has no usable temporary directory; therefore fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/rubric/carry_forward.py | sed -n '500,590p'",
+        "nl -ba tests/metrics/rubric/carry_forward_test.py | tail -65",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/rubric/carry_forward_test.py"
+      ],
+      "createdAt": "2026-09-12T20:14:16.157Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified recomputed merged grades persist whenever disk differs, including stale nonempty to eligible-empty transitions; 59 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:14:51.892Z"
+    }
+  ],
+  "signature": "sig_feat-library-e7dd745c57_16d8ebc8d0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:52.707Z",
+  "updatedAt": "2026-09-12T20:14:51.891Z"
+}

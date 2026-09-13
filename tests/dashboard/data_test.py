@@ -2,18 +2,16 @@ from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pandas as pd
-
-if TYPE_CHECKING:
-    import pytest
-
+import pytest
+import yaml
 
 from slop_code.dashboard.data import ChartContext
 from slop_code.dashboard.data import build_chart_context
 from slop_code.dashboard.data import compute_problem_deltas
 from slop_code.dashboard.data import get_summary_table_data
+from slop_code.dashboard.data import load_config_metadata
 from slop_code.dashboard.data import load_run
 from slop_code.dashboard.data import process_checkpoint_row
 from slop_code.metrics.scoring import ScoreEvidenceError
@@ -25,11 +23,81 @@ def test_process_checkpoint_row_uses_new_pass_rate_names() -> None:
             "strict_pass_rate": 1.0,
             "isolated_pass_rate": 0.0,
             "total_tests": 10,
-            "passed_tests": 5,
+            "passed_tests": 10,
         }
     )
 
     assert processed["passed_chkpt"] is True
+
+
+def test_process_checkpoint_row_requires_complete_strict_evidence() -> None:
+    cases = (
+        (
+            {
+                "strict_pass_rate": 1.0,
+                "total_tests": 2,
+                "passed_tests": 1,
+            },
+            False,
+        ),
+        (
+            {
+                "isolated_pass_rate": 1.0,
+                "total_tests": 2,
+                "passed_tests": 2,
+            },
+            False,
+        ),
+        ({"total_tests": 2, "passed_tests": 2}, False),
+        (
+            {
+                "strict_pass_rate": 1.0,
+                "total_tests": 0,
+                "passed_tests": 0,
+            },
+            False,
+        ),
+    )
+
+    for row, expected in cases:
+        assert process_checkpoint_row(row)["passed_chkpt"] is expected
+
+
+def test_load_config_metadata_safely_decodes_valid_mappings(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+agent:
+  type: test-agent
+  version: "1.0"
+model:
+  name: test-model
+thinking: none
+prompt_path: prompts/standard.jinja
+""".lstrip()
+    )
+
+    metadata = load_config_metadata(tmp_path)
+
+    assert metadata["agent_type"] == "test-agent"
+    assert metadata["model_name"] == "test-model v1.0"
+    assert metadata["prompt_template"] == "standard"
+
+
+def test_load_config_metadata_rejects_executable_yaml_tags(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "executed"
+    (tmp_path / "config.yaml").write_text(
+        f"!!python/object/apply:os.system ['touch {marker}']\n"
+    )
+
+    with pytest.raises(yaml.YAMLError):
+        load_config_metadata(tmp_path)
+
+    assert not marker.exists()
 
 
 def test_problem_deltas_need_no_scb_metrics() -> None:
@@ -129,23 +197,55 @@ def test_summary_table_uses_exact_canonical_ranking_key_order():
     assert [row["Benchmark Score"] for row in table] == [90.0, 90.0, 90.0]
 
 
-def test_load_run_rejects_tampered_canonical_generation(
+def test_load_run_requires_verified_score_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    (tmp_path / "checkpoint_results.jsonl").write_text("{}\n")
-    monkeypatch.setattr(
-        "slop_code.dashboard.data.load_config_metadata",
-        lambda _: {"model_name": "Model"},
+) -> None:
+    (tmp_path / "config.yaml").write_text(
+        """
+agent:
+  type: test-agent
+model:
+  name: test-model
+thinking: none
+prompt_path: prompts/standard.jinja
+""".lstrip()
     )
+    (tmp_path / "checkpoint_results.jsonl").write_text(
+        '{"problem": "example", "idx": 1, "strict_pass_rate": 1.0, '
+        '"total_tests": 1, "passed_tests": 1}\n'
+    )
+    verifier_calls: list[Path] = []
+
+    def verified_score(run_dir: Path) -> dict[str, object]:
+        verifier_calls.append(run_dir)
+        return {
+            "benchmark_score": Decimal("83.125"),
+            "ranking_key": (Decimal("-83.125"), "run"),
+        }
+
     monkeypatch.setattr(
         "slop_code.dashboard.data.load_verified_score_summary",
-        lambda _: (_ for _ in ()).throw(ScoreEvidenceError({"tampered"})),
+        verified_score,
     )
+    checkpoints, summary = load_run(tmp_path)
 
+    assert len(checkpoints) == 1
+    assert summary is not None
+    assert summary["benchmark_score"] == Decimal("83.125")
+
+    def rejected_score(run_dir: Path) -> dict[str, object]:
+        verifier_calls.append(run_dir)
+        raise ScoreEvidenceError({"tampered"})
+
+    monkeypatch.setattr(
+        "slop_code.dashboard.data.load_verified_score_summary",
+        rejected_score,
+    )
     checkpoints, summary = load_run(tmp_path)
 
     assert checkpoints.empty
     assert summary is None
+    assert verifier_calls == [tmp_path, tmp_path]
 
 
 def test_load_run_rejects_malformed_checkpoint_artifacts(

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-958b9d2532-10ff_b345d0ed33",
+  "featureId": "feat_library_958b9d2532",
+  "title": "Missing isolated pass rates erase valid strict solve results",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/summary/aggregators.py",
+      "startLine": 167,
+      "endLine": 174,
+      "symbol": "compute_solve_rates",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/summary/compute.py",
+      "startLine": 65,
+      "endLine": 88,
+      "symbol": "compute_run_summary",
+      "quote": null
+    }
+  ],
+  "reasoning": "The early return requires both strict and isolated metrics before computing any solve results. Records containing valid strict results but no isolated results therefore discard the strict counts and percentages. compute_run_summary converts the missing results to zero, presenting successfully solved checkpoints as unsolved.",
+  "reproduction": "Call compute_solve_rates with checkpoints=[{\"problem\":\"p\",\"strict_pass_rate\":1.0,\"is_last\":true}], the corresponding problem grouping, and expected_checkpoints=1. It returns {} instead of reporting one strict checkpoint solved and 100 percent strict completion.",
+  "recommendation": "Compute strict, isolated, and core solve results independently so an absent secondary metric cannot erase available strict results.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; coverage of independently missing metric families could not be verified.",
+  "suggestedRegressionTest": "Exercise combinations of present and absent strict, isolated, and core metrics, asserting that each available metric retains its counts and percentages regardless of the other families.",
+  "minimumFixScope": "Adjust the early-return logic in compute_solve_rates and cover the resulting compute_run_summary defaults.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200117-7e8d65",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths and cited lines still exist. aggregators.py:173-235 now computes strict, isolated, and core solve results independently, supporting the proposed repair; compute.py:65-88 preserves available results and defaults only absent fields. No linked patch attempts were supplied. Targeted validation failed before test collection because the read-only environment provides no usable temporary directory, so fixed cannot be confirmed. The existing missing-metrics test mixes all three families across records and does not directly cover a wholly absent family.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/summary/aggregators.py | sed -n '160,245p'",
+        "nl -ba src/slop_code/metrics/summary/compute.py | sed -n '35,95p'",
+        "rg -n 'isolated|missing|solve_rates' tests/metrics",
+        "sed -n '170,205p' tests/metrics/summary_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/summary_test.py"
+      ],
+      "createdAt": "2026-09-12T20:01:45.065Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified strict, isolated, and core solve metrics compute independently when peers are absent; 123 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:59.043Z"
+    }
+  ],
+  "signature": "sig_feat-library-958b9d2532_10ff1146c9",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:53.916Z",
+  "updatedAt": "2026-09-12T20:03:59.042Z"
+}

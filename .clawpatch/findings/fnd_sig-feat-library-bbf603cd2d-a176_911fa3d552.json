@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bbf603cd2d-a176_911fa3d552",
+  "featureId": "feat_library_bbf603cd2d",
+  "title": "Valid YAML with an invalid structure crashes run-summary loading",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/evaluation/metrics.py",
+      "startLine": 20,
+      "endLine": 28,
+      "symbol": "get_run_summary",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/evaluation/metrics.py",
+      "startLine": 38,
+      "endLine": 68,
+      "symbol": "get_run_summary",
+      "quote": null
+    }
+  ],
+  "reasoning": "The documented contract returns None for invalid run-info files, but only YAML syntax errors are handled. An empty file parses to None, a sequence parses to a list, and summary: null produces a non-mapping summary. Each reaches an unconditional .get call and raises AttributeError, aborting report generation instead of treating the metadata as invalid.",
+  "reproduction": "Call get_run_summary with an empty run_info.yaml, a YAML sequence at the root, or a mapping containing summary: null.",
+  "recommendation": "Validate the root and nested summary structures before accessing them, log invalid metadata, and return None according to the documented contract.",
+  "whyTestsDoNotAlreadyCoverThis": "None of the supplied tests exercises get_run_summary or malformed run metadata.",
+  "suggestedRegressionTest": "Parameterize missing, syntactically invalid, structurally invalid, and valid run metadata, asserting invalid inputs return None and valid mappings retain their summary fields.",
+  "minimumFixScope": "Structural validation in get_run_summary.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201141-8619fd",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The original file and function still exist. metrics.py:50-74 now validates root, summary, and checkpoints mappings, logs invalid structures, and returns None before unsafe .get calls. Targeted execution of the current imported function passed all 10 invalid YAML cases, including empty input, root sequences, and summary: null, plus missing-file and valid-field preservation checks. File access was mocked for read-only validation; YAML parsing was real. The initial heredoc was blocked by sandbox restrictions; rerunning via python -c passed. Existing regression coverage is at tests/entrypoints/test_evaluation_driver.py:267-320. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/evaluation/metrics.py | head -105",
+        "rg -n 'get_run_summary|invalid_run|summary.*null' tests/entrypoints",
+        "sed -n '250,355p' tests/entrypoints/test_evaluation_driver.py",
+        ".venv/bin/python -B -c '<in-memory validation of current get_run_summary: 10 invalid YAML cases, missing file, and valid summary preservation>'"
+      ],
+      "createdAt": "2026-09-12T20:12:18.689Z"
+    }
+  ],
+  "signature": "sig_feat-library-bbf603cd2d_a1760e9efb",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:13.326Z",
+  "updatedAt": "2026-09-12T20:12:18.689Z"
+}

@@ -136,10 +136,17 @@ def get_checkpoint_metrics(
     Raises:
         MetricsError: If any metric extraction fails.
     """
+    quality_metrics = (
+        get_quality_metrics(
+            checkpoint_dir, prior_checkpoint_dir=prior_checkpoint_dir
+        )
+        if prior_checkpoint_dir is not None
+        else get_quality_metrics(checkpoint_dir)
+    )
     metrics = {
         **get_evaluation_metrics(checkpoint_dir),
         **get_inference_metrics(checkpoint_dir),
-        **get_quality_metrics(checkpoint_dir),
+        **quality_metrics,
         **get_rubric_metrics(checkpoint_dir),
     }
 

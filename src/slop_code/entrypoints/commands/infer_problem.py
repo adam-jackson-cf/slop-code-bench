@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from slop_code import evaluation
+from slop_code import problem_catalog
 from slop_code.agent_runner import Agent
 from slop_code.agent_runner import AgentRunSpec
 from slop_code.agent_runner import runner
@@ -30,6 +30,54 @@ def register(app: typer.Typer, name: str) -> None:
         name,
         help="Run inference on a single problem.",
     )(infer_problem)
+
+
+def _resolve_problem_destination(
+    ctx: typer.Context, problem_name: str, output_path: Path
+) -> tuple[Path, Path]:
+    """Validate a catalog problem and its confined inference destination."""
+    name_path = Path(problem_name)
+    if name_path.is_absolute() or name_path.name != problem_name:
+        typer.echo(
+            typer.style(
+                f"Problem name must be a single catalog entry: {problem_name}",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+        )
+        raise typer.Exit(1)
+
+    problem_root = common.resolve_problem_catalog_root(ctx).resolve()
+    catalog_problems = {
+        problem_dir.name: problem_dir.resolve()
+        for problem_dir in problem_catalog.discover_problem_dirs(problem_root)
+    }
+    problem_path = catalog_problems.get(problem_name)
+    if problem_path is None or not problem_path.is_relative_to(problem_root):
+        typer.echo(
+            typer.style(
+                f"Problem '{problem_name}' not found in catalog",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+        )
+        raise typer.Exit(1)
+
+    resolved_output = output_path.resolve(strict=False)
+    save_dir = (resolved_output / problem_name).resolve(strict=False)
+    if save_dir == resolved_output or not save_dir.is_relative_to(
+        resolved_output
+    ):
+        typer.echo(
+            typer.style(
+                f"Output path escapes output directory: {save_dir}",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+        )
+        raise typer.Exit(1)
+
+    return problem_path, save_dir
 
 
 def infer_problem(
@@ -99,10 +147,10 @@ def infer_problem(
         "--max-thinking-tokens",
         help="Maximum thinking tokens (mutually exclusive with --thinking)",
     ),
-    assessment_policy: evaluation.PassPolicy = typer.Option(
-        evaluation.PassPolicy.ALL_CASES,
+    assessment_policy: str = typer.Option(
+        "all-cases",
         "--assessment-policy",
-        help="Policy used to assess whether a checkpoint passed",
+        help="Strict checkpoint assessment policy; must be all-cases",
     ),
     *,
     continue_after_test_failure: Annotated[
@@ -121,6 +169,10 @@ def infer_problem(
     ] = True,
 ) -> None:
     """Run inference on a single problem."""
+    assessment_policy = common.require_all_cases_assessment_policy(
+        assessment_policy
+    )
+
     # Validate mutual exclusion of thinking options
     if thinking is not None and max_thinking_tokens is not None:
         typer.echo(
@@ -144,6 +196,9 @@ def infer_problem(
             )
         )
         raise typer.Exit(1)
+    problem_path, save_dir = _resolve_problem_destination(
+        ctx, problem_name, output_path
+    )
 
     typer.echo(f"Running inference on problem: {problem_name}")
 
@@ -194,7 +249,7 @@ def infer_problem(
     ):
         raise RuntimeError("Resolved environment has an unsupported type")
     prompt_template = prompt_template_path.read_text(encoding="utf-8")
-    save_dir = output_path / problem_name
+    problem = ProblemConfig.from_yaml(problem_path)
     if save_dir.exists():
         if ctx.obj.overwrite:
             typer.echo(
@@ -224,14 +279,12 @@ def infer_problem(
         problem_name=problem_name,
         save_dir=save_dir,
     )
-    problem_root = common.resolve_problem_catalog_root(ctx)
     logger.info(
         "Using configs",
         agent_type=agent_config.type,
-        problem_path=str(problem_root / problem_name),
+        problem_path=str(problem_path),
         prompt_template_path=str(prompt_template_path),
     )
-    problem = ProblemConfig.from_yaml(problem_root / problem_name)
     if isinstance(env_spec, docker_runtime.DockerEnvironmentSpec):
         if agent_config.docker_template is not None:
             image_name = common.build_agent_docker(

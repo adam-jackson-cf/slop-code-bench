@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 import structlog
 
+from slop_code.logging import VERBOSE
 from slop_code.logging import StdlibLoggerAdapter
 from slop_code.logging import get_logger
 from slop_code.logging import is_structlog_configured
@@ -16,13 +17,18 @@ from slop_code.logging import setup_logging
 
 @pytest.fixture(autouse=True)
 def reset_logging_state():
-    """Reset logging state before and after each test."""
+    """Reset logging state and preserve named logger levels between tests."""
+    named_loggers = ("test", "test1", "test2")
+    logger_levels = {
+        name: logging.getLogger(name).level for name in named_loggers
+    }
     # Note: We don't call reset_logging() here because it clears
-    # handlers that pytest's caplog fixture installs
-    # Instead, just reset structlog configuration
+    # handlers that pytest's caplog fixture installs.
     structlog.reset_defaults()
     yield
     structlog.reset_defaults()
+    for name, level in logger_levels.items():
+        logging.getLogger(name).setLevel(level)
 
 
 class TestStdlibLoggerAdapter:
@@ -33,7 +39,7 @@ class TestStdlibLoggerAdapter:
         logger = logging.getLogger("test")
         adapter = StdlibLoggerAdapter(logger)
 
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
             adapter.debug("Debug message")
             adapter.info("Info message")
             adapter.warning("Warning message")
@@ -51,7 +57,7 @@ class TestStdlibLoggerAdapter:
         logger = logging.getLogger("test")
         adapter = StdlibLoggerAdapter(logger)
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger.name):
             adapter.info("Server started", port=8080)
 
         assert "Server started port=8080" in caplog.text
@@ -61,7 +67,7 @@ class TestStdlibLoggerAdapter:
         logger = logging.getLogger("test")
         adapter = StdlibLoggerAdapter(logger)
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger.name):
             adapter.info(
                 "Connection established",
                 host="localhost",
@@ -83,7 +89,7 @@ class TestStdlibLoggerAdapter:
         try:
             raise ValueError("Test error")
         except ValueError:
-            with caplog.at_level(logging.ERROR):
+            with caplog.at_level(logging.ERROR, logger=logger.name):
                 adapter.error("An error occurred", exc_info=True)
 
         assert "An error occurred" in caplog.text
@@ -98,7 +104,7 @@ class TestStdlibLoggerAdapter:
         try:
             raise ValueError("Test error")
         except ValueError:
-            with caplog.at_level(logging.ERROR):
+            with caplog.at_level(logging.ERROR, logger=logger.name):
                 adapter.error(
                     "Request failed", url="/api/test", status=500, exc_info=True
                 )
@@ -116,7 +122,7 @@ class TestStdlibLoggerAdapter:
         try:
             raise RuntimeError("Test runtime error")
         except RuntimeError:
-            with caplog.at_level(logging.ERROR):
+            with caplog.at_level(logging.ERROR, logger=logger.name):
                 adapter.exception("Caught exception", request_id=123)
 
         assert "Caught exception" in caplog.text
@@ -129,7 +135,7 @@ class TestStdlibLoggerAdapter:
         adapter = StdlibLoggerAdapter(logger)
 
         # Verbose kwarg should be removed from output
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
             adapter.debug("Verbose message", verbose=True)
 
         assert "Verbose message" in caplog.text
@@ -141,14 +147,14 @@ class TestStdlibLoggerAdapter:
         adapter = StdlibLoggerAdapter(logger)
 
         # Test with dict
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger.name):
             adapter.info("Dict data", data={"key": "value", "number": 42})
 
         assert "data={'key': 'value', 'number': 42}" in caplog.text
 
         # Test with list
         caplog.clear()
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger.name):
             adapter.info("List data", items=[1, 2, 3])
 
         assert "items=[1, 2, 3]" in caplog.text
@@ -164,7 +170,7 @@ class TestStdlibLoggerAdapter:
             return_value={"field": "value", "number": 123}
         )
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger.name):
             adapter.info("Model data", model=mock_model)
 
         assert "model={'field': 'value', 'number': 123}" in caplog.text
@@ -174,11 +180,64 @@ class TestStdlibLoggerAdapter:
         logger = logging.getLogger("test")
         adapter = StdlibLoggerAdapter(logger)
 
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
             adapter.log(logging.WARNING, "Custom level message", custom="data")
 
         assert "Custom level message custom='data'" in caplog.text
         assert logging.WARNING in [rec.levelno for rec in caplog.records]
+
+    def test_suppressed_events_skip_structured_value_serialization(
+        self, caplog
+    ):
+        """Test disabled adapter calls do not format structured values."""
+        logger = logging.getLogger("test")
+        adapter = StdlibLoggerAdapter(logger)
+        structured_value = MagicMock()
+        structured_value.model_dump = MagicMock()
+
+        with caplog.at_level(logging.INFO, logger=logger.name):
+            adapter.debug(
+                "Suppressed by logger threshold", value=structured_value
+            )
+
+        assert caplog.records == []
+        structured_value.model_dump.assert_not_called()
+
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
+            logging.disable(logging.CRITICAL)
+            try:
+                adapter.error("Suppressed globally", value=structured_value)
+            finally:
+                logging.disable(logging.NOTSET)
+
+        assert caplog.records == []
+        structured_value.model_dump.assert_not_called()
+
+    def test_verbose_messages_use_converted_level_for_filtering(self, caplog):
+        """Test verbose DEBUG messages filter and emit at VERBOSE."""
+        logger = logging.getLogger("test")
+        adapter = StdlibLoggerAdapter(logger)
+
+        logger.setLevel(logging.INFO)
+        adapter.debug("Suppressed verbose", verbose=True)
+        assert caplog.records == []
+
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
+            logger.setLevel(VERBOSE)
+            adapter.debug("Recorded verbose", verbose=True)
+
+        assert [record.levelno for record in caplog.records] == [VERBOSE]
+
+    def test_capture_sets_named_logger_level_independently(self, caplog):
+        """Test capture does not depend on a preceding named-logger level."""
+        logger = logging.getLogger("test")
+        logger.setLevel(logging.ERROR)
+        adapter = StdlibLoggerAdapter(logger)
+
+        with caplog.at_level(logging.INFO, logger=logger.name):
+            adapter.info("Captured after error threshold")
+
+        assert "Captured after error threshold" in caplog.text
 
     def test_adapter_logger_methods(self):
         """Test that adapter properly proxies logger methods."""
@@ -253,7 +312,7 @@ class TestGetLogger:
         logging.getLogger("test").setLevel(logging.DEBUG)
         logger = get_logger("test")
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger.name):
             # This should not raise an error
             logger.info("Testing kwargs", key1="value1", key2=42)
 
@@ -289,7 +348,7 @@ class TestRealWorldUsage:
         logging.getLogger("test").setLevel(logging.DEBUG)
         logger = get_logger("test")
 
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
             # Pattern from claude_code agent
             logger.debug(
                 "Received payload",
@@ -308,7 +367,7 @@ class TestRealWorldUsage:
         logging.getLogger("test").setLevel(logging.DEBUG)
         logger = get_logger("test")
 
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
             logger.debug("Preparing session", verbose=True)
             logger.debug("Creating Docker client", verbose=True)
 
@@ -326,7 +385,7 @@ class TestRealWorldUsage:
         try:
             raise RuntimeError("Something went wrong")
         except RuntimeError:
-            with caplog.at_level(logging.ERROR):
+            with caplog.at_level(logging.ERROR, logger=logger.name):
                 logger.error(
                     "Verifier error", error="RuntimeError", exc_info=True
                 )
@@ -347,7 +406,7 @@ class TestRealWorldUsage:
             return_value={"status": "failed", "code": 1}
         )
 
-        with caplog.at_level(logging.ERROR):
+        with caplog.at_level(logging.ERROR, logger=logger.name):
             logger.error("Result", result=result)
 
         assert "Result" in caplog.text
@@ -359,7 +418,7 @@ class TestRealWorldUsage:
         logging.getLogger("test").setLevel(logging.DEBUG)
         logger = get_logger("test")
 
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
             logger.debug("stdout", out="Hello, World!")
             logger.error("stderr", err="Error occurred")
 
@@ -376,7 +435,7 @@ class TestBackwardCompatibility:
         logging.getLogger("test1").setLevel(logging.DEBUG)
         logger1 = get_logger("test1")
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger1.name):
             logger1.info("Without structlog", data="test1")
 
         assert "Without structlog data='test1'" in caplog.text
@@ -400,7 +459,7 @@ class TestBackwardCompatibility:
         logging.getLogger("test").setLevel(logging.DEBUG)
         logger = get_logger("test")
 
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger=logger.name):
             # These should all work fine without kwargs
             logger.debug("Debug")
             logger.info("Info")
@@ -419,7 +478,7 @@ class TestBackwardCompatibility:
         logging.getLogger("test").setLevel(logging.DEBUG)
         logger = get_logger("test")
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger.name):
             # This uses % formatting with positional args
             logger.info("Hello %s", "World", user="Alice")
 
@@ -430,7 +489,7 @@ class TestBackwardCompatibility:
         logging.getLogger("test").setLevel(logging.DEBUG)
         logger = get_logger("test")
 
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.INFO, logger=logger.name):
             # These special kwargs should not appear in the message
             logger.info(
                 "Test message", exc_info=None, stack_info=False, stacklevel=2

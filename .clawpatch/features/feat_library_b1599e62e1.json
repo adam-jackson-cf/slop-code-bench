@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_b1599e62e1",
+  "title": "Python source src/slop_code/agent_runner",
+  "summary": "Python source group src/slop_code/agent_runner with 11 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/agent_runner",
+      "symbol": "src/slop_code/agent_runner",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/agent_runner/__init__.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/agent.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/credentials.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/models.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/registry.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/reporting.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/resume.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/runner.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/state.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/trajectory.py",
+      "reason": "source group src/slop_code/agent_runner"
+    },
+    {
+      "path": "src/slop_code/agent_runner/trajectory_parsing.py",
+      "reason": "source group src/slop_code/agent_runner"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/agent_runner/credentials_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/agent_runner/reporting_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/agent_runner/resume_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/agent_runner/test_registry.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/metrics/models_test.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/agent_runner/credentials_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/reporting_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/resume_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/test_registry.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/models_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-b1599e62e1-f8b4_f739ecabef",
+    "fnd_sig-feat-library-b1599e62e1-77e1_a3e2e5b6c2",
+    "fnd_sig-feat-library-b1599e62e1-e1d2_cd2f0e9c1f",
+    "fnd_sig-feat-library-b1599e62e1-2dde_bfcf334af4"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "4 finding(s); prompt=244003 bytes; approxTokens=61001; includedFiles=17; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:58:56.858Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T19:21:13.226Z"
+}

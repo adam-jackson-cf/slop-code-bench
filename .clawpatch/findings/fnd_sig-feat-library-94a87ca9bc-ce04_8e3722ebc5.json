@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-94a87ca9bc-ce04_8e3722ebc5",
+  "featureId": "feat_library_94a87ca9bc",
+  "title": "Resumed session totals are added again as invocation usage",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/agent.py",
+      "startLine": 205,
+      "endLine": 219,
+      "symbol": "CodexAgent.parse_line",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/agent.py",
+      "startLine": 463,
+      "endLine": 469,
+      "symbol": "CodexAgent._run_invocation",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/agent.py",
+      "startLine": 535,
+      "endLine": 550,
+      "symbol": "CodexAgent._sync_usage",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/agent.py",
+      "startLine": 579,
+      "endLine": 581,
+      "symbol": "CodexAgent._build_command",
+      "quote": null
+    }
+  ],
+  "reasoning": "Trace parsing reads cumulative total_token_usage and total_cost. A retry resumes the previous session, and trace totals override invocation totals before _sync_usage adds them to previously accumulated usage. When the resumed trace remains eligible for reading, earlier usage is charged again, inflating benchmark costs and potentially triggering usage limits prematurely.",
+  "reproduction": "Run an invocation whose trace reports 100 input tokens, then retry without saving artifacts between calls. Have the resumed trace report 150 cumulative input tokens. Accumulated input usage becomes 250 rather than 150.",
+  "recommendation": "Track previously accounted cumulative totals per session and add only their deltas, or consistently account using invocation-local usage.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; coverage of cumulative trace accounting across retries cannot be verified.",
+  "suggestedRegressionTest": "Exercise multiple resumed invocations with cumulative token and cost reports, asserting accumulated usage equals the latest session total and limits are evaluated against actual consumption.",
+  "minimumFixScope": "CodexAgent cumulative usage accounting and retry coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193812-5d9aac",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the relevant code changed. _sync_usage at lines 521–572 now subtracts previously accounted cumulative tokens and cost before updating usage and checking limits. retry preserves those baselines; resume --last remains at lines 602–603. An existing test at tests/agent_runner/agents/codex_agent_test.py:574 checks repeated and increasing cumulative totals, expecting 150 input tokens rather than double counting. This supports a repair, but targeted pytest validation exited 1 before running tests because the read-only environment provided no usable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts or validation results were supplied.",
+      "commands": [
+        "rg -n 'cumulative|retry|trace_usage|sync_usage' src/slop_code/agent_runner/agents/codex/agent.py",
+        "rg --files tests | rg codex",
+        "nl -ba src/slop_code/agent_runner/agents/codex/agent.py | sed -n '495,575p'",
+        "sed -n '574,631p' tests/agent_runner/agents/codex_agent_test.py",
+        "nl -ba src/slop_code/agent_runner/agents/codex/agent.py | sed -n '600,615p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q tests/agent_runner/agents/codex_agent_test.py -k 'sync_usage_only_accounts_cumulative_deltas or parse_line_reads_codex_token_count_reported_cost or build_command_for_retry'"
+      ],
+      "createdAt": "2026-09-12T19:38:48.196Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified resumed cumulative usage contributes deltas only; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:20.837Z"
+    }
+  ],
+  "signature": "sig_feat-library-94a87ca9bc_ce04e010f5",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:57.516Z",
+  "updatedAt": "2026-09-12T19:39:20.836Z"
+}

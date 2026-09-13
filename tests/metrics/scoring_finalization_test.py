@@ -54,7 +54,7 @@ def _configured_problem(tmp_path: Path) -> ProblemConfig:
     )
 
 
-def test_missing_live_oracle_preserves_current_generation(
+def test_missing_live_oracle_publishes_structured_ineligibility(
     tmp_path: Path,
 ) -> None:
     publish_generation(
@@ -74,10 +74,21 @@ def test_missing_live_oracle_preserves_current_generation(
     checkpoint = tmp_path / "problem" / "checkpoint_1"
     checkpoint.mkdir(parents=True)
     (checkpoint / "inference_result.json").write_text("{}")
-    with pytest.raises(RuntimeError, match="committed live oracle is missing"):
-        finalize_benchmark_score(tmp_path, (_problem(),))
+    assert finalize_benchmark_score(tmp_path, (_problem(),)) is None
 
-    assert current.read_bytes() == pointer_before
+    pointer_after = current.read_bytes()
+    assert pointer_after != pointer_before
+    generation_id = json.loads(pointer_after)["generation_id"]
+    eligibility = json.loads(
+        (
+            tmp_path
+            / "measurement_analysis"
+            / "generations"
+            / generation_id
+            / "eligibility.json"
+        ).read_bytes()
+    )
+    assert eligibility["reasons"] == ["canonical_provenance_unavailable"]
 
 
 def test_live_changed_lines_are_root_independent_and_deduplicated(
@@ -153,6 +164,7 @@ def test_invalid_saved_docker_runtime_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(LockedEnvironmentError, match="Docker binary"):
         live_evidence._measurement_executor(checkpoint)
 
+
 def test_declared_zero_checkpoints_remain_eligible_and_successful() -> None:
     problem = _problem()
     prefix = (
@@ -210,6 +222,7 @@ def test_missing_transition_component_blocks_score_assembly(missing: str):
         "problems/"
         "47a49356720831b66f38bbe12c06e6cf71a67277b1f5e6a28593e73afde6f226"
     )
+
     def checkpoint(checkpoint_id: str) -> bytes:
         return json.dumps(
             {
@@ -250,6 +263,32 @@ def test_missing_transition_component_blocks_score_assembly(missing: str):
         "transition_evidence": "blocked",
         "score_assembly": "blocked",
     }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b"{}",
+        b'{"parser_tokenizer_schema_id":"not-a-schema-id"}',
+        b'{"parser_tokenizer_schema_id":[]}',
+    ),
+)
+def test_malformed_quality_sidecar_is_canonical_artifact_invalid(
+    payload: bytes,
+) -> None:
+    problem = _problem()
+    prefix = (
+        "problems/"
+        "47a49356720831b66f38bbe12c06e6cf71a67277b1f5e6a28593e73afde6f226"
+    )
+
+    evidence, eligibility = _build_score_evidence(
+        {f"{prefix}/checkpoints/checkpoint_1/production_quality.json": payload},
+        (problem,),
+    )
+
+    assert evidence is None
+    assert "canonical_artifact_invalid" in eligibility.reasons
 
 
 def test_finalizer_blocks_wholly_missing_problem_without_transition_evidence(

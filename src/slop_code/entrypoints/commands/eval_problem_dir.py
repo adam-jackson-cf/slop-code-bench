@@ -128,6 +128,7 @@ def evaluate_problem_dir(
     problem = resolve_problem(
         submission_dir=submission_path,
         problem_path=problem_root,
+        problem_name=problem_name,
     )
 
     results = {}

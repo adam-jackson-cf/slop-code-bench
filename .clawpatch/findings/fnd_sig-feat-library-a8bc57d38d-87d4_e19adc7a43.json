@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a8bc57d38d-87d4_e19adc7a43",
+  "featureId": "feat_library_a8bc57d38d",
+  "title": "--problem-name is ignored when resolving a problem directory",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/eval_problem_dir.py",
+      "startLine": 42,
+      "endLine": 50,
+      "symbol": "evaluate_problem_dir",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/eval_problem_dir.py",
+      "startLine": 127,
+      "endLine": 131,
+      "symbol": "evaluate_problem_dir",
+      "quote": null
+    }
+  ],
+  "reasoning": "The command promises an explicit problem-name override, but the value is only logged. Problem resolution receives the submission directory and catalog root without the override. Supplying --problem-name therefore cannot change the selected problem, causing renamed submission directories to fail resolution or use an unintended problem.",
+  "reproduction": "Evaluate a submission directory whose basename differs from the intended catalog problem, supplying that problem with --problem-name. Resolution receives exactly the same arguments as when the option is omitted.",
+  "recommendation": "Use the explicit problem name to resolve the catalog configuration when supplied, and infer from the submission directory only when omitted.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests exercise evaluate_agent_run, not evaluate_problem_dir or its problem-name override.",
+  "suggestedRegressionTest": "Cover explicit and inferred problem selection, including a submission basename that names a different valid catalog problem, and assert which configuration reaches evaluate_checkpoint.",
+  "minimumFixScope": "Problem resolution in evaluate_problem_dir and focused command coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T202547-8952b8",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both original evidence ranges still exist. eval_problem_dir.py:128-132 now forwards problem_name, and evaluation/utils.py:45-76 prefers that explicit name over the submission basename. Focused tests cover explicit versus inferred selection and forwarding the selected configuration to evaluate_checkpoint. However, targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory, so fixed cannot be confirmed. No linked patch attempts were supplied. CodeGraph status also failed; current files were inspected directly.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba src/slop_code/entrypoints/evaluation/utils.py | sed -n '1,180p'",
+        "nl -ba src/slop_code/entrypoints/commands/eval_problem_dir.py | sed -n '120,140p'",
+        "nl -ba src/slop_code/entrypoints/commands/eval_problem_dir.py | sed -n '40,52p'",
+        "sed -n '1,175p' tests/entrypoints/commands/test_eval_problem_dir.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/commands/test_eval_problem_dir.py"
+      ],
+      "createdAt": "2026-09-12T20:26:19.282Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified explicit catalog problem name takes precedence and basename inference applies only when omitted; 27 command tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:26:53.520Z"
+    }
+  ],
+  "signature": "sig_feat-library-a8bc57d38d_87d42d7fce",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:30.109Z",
+  "updatedAt": "2026-09-12T20:26:53.519Z"
+}

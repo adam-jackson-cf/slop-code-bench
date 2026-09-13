@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_bd130bc9cb",
+  "title": "Python source src/slop_code/execution",
+  "summary": "Python source group src/slop_code/execution with 11 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/execution",
+      "symbol": "src/slop_code/execution",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/execution/__init__.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/assets.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/models.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/placeholders.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/protocols.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/runtime.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/session.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/shared.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/snapshot.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/stream_processor.py",
+      "reason": "source group src/slop_code/execution"
+    },
+    {
+      "path": "src/slop_code/execution/workspace.py",
+      "reason": "source group src/slop_code/execution"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/execution/placeholders_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/execution/session_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/execution/shared_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/execution/stream_processor_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/execution/workspace_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/metrics/models_test.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/execution/placeholders_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/session_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/shared_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/stream_processor_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/execution/workspace_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/models_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-bd130bc9cb-f780_61df02b942",
+    "fnd_sig-feat-library-bd130bc9cb-43e1_d58b9bc000",
+    "fnd_sig-feat-library-bd130bc9cb-8d7f_6dc402465e",
+    "fnd_sig-feat-library-bd130bc9cb-41c8_51607d846b",
+    "fnd_sig-feat-library-bd130bc9cb-f0a4_64aef18dd0",
+    "fnd_sig-feat-library-bd130bc9cb-c8f6_a7210ad4ec",
+    "fnd_sig-feat-library-bd130bc9cb-cb39_37ffbcb881"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "7 finding(s); prompt=221054 bytes; approxTokens=55263; includedFiles=18; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:59:36.109Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T07:48:29.914Z"
+}

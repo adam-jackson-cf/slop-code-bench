@@ -21,6 +21,12 @@ def register_language(name: str, spec: LanguageSpec) -> None:
         name: The name of the language (e.g., "PYTHON").
         spec: The LanguageSpec for the language.
     """
+    previous_spec = LANGUAGE_REGISTRY.get(name)
+    if previous_spec is not None:
+        for extension in previous_spec.extensions:
+            if EXT_TO_LANGUAGE.get(extension) == name:
+                del EXT_TO_LANGUAGE[extension]
+
     LANGUAGE_REGISTRY[name] = spec
     for extension in spec.extensions:
         EXT_TO_LANGUAGE[extension] = name

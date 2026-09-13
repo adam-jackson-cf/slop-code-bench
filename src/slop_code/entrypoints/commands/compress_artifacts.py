@@ -38,16 +38,25 @@ def _compress_agent_dir(agent_dir: Path) -> tuple[bool, str | None]:
         with tarfile.open(tar_path, "w:gz") as tar:
             for item in agent_dir.iterdir():
                 tar.add(item, arcname=item.name)
+    except (OSError, tarfile.TarError) as exc:
+        try:
+            tar_path.unlink(missing_ok=True)
+        except OSError as cleanup_exc:
+            return (
+                False,
+                f"{exc}; failed to remove partial archive: {cleanup_exc}",
+            )
+        return False, str(exc)
 
-        # Remove the original directory
+    try:
         shutil.rmtree(agent_dir)
-        return True, None
+    except OSError as exc:
+        return (
+            False,
+            f"Archive created at {tar_path}, but failed to remove source: {exc}",
+        )
 
-    except (OSError, tarfile.TarError) as e:
-        # Clean up partial tar file if it was created
-        if tar_path.exists():
-            tar_path.unlink()
-        return False, str(e)
+    return True, None
 
 
 def _find_agent_dirs(run_dir: Path) -> list[Path]:
@@ -285,3 +294,5 @@ def compress_artifacts(
                     bold=True,
                 )
             )
+    if total_errors:
+        raise typer.Exit(1)

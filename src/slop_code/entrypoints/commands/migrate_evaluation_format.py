@@ -125,25 +125,19 @@ def _migrate_directory(
     *,
     dry_run: bool,
     logger: Any,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     """Migrate all evaluation.json files in a directory.
 
-    Args:
-        results_dir: Path to search for evaluation.json files
-        dry_run: If True, don't write changes
-        logger: Logger instance
-
     Returns:
-        Tuple of (files_found, files_migrated, files_skipped)
+        Tuple of (files_found, files_migrated, files_skipped, files_failed).
     """
     files_found = 0
     files_migrated = 0
     files_skipped = 0
+    files_failed = 0
 
-    # Find all evaluation.json files
     for eval_path in results_dir.rglob("evaluation.json"):
         files_found += 1
-
         success, message = _migrate_single_file(
             eval_path,
             dry_run=dry_run,
@@ -165,13 +159,14 @@ def _migrate_directory(
                     message=message,
                 )
         else:
+            files_failed += 1
             logger.warning(
                 "Failed to migrate",
                 path=str(eval_path),
                 error=message,
             )
 
-    return files_found, files_migrated, files_skipped
+    return files_found, files_migrated, files_skipped, files_failed
 
 
 def register(app: typer.Typer, name: str):
@@ -255,6 +250,7 @@ def migrate_evaluation_format(
     total_found = 0
     total_migrated = 0
     total_skipped = 0
+    total_failed = 0
 
     if path_type == common.PathType.COLLECTION:
         run_dirs = discover_run_directories(results_dir)
@@ -275,7 +271,7 @@ def migrate_evaluation_format(
                 f"\nProcessing run {i}/{len(run_dirs)}: {single_run_dir.name}"
             )
 
-            found, migrated, skipped = _migrate_directory(
+            found, migrated, skipped, failed = _migrate_directory(
                 single_run_dir,
                 dry_run=dry_run,
                 logger=logger,
@@ -283,13 +279,19 @@ def migrate_evaluation_format(
             total_found += found
             total_migrated += migrated
             total_skipped += skipped
+            total_failed += failed
 
             typer.echo(
                 f"  Found: {found}, Migrated: {migrated}, Already done: {skipped}"
             )
     else:
         # Single run mode
-        total_found, total_migrated, total_skipped = _migrate_directory(
+        (
+            total_found,
+            total_migrated,
+            total_skipped,
+            total_failed,
+        ) = _migrate_directory(
             results_dir,
             dry_run=dry_run,
             logger=logger,
@@ -301,9 +303,7 @@ def migrate_evaluation_format(
     typer.echo(f"  Files found:    {total_found}")
     typer.echo(f"  Files migrated: {total_migrated}")
     typer.echo(f"  Already done:   {total_skipped}")
-    typer.echo(
-        f"  Failed:         {total_found - total_migrated - total_skipped}"
-    )
+    typer.echo(f"  Failed:         {total_failed}")
 
     if dry_run and total_migrated > 0:
         typer.echo(
@@ -312,3 +312,6 @@ def migrate_evaluation_format(
                 fg=typer.colors.YELLOW,
             )
         )
+
+    if total_failed:
+        raise typer.Exit(1)

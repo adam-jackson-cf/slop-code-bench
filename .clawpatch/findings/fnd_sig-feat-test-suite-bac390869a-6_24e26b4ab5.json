@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-bac390869a-6_24e26b4ab5",
+  "featureId": "feat_test-suite_bac390869a",
+  "title": "Dependency identity test changes multiple cache inputs at once",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/evaluation/locked_environment_test.py",
+      "startLine": 29,
+      "endLine": 39,
+      "symbol": "_problem",
+      "quote": null
+    },
+    {
+      "path": "tests/evaluation/locked_environment_test.py",
+      "startLine": 124,
+      "endLine": 145,
+      "symbol": "test_declared_test_dependencies_are_identity_inputs",
+      "quote": null
+    }
+  ],
+  "reasoning": "Changing test_dependencies also changes the generated pyproject.toml, and the test uses different project paths. Therefore, differing environment IDs do not establish that the declared test_dependencies field participates in cache identity. An implementation that ignores that field for identity but hashes pyproject.toml could satisfy every assertion, including writing test_dependencies.json.",
+  "reproduction": "Omit test_dependencies from cache identity while retaining pyproject.toml hashing and dependency manifest writing. The supplied scenario still produces different identities.",
+  "recommendation": "Keep the project path and project/lock bytes fixed while varying only ProblemConfig.test_dependencies, then verify distinct identities and reuse for repeated identical declarations.",
+  "whyTestsDoNotAlreadyCoverThis": "The existing scenario cannot distinguish dependency-field identity from changes to other identity inputs.",
+  "suggestedRegressionTest": "Expand the existing identity scenario with configurations sharing identical project files and path but differing declared test dependencies; verify separate environments and reuse for identical declarations.",
+  "minimumFixScope": "tests/evaluation/locked_environment_test.py::test_declared_test_dependencies_are_identity_inputs",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193939-c1aeb1",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the scenario has changed: _problem at lines 22–58 separates project_dependencies from test_dependencies. The test at lines 130–160 now uses the same project path and identical project/lock bytes, varies only declared test dependencies, and asserts distinct identities plus reuse. Current production code hashes test_dependencies.json into the identity. This supports the intended repair; however, targeted pytest validation exited 1 before collection because the read-only environment had no usable temporary directory, so fixed cannot be confirmed. No linked patch attempts or validation results were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba tests/evaluation/locked_environment_test.py | sed -n '20,170p'",
+        "rg -n 'test_dependencies|identity|def ' src/slop_code/evaluation/locked_environment.py",
+        "sed -n '57,107p' src/slop_code/evaluation/locked_environment.py",
+        "sed -n '371,420p' src/slop_code/evaluation/locked_environment.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/evaluation/locked_environment_test.py::test_declared_test_dependencies_are_identity_inputs"
+      ],
+      "createdAt": "2026-09-12T19:40:03.657Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified dependency identity test holds other cache inputs fixed and varies only declared test_dependencies; evaluation gates pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:41:26.219Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-bac390869a_6c249ea466",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:58.592Z",
+  "updatedAt": "2026-09-12T19:41:26.218Z"
+}

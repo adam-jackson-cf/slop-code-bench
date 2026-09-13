@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a1860c398b-2779_5862527eae",
+  "featureId": "feat_library_a1860c398b",
+  "title": "Saving the summary also prints it to global stdout",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/utils.py",
+      "startLine": 508,
+      "endLine": 516,
+      "symbol": "_save_experiment_summary",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/utils.py",
+      "startLine": 594,
+      "endLine": 601,
+      "symbol": "display_and_save_summary",
+      "quote": null
+    }
+  ],
+  "reasoning": "A Rich Console with record=True still writes to its output stream. The recording console defaults to stdout, so saving the text artifact prints the tables again after they were rendered to the caller's console. This duplicates normal terminal output and leaks summary output to stdout even when the caller supplied a console targeting another stream.",
+  "reproduction": "Call display_and_save_summary with valid checkpoint data and a console backed by an in-memory stream; observe that summary tables also appear on global stdout.",
+  "recommendation": "Give the recording console a private in-memory output stream, then export its recorded text to the summary file.",
+  "whyTestsDoNotAlreadyCoverThis": "The included test covers nested_priority_merge in slop_code.evaluation.utils, not entrypoint summary rendering or output routing.",
+  "suggestedRegressionTest": "Test that summary generation writes to the supplied console and artifact while leaving unrelated stdout untouched, with both available and unavailable scoring.",
+  "minimumFixScope": "The recording console initialization in _save_experiment_summary and summary output-routing coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165331-cd8df0",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original file and both symbols still exist, with shifted lines. _save_experiment_summary now uses Console(file=io.StringIO(), record=True) at lines 516–522, supporting the intended repair. display_and_save_summary renders to the supplied console at line 605 and saves at line 612. Existing summary tests cover output routing with available and unavailable scoring. However, targeted pytest validation exited 1 before running tests because the read-only environment provides no writable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts or successful validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/utils.py | sed -n '505,630p'",
+        "rg -n 'stdout|display_and_save_summary|save_experiment_summary' tests/entrypoints",
+        "sed -n '1,195p' tests/entrypoints/test_utils_summary.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/test_utils_summary.py"
+      ],
+      "createdAt": "2026-09-11T16:53:53.935Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:53:54.504Z"
+    }
+  ],
+  "signature": "sig_feat-library-a1860c398b_27796d6b83",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:59.352Z",
+  "updatedAt": "2026-09-11T16:53:54.503Z"
+}

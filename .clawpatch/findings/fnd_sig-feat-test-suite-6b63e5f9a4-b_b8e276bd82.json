@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-6b63e5f9a4-b_b8e276bd82",
+  "featureId": "feat_test-suite_6b63e5f9a4",
+  "title": "Failed-checkpoint integration test conflates inference errors with evaluation failures",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/agent_runner/test_runner_integration.py",
+      "startLine": 86,
+      "endLine": 93,
+      "symbol": "FailingAgent.run",
+      "quote": null
+    },
+    {
+      "path": "tests/agent_runner/test_runner_integration.py",
+      "startLine": 221,
+      "endLine": 225,
+      "symbol": "test_agent_runner_stops_after_failed_checkpoint",
+      "quote": null
+    },
+    {
+      "path": "tests/agent_runner/test_runner_integration.py",
+      "startLine": 278,
+      "endLine": 305,
+      "symbol": "test_agent_runner_stops_after_failed_checkpoint",
+      "quote": null
+    }
+  ],
+  "reasoning": "The agent raises RuntimeError on its first checkpoint while evaluation also returns a failing report. Stopping on the inference error alone satisfies the assertions, even if stopping after an ordinary test failure is broken. The visible end-to-end scenarios exercise successful runs, so they do not resolve this ambiguity.",
+  "reproduction": "Allow continuation after failed evaluation while retaining the inference-error stop condition; this scenario can still pass.",
+  "recommendation": "Separate inference-error handling from evaluation-failure continuation using a successful agent and explicit continuation settings.",
+  "whyTestsDoNotAlreadyCoverThis": "The failure scenario activates both stop conditions simultaneously, and the remaining visible integration scenarios focus on exceptions or missing inference results.",
+  "suggestedRegressionTest": "Extend the integration scenarios with successful inference and failed evaluation under ALL_CASES, asserting that the next checkpoint is skipped when continuation is false and executed when continuation is true, while the failed checkpoint remains unsolved.",
+  "minimumFixScope": "tests/agent_runner/test_runner_integration.py failure and continuation scenarios",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T205222-66380d",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The evidence file exists, but line numbers shifted. FailingAgent.run now raises RuntimeError at lines 98–105; the integration test at 237–340 still combines this inference error with failed evaluation at line 296 and asserts ERROR with only the first checkpoint executed. It uses PassPolicy.ANY without explicit continuation settings. Unit tests at 985–1012 separately cover the stop predicate, but do not exercise successful inference followed by failed evaluation through the checkpoint loop. The integration coverage gap remains. No linked patch attempts or validation results were supplied. Tests were not executed in this read-only session; CodeGraph status failed because its database could not be opened, so current files were inspected directly.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba tests/agent_runner/test_runner_integration.py | sed -n '90,110p;215,345p'",
+        "rg -n 'continue_after_test_failure|stops_after|failed_checkpoint|ALL_CASES' tests/agent_runner src/slop_code/agent_runner/runner.py",
+        "sed -n '750,810p' src/slop_code/agent_runner/runner.py",
+        "sed -n '960,1045p' tests/agent_runner/test_runner_unit.py",
+        "rg -n 'continue_after_test_failure|def test_' tests/agent_runner/runner_e2e_test.py tests/agent_runner/test_runner_integration.py",
+        "rg -n '_should_stop|had_error' src/slop_code/agent_runner/runner.py"
+      ],
+      "createdAt": "2026-09-12T20:52:55.477Z"
+    },
+    {
+      "runId": "20260912T205527-c73d2a",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists with shifted lines: FailingAgent raises at 98–105, and the original test at 246–349 still combines inference and evaluation failures. New coverage at 522–593 uses SuccessfulAgent, ALL_CASES, and explicit continuation settings to independently check stopping versus executing the next checkpoint without inference errors. This addresses the original ambiguity, although it does not assert that the failed checkpoint remains unsolved; save_results returns a hardcoded mocked result. Current runner logic supports evaluation-failure stopping. However, targeted validation exited 2 before tests ran because the read-only environment denied access to uv's cache, so fixed cannot be confirmed. No linked patch attempts or successful validation results were supplied. CodeGraph also failed to open its database; current files were inspected directly.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md /Users/adamjackson/.agents/skills/codegraph/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba tests/agent_runner/test_runner_integration.py | sed -n '95,145p;235,250p;295,335p;515,625p'",
+        "rg -n 'passed_policy|_should_stop|continue_after_test_failure' src/slop_code/agent_runner/runner.py tests/agent_runner/test_runner_unit.py",
+        "sed -n '750,810p' src/slop_code/agent_runner/runner.py",
+        "uv run --no-sync pytest -q tests/agent_runner/test_runner_integration.py -k 'evaluation_failure_respects_continuation_policy or stops_after_failed_checkpoint' -p no:cacheprovider"
+      ],
+      "createdAt": "2026-09-12T20:55:51.542Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified successful-agent evaluation failure scenarios explicitly distinguish continuation false stop from true continuation under all-cases without inference errors; 6 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:56:00.105Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-6b63e5f9a4_b134974029",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:27.631Z",
+  "updatedAt": "2026-09-12T20:56:00.104Z"
+}

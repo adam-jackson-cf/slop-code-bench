@@ -232,7 +232,15 @@ def select_best_version_per_model(
             matching = group[group["agent_version"] == opus_version]
             if len(matching) > 0:
                 return matching.iloc[0]
-        return group.sort_values(by="agent_version", ascending=False).iloc[0]
+        return group.sort_values(
+            by="agent_version",
+            key=lambda versions: versions.map(
+                lambda version: tuple(
+                    int(component) for component in version.split(".")
+                )
+            ),
+            ascending=False,
+        ).iloc[0]
 
     return (
         df.groupby("model")

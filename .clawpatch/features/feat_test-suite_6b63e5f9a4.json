@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_test-suite_6b63e5f9a4",
+  "title": "Python test suite tests/agent_runner",
+  "summary": "Python pytest files in tests/agent_runner.",
+  "kind": "test-suite",
+  "source": "python-test-suite",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "tests/agent_runner",
+      "symbol": "tests/agent_runner",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "tests/agent_runner/credentials_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/llms_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/reporting_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/resume_integration_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/resume_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/runner_e2e_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/test_registry.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/test_runner_integration.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/agent_runner/test_runner_unit.py",
+      "reason": "pytest file"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/agent_runner/credentials_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/llms_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/reporting_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/resume_integration_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/resume_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/runner_e2e_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/test_registry.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/test_runner_integration.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/agent_runner/test_runner_unit.py",
+      "reason": "nearby test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/agent_runner/credentials_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/llms_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/reporting_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/resume_integration_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/resume_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/runner_e2e_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/test_registry.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/test_runner_integration.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/agent_runner/test_runner_unit.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "test"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-test-suite-6b63e5f9a4-d_9cc4434d16",
+    "fnd_sig-feat-test-suite-6b63e5f9a4-b_b8e276bd82"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "2 finding(s); prompt=164874 bytes; approxTokens=41219; includedFiles=10; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T11:00:27.633Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:56:00.151Z"
+}

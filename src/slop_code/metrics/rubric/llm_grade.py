@@ -372,15 +372,29 @@ def _extract_grades(
         text_content = ""
 
     grades = _parse_multi_file_response(text_content)
-    if grades is None:
+    if grades is not None:
+        return grades
+
+    parsed = _parse_json_text(text_content)
+    if parsed is None:
         logger.warning(
-            "Multi-file format detected but no grades extracted",
+            "No valid grades extracted",
             file_name=file_name,
         )
-    return grades or []
+        return []
+    if isinstance(parsed, dict):
+        parsed = [parsed]
+    if not isinstance(parsed, list):
+        return []
+
+    return [
+        {**grade, "file_name": file_name}
+        for grade in parsed
+        if isinstance(grade, dict)
+    ]
 
 
-def _parse_json_text(message_text: str) -> list[dict] | None:
+def _parse_json_text(message_text: str) -> Any | None:
     """Parse JSON from message text, trying multiple strategies.
 
     Args:

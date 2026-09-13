@@ -8,7 +8,6 @@ import typer
 import yaml
 from rich.console import Console
 
-from slop_code import evaluation
 from slop_code.common import CHECKPOINT_CONFIG_NAME
 from slop_code.common import CHECKPOINT_RESULTS_FILENAME
 from slop_code.common import CONFIG_FILENAME
@@ -56,20 +55,27 @@ def _is_evaluation_schema_current(checkpoint_dir: Path) -> bool:
     try:
         with eval_path.open() as f:
             data = json.load(f)
-
-        schema_version = data.get("schema_version")
-        if schema_version is None or schema_version < EVALUATION_SCHEMA_VERSION:
-            return False
-
-        if not all(field in data for field in REQUIRED_EVAL_FIELDS):
-            return False
-
-        if not eval_dir.exists() or not eval_dir.is_dir():
-            return False
-
-        return all((eval_dir / f).exists() for f in REQUIRED_EVAL_DIR_FILES)
     except (OSError, json.JSONDecodeError):
         return False
+
+    if not isinstance(data, dict):
+        return False
+
+    schema_version = data.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version != EVALUATION_SCHEMA_VERSION
+    ):
+        return False
+
+    if not all(field in data for field in REQUIRED_EVAL_FIELDS):
+        return False
+
+    if not eval_dir.exists() or not eval_dir.is_dir():
+        return False
+
+    return all((eval_dir / f).exists() for f in REQUIRED_EVAL_DIR_FILES)
 
 
 def _is_problem_fully_evaluated(problem_dir: Path) -> bool:
@@ -147,10 +153,10 @@ def evaluate_agent_run(
         "--problem",
         help="Name of the specific problems to run",
     ),
-    assessment_policy: evaluation.PassPolicy = typer.Option(
-        evaluation.PassPolicy.ALL_CASES,
+    assessment_policy: str = typer.Option(
+        "all-cases",
         "--assessment-policy",
-        help="Policy used to assess whether a checkpoint passed",
+        help="Strict checkpoint assessment policy; must be all-cases",
     ),
     env_config: Path | None = typer.Option(
         None,
@@ -176,6 +182,9 @@ def evaluate_agent_run(
     ),
 ) -> None:
     """Evaluate a directory of attempts against a problem specification."""
+    assessment_policy = common.require_all_cases_assessment_policy(
+        assessment_policy
+    )
 
     if not agent_run_dir.exists():
         typer.echo(

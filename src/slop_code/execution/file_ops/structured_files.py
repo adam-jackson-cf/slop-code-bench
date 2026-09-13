@@ -3,10 +3,13 @@ from __future__ import annotations
 import contextlib
 import csv
 import json
+import os
 import sqlite3
+import tempfile
+from collections.abc import Iterable
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeGuard, TypedDict
 
 from slop_code.execution.file_ops.models import Compression
 from slop_code.execution.file_ops.models import FileContent
@@ -15,6 +18,33 @@ from slop_code.execution.file_ops.models import FileType
 from slop_code.execution.file_ops.models import InputFileReadError
 from slop_code.execution.file_ops.models import InputFileWriteError
 from slop_code.execution.file_ops.models import open_stream
+
+
+def _is_mapping_rows(content: object) -> TypeGuard[list[Mapping[str, object]]]:
+    return isinstance(content, list) and all(
+        isinstance(row, Mapping) for row in content
+    )
+
+
+def _is_row_sequences(content: object) -> TypeGuard[list[Iterable[object]]]:
+    return isinstance(content, list) and all(
+        isinstance(row, Iterable) for row in content
+    )
+
+
+type SQLiteRow = dict[str, object]
+
+
+class SQLiteTable(TypedDict):
+    columns: list[str]
+    rows: list[SQLiteRow]
+
+
+type SQLiteTables = dict[str, SQLiteTable]
+
+
+class SQLitePayload(TypedDict):
+    tables: SQLiteTables
 
 
 class StructuredFileHandler(FileHandler):
@@ -107,7 +137,7 @@ class DelimitedHandlerBase(StructuredFileHandler):
             return list(reader)
 
     def write(self, path: Path, content: FileContent) -> None:
-        if not isinstance(content, list | dict):
+        if not isinstance(content, list | Mapping):
             raise InputFileWriteError(
                 f"DelimitedHandlerBase require list of dicts/lists or string-convertible "
                 f"content, got {type(content).__name__}"
@@ -115,7 +145,7 @@ class DelimitedHandlerBase(StructuredFileHandler):
         path.parent.mkdir(parents=True, exist_ok=True)
         with self.open(path, "wt", encoding="utf-8", newline="") as stream:
             if isinstance(content, list):
-                if content and isinstance(content[0], dict):
+                if _is_mapping_rows(content) and content:
                     fieldnames = content[0].keys()
                     writer = csv.DictWriter(
                         stream,
@@ -125,6 +155,10 @@ class DelimitedHandlerBase(StructuredFileHandler):
                     writer.writeheader()
                     writer.writerows(content)
                 elif content:
+                    if not _is_row_sequences(content):
+                        raise InputFileWriteError(
+                            "DelimitedHandlerBase rows must be iterable"
+                        )
                     writer = csv.writer(stream, delimiter=self.delimiter)
                     writer.writerows(content)
             else:
@@ -147,7 +181,7 @@ class SQLiteHandler(StructuredFileHandler):
             raise InputFileReadError(f"SQLite database does not exist: {path}")
 
         try:
-            tables: dict[str, list[dict[str, Any]]] = {}
+            tables: SQLiteTables = {}
             with sqlite3.connect(path) as conn:
                 conn.row_factory = sqlite3.Row
                 for table_name in self._list_tables(conn):
@@ -155,10 +189,16 @@ class SQLiteHandler(StructuredFileHandler):
                         ("SELECT * FROM", self._quote_identifier(table_name))
                     )
                     cursor = conn.execute(query)
-                    tables[table_name] = [
-                        dict(row) for row in cursor.fetchall()
-                    ]
-            return {"tables": tables}
+                    description = cursor.description
+                    if description is None:
+                        raise InputFileReadError(
+                            f"SQLite query returned no columns for table {table_name!r}"
+                        )
+                    tables[table_name] = {
+                        "columns": [column[0] for column in description],
+                        "rows": [dict(row) for row in cursor.fetchall()],
+                    }
+            return SQLitePayload(tables=tables)
         except sqlite3.Error as exc:
             raise InputFileReadError(
                 f"Failed to read SQLite database {path}: {exc}"
@@ -167,31 +207,37 @@ class SQLiteHandler(StructuredFileHandler):
     def write(self, path: Path, content: FileContent) -> None:
         tables = self._normalize_tables(content)
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists():
-            path.unlink()
+        descriptor, temporary_path = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+        )
+        os.close(descriptor)
+        replacement_path = Path(temporary_path)
 
         try:
-            with sqlite3.connect(path) as conn:
+            with sqlite3.connect(replacement_path) as conn:
                 for table_name, spec in tables.items():
                     self._create_table(
                         conn, table_name, spec["columns"], spec["rows"]
                     )
                 conn.commit()
-        except sqlite3.Error as exc:
+            replacement_path.replace(path)
+        except (OSError, sqlite3.Error) as exc:
             raise InputFileWriteError(
                 f"Failed to write SQLite database {path}: {exc}"
             ) from exc
+        finally:
+            replacement_path.unlink(missing_ok=True)
 
-    def _normalize_tables(
-        self, content: FileContent
-    ) -> dict[str, dict[str, Any]]:
+    def _normalize_tables(self, content: FileContent) -> SQLiteTables:
         if isinstance(content, list):
-            raw_tables: Mapping[str, Any] = {"table": content}
+            raw_tables: Mapping[str, object] = {"table": content}
         elif isinstance(content, Mapping):
-            raw_content = cast(Mapping[str, Any], content)
+            raw_content = self._string_keyed_mapping(content, "SQLite payload")
             maybe_tables = raw_content.get("tables")
             if isinstance(maybe_tables, Mapping):
-                raw_tables = maybe_tables
+                raw_tables = self._string_keyed_mapping(
+                    maybe_tables, "SQLite tables"
+                )
             else:
                 raw_tables = raw_content
         else:
@@ -199,7 +245,7 @@ class SQLiteHandler(StructuredFileHandler):
                 "SQLiteHandler requires list of rows or a mapping of table definitions"
             )
 
-        normalized: dict[str, dict[str, Any]] = {}
+        normalized: SQLiteTables = {}
         for table_name, table_payload in raw_tables.items():
             if not isinstance(table_name, str):
                 raise InputFileWriteError("Table names must be strings")
@@ -212,19 +258,22 @@ class SQLiteHandler(StructuredFileHandler):
     def _normalize_table_payload(
         self,
         table_name: str,
-        payload: Any,
-    ) -> dict[str, Any]:
+        payload: object,
+    ) -> SQLiteTable:
         if isinstance(payload, list):
             rows = [self._normalize_row(table_name, row) for row in payload]
             columns = self._deduce_columns(rows)
         elif isinstance(payload, Mapping):
-            raw_rows = payload.get("rows", [])
+            table_definition = self._string_keyed_mapping(
+                payload, f"Table '{table_name}' definition"
+            )
+            raw_rows = table_definition.get("rows", [])
             if not isinstance(raw_rows, list):
                 raise InputFileWriteError(
                     f"Table '{table_name}' rows must be provided as a list"
                 )
             rows = [self._normalize_row(table_name, row) for row in raw_rows]
-            columns = payload.get("columns")
+            columns = table_definition.get("columns")
             if columns is None:
                 columns = self._deduce_columns(rows)
             else:
@@ -241,7 +290,19 @@ class SQLiteHandler(StructuredFileHandler):
 
         return {"columns": columns, "rows": rows}
 
-    def _normalize_columns(self, table_name: str, columns: Any) -> list[str]:
+    def _string_keyed_mapping(
+        self, payload: object, label: str
+    ) -> dict[str, object]:
+        if not isinstance(payload, Mapping):
+            raise InputFileWriteError(f"{label} must be a mapping")
+        normalized: dict[str, object] = {}
+        for key, value in payload.items():
+            if not isinstance(key, str):
+                raise InputFileWriteError(f"{label} keys must be strings")
+            normalized[key] = value
+        return normalized
+
+    def _normalize_columns(self, table_name: str, columns: object) -> list[str]:
         if not isinstance(columns, list):
             raise InputFileWriteError(
                 f"Columns for table '{table_name}' must be provided as a list of strings"
@@ -262,12 +323,12 @@ class SQLiteHandler(StructuredFileHandler):
             )
         return normalized
 
-    def _normalize_row(self, table_name: str, row: Any) -> dict[str, Any]:
+    def _normalize_row(self, table_name: str, row: object) -> SQLiteRow:
         if not isinstance(row, Mapping):
             raise InputFileWriteError(
                 f"Rows for table '{table_name}' must be mappings of column names to values"
             )
-        normalized: dict[str, Any] = {}
+        normalized: SQLiteRow = {}
         for key, value in row.items():
             if not isinstance(key, str):
                 raise InputFileWriteError(
@@ -280,7 +341,7 @@ class SQLiteHandler(StructuredFileHandler):
             )
         return normalized
 
-    def _deduce_columns(self, rows: list[dict[str, Any]]) -> list[str]:
+    def _deduce_columns(self, rows: list[SQLiteRow]) -> list[str]:
         ordered_columns: list[str] = []
         seen: set[str] = set()
         for row in rows:
@@ -295,7 +356,7 @@ class SQLiteHandler(StructuredFileHandler):
         conn: sqlite3.Connection,
         table_name: str,
         columns: list[str],
-        rows: list[dict[str, Any]],
+        rows: list[SQLiteRow],
     ) -> None:
         column_types = {
             column: self._infer_sql_type([row.get(column) for row in rows])
@@ -330,7 +391,7 @@ class SQLiteHandler(StructuredFileHandler):
             ]
             conn.executemany(insert_sql, prepared_rows)
 
-    def _prepare_value(self, value: Any) -> Any:
+    def _prepare_value(self, value: object) -> object:
         if isinstance(value, bool):
             return int(value)
         if isinstance(value, bytearray):
@@ -339,9 +400,9 @@ class SQLiteHandler(StructuredFileHandler):
             return value
         if isinstance(value, list | dict):
             return json.dumps(value, ensure_ascii=False)
-        return str(value)
+        return value
 
-    def _infer_sql_type(self, values: list[Any]) -> str:
+    def _infer_sql_type(self, values: list[object]) -> str:
         for value in values:
             if value is None:
                 continue

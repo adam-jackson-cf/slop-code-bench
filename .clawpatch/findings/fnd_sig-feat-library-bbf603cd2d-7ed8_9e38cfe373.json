@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bbf603cd2d-7ed8_9e38cfe373",
+  "featureId": "feat_library_bbf603cd2d",
+  "title": "A checkpoint metrics error aborts the entire problem report",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/evaluation/metrics.py",
+      "startLine": 110,
+      "endLine": 116,
+      "symbol": "create_checkpoint_report",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/evaluation/metrics.py",
+      "startLine": 119,
+      "endLine": 126,
+      "symbol": "create_problem_reports",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/evaluation/metrics.py",
+      "startLine": 155,
+      "endLine": 187,
+      "symbol": "create_problem_reports",
+      "quote": null
+    }
+  ],
+  "reasoning": "create_problem_reports promises reports plus checkpoint-specific errors and continues past missing directories, but calls get_checkpoint_metrics without handling MetricsError. The sibling single-checkpoint function explicitly recognizes that exception. One existing checkpoint with invalid or incomplete metrics therefore prevents returning reports already collected and prevents processing later checkpoints.",
+  "reproduction": "Provide multiple checkpoint directories and make get_checkpoint_metrics raise MetricsError for an intermediate checkpoint. create_problem_reports raises instead of returning successful reports and an error tuple.",
+  "recommendation": "Catch MetricsError per checkpoint, append the checkpoint-specific error, and continue collecting reports. Explicitly preserve the intended prior-checkpoint comparison semantics across failures.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied metrics tests exercise source measurement and batching, not entrypoint report collection or its partial-failure contract.",
+  "suggestedRegressionTest": "Exercise a sequence containing successful, missing, and metrics-failing checkpoints; verify all usable reports and checkpoint-specific errors are returned and comparison inputs remain correct.",
+  "minimumFixScope": "The checkpoint loop in create_problem_reports.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201139-8f4346",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and symbols still exist, but line references shifted. metrics.py:189-204 now catches MetricsError per checkpoint, records its error, and continues; lines 217-218 retain the last successful checkpoint as the comparison baseline. tests/entrypoints/test_evaluation_driver.py:218 covers successful, missing, and failing checkpoints and preserved comparison inputs. No linked patch attempts were supplied. The repair is supported by inspection, but targeted pytest exited 1 before collection because the read-only environment has no writable temporary directory, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/evaluation/metrics.py | sed -n '95,235p'",
+        "rg -n 'create_problem_reports|prior_checkpoint_dir' tests/entrypoints",
+        "sed -n '210,285p' tests/entrypoints/test_evaluation_driver.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/test_evaluation_driver.py::test_create_problem_reports_continues_after_checkpoint_metrics_errors"
+      ],
+      "createdAt": "2026-09-12T20:12:10.337Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified per-checkpoint MetricsError is recorded while later reports continue with last successful comparison inputs; 15 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:13:21.117Z"
+    }
+  ],
+  "signature": "sig_feat-library-bbf603cd2d_7ed8572d7a",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:13.326Z",
+  "updatedAt": "2026-09-12T20:13:21.115Z"
+}

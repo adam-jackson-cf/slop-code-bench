@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Iterator
 from contextlib import suppress
 from datetime import datetime
@@ -98,6 +99,102 @@ DELTA_PREFIXES = ["delta.", "lines_added", "lines_removed", "churn_ratio"]
 
 REQUIRED_RESULT_FIELDS = ["model", "agent_type", "thinking", "prompt"]
 
+COMMAND_OUTPUT_FILENAMES = frozenset(
+    {
+        "runs.csv",
+        "checkpoints_identity.csv",
+        "checkpoints_tests.csv",
+        "checkpoints_inference.csv",
+        "checkpoints_code_stats.csv",
+        "checkpoints_complexity.csv",
+        "checkpoints_mass.csv",
+        "checkpoints_deltas.csv",
+        "quality_files.csv",
+        "quality_symbols.csv.gz",
+        "evaluations.csv.gz",
+        "rubric.csv",
+        "manifest.json",
+    }
+)
+
+
+def _write_consolidation_output(
+    output_dir: Path,
+    runs_dir: Path,
+    all_runs: list[dict[str, Any]],
+    all_checkpoints: list[dict[str, Any]],
+    all_quality_files: list[dict[str, Any]],
+    all_quality_symbols: list[dict[str, Any]],
+    all_evaluations: list[dict[str, Any]],
+    all_rubric: list[dict[str, Any]],
+) -> None:
+    """Write a complete export into an unpublished staging directory."""
+    if all_runs:
+        runs_df = _normalize_solve_rates(pd.DataFrame(all_runs))
+        runs_df.to_csv(output_dir / "runs.csv", index=False)
+        typer.echo(f"  runs.csv: {len(runs_df)} rows")
+
+    if all_checkpoints:
+        domain_dfs = split_checkpoint_columns(pd.DataFrame(all_checkpoints))
+        for name, df in domain_dfs.items():
+            if not df.empty:
+                filename = f"{name}.csv"
+                df.to_csv(output_dir / filename, index=False)
+                typer.echo(
+                    f"  {filename}: {len(df)} rows, {len(df.columns)} cols"
+                )
+
+    if all_quality_files:
+        df = pd.DataFrame(all_quality_files)
+        df.to_csv(output_dir / "quality_files.csv", index=False)
+        typer.echo(f"  quality_files.csv: {len(df)} rows")
+
+    if all_quality_symbols:
+        df = pd.DataFrame(all_quality_symbols)
+        df.to_csv(
+            output_dir / "quality_symbols.csv.gz",
+            index=False,
+            compression="gzip",
+        )
+        typer.echo(f"  quality_symbols.csv.gz: {len(df)} rows (compressed)")
+
+    if all_evaluations:
+        df = pd.DataFrame(all_evaluations)
+        df.to_csv(
+            output_dir / "evaluations.csv.gz", index=False, compression="gzip"
+        )
+        typer.echo(f"  evaluations.csv.gz: {len(df)} rows (compressed)")
+
+    if all_rubric:
+        df = pd.DataFrame(all_rubric)
+        df.to_csv(output_dir / "rubric.csv", index=False)
+        typer.echo(f"  rubric.csv: {len(df)} rows")
+
+    stats = {
+        "runs": len(all_runs),
+        "checkpoints": len(all_checkpoints),
+        "quality_files": len(all_quality_files),
+        "quality_symbols": len(all_quality_symbols),
+        "evaluations": len(all_evaluations),
+        "rubric_entries": len(all_rubric),
+    }
+    generate_manifest(output_dir, runs_dir, stats)
+    typer.echo("  manifest.json: generated")
+
+
+def _publish_consolidation_output(staging_dir: Path, output_dir: Path) -> None:
+    """Atomically publish staged files and remove only stale owned artifacts."""
+    staged_names = {path.name for path in staging_dir.iterdir()}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for path in staging_dir.iterdir():
+        path.replace(output_dir / path.name)
+    for path in output_dir.iterdir():
+        if (
+            path.name in COMMAND_OUTPUT_FILENAMES
+            and path.name not in staged_names
+        ):
+            path.unlink()
+
 
 def register(app: typer.Typer, name: str) -> None:
     """Register the consolidate-runs command."""
@@ -172,8 +269,6 @@ def consolidate_runs(
             )
         )
         raise typer.Exit(1)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Discover valid runs
     typer.echo(f"Discovering runs in {runs_dir}...")
@@ -313,69 +408,34 @@ def consolidate_runs(
                         record["checkpoint"] = checkpoint
                         all_rubric.append(record)
 
-    # Write output files
     typer.echo(f"\nWriting output to {output_dir}...")
-
-    # Write runs.csv
-    if all_runs:
-        runs_df = pd.DataFrame(all_runs)
-        runs_df = _normalize_solve_rates(runs_df)
-        runs_df.to_csv(output_dir / "runs.csv", index=False)
-        typer.echo(f"  runs.csv: {len(runs_df)} rows")
-
-    # Write checkpoint files
-    if all_checkpoints:
-        checkpoints_df = pd.DataFrame(all_checkpoints)
-        domain_dfs = split_checkpoint_columns(checkpoints_df)
-
-        for name, df in domain_dfs.items():
-            if not df.empty:
-                filename = f"{name}.csv"
-                df.to_csv(output_dir / filename, index=False)
-                typer.echo(
-                    f"  {filename}: {len(df)} rows, {len(df.columns)} cols"
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{output_dir.name}.",
+        dir=output_dir.parent,
+    ) as temp_dir:
+        staging_dir = Path(temp_dir)
+        try:
+            _write_consolidation_output(
+                staging_dir,
+                runs_dir,
+                all_runs,
+                all_checkpoints,
+                all_quality_files,
+                all_quality_symbols,
+                all_evaluations,
+                all_rubric,
+            )
+            _publish_consolidation_output(staging_dir, output_dir)
+        except OSError as exc:
+            typer.echo(
+                typer.style(
+                    f"Failed to publish consolidation output: {exc}",
+                    fg=typer.colors.RED,
+                    bold=True,
                 )
-
-    # Write quality files
-    if all_quality_files:
-        df = pd.DataFrame(all_quality_files)
-        df.to_csv(output_dir / "quality_files.csv", index=False)
-        typer.echo(f"  quality_files.csv: {len(df)} rows")
-
-    if all_quality_symbols:
-        df = pd.DataFrame(all_quality_symbols)
-        df.to_csv(
-            output_dir / "quality_symbols.csv.gz",
-            index=False,
-            compression="gzip",
-        )
-        typer.echo(f"  quality_symbols.csv.gz: {len(df)} rows (compressed)")
-
-    # Write evaluations
-    if all_evaluations:
-        df = pd.DataFrame(all_evaluations)
-        df.to_csv(
-            output_dir / "evaluations.csv.gz", index=False, compression="gzip"
-        )
-        typer.echo(f"  evaluations.csv.gz: {len(df)} rows (compressed)")
-
-    # Write rubric
-    if all_rubric:
-        df = pd.DataFrame(all_rubric)
-        df.to_csv(output_dir / "rubric.csv", index=False)
-        typer.echo(f"  rubric.csv: {len(df)} rows")
-
-    # Generate manifest
-    stats = {
-        "runs": len(all_runs),
-        "checkpoints": len(all_checkpoints),
-        "quality_files": len(all_quality_files),
-        "quality_symbols": len(all_quality_symbols),
-        "evaluations": len(all_evaluations),
-        "rubric_entries": len(all_rubric),
-    }
-    generate_manifest(output_dir, runs_dir, stats)
-    typer.echo("  manifest.json: generated")
+            )
+            raise typer.Exit(1) from exc
 
     # Show summary for skipped runs
     if runs_missing_mass:

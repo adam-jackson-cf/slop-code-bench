@@ -155,6 +155,10 @@ def _relative_target(root: Path, target: Path) -> str | None:
         return None
 
 
+class InventoryEnumerationError(OSError):
+    """Snapshot enumeration failed before a complete inventory was available."""
+
+
 def _iter_entries(root: Path) -> Iterable[tuple[str, Path, bool]]:
     """Yield lexical file paths in raw UTF-8-byte order without following dirs."""
     root_bytes = os.fsencode(root)
@@ -164,8 +168,10 @@ def _iter_entries(root: Path) -> Iterable[tuple[str, Path, bool]]:
     ) -> Iterable[tuple[str, Path, bool]]:
         try:
             entries = list(os.scandir(directory))
-        except OSError:
-            return
+        except OSError as error:
+            raise InventoryEnumerationError(
+                f"cannot enumerate snapshot directory: {os.fsdecode(directory)}"
+            ) from error
         decoded: list[tuple[bytes, str, os.DirEntry[bytes]]] = []
         for entry in entries:
             try:
@@ -180,9 +186,10 @@ def _iter_entries(root: Path) -> Iterable[tuple[str, Path, bool]]:
             entry_path = Path(os.fsdecode(entry.path))
             try:
                 mode = entry.stat(follow_symlinks=False).st_mode
-            except OSError:
-                yield lexical_path, entry_path, False
-                continue
+            except OSError as error:
+                raise InventoryEnumerationError(
+                    f"cannot inspect snapshot entry: {entry_path}"
+                ) from error
             if stat.S_ISDIR(mode):
                 yield from walk(entry.path, path_components)
             elif stat.S_ISLNK(mode) or stat.S_ISREG(mode):
@@ -198,16 +205,30 @@ def build_inventory(
     test_globs: Iterable[str] = (),
 ) -> InventoryResult:
     """Inventory source files using lexical paths and role-precedence evidence."""
-    resolved_root = root.resolve(strict=True)
+    try:
+        resolved_root = root.resolve(strict=True)
+    except OSError:
+        return InventoryResult(
+            files=(),
+            invalid_codes=("score_evidence_invalid",),
+            unsupported_paths=(),
+        )
     generated_globs = tuple(generated_globs)
     test_globs = tuple(test_globs)
     files: list[InventoryFile] = []
     invalid_codes: set[str] = set()
     unsupported_paths: list[str] = []
 
-    for lexical_path, filesystem_path, is_symlink in _iter_entries(
-        resolved_root
-    ):
+    try:
+        entries = tuple(_iter_entries(resolved_root))
+    except InventoryEnumerationError:
+        return InventoryResult(
+            files=(),
+            invalid_codes=("score_evidence_invalid",),
+            unsupported_paths=(),
+        )
+
+    for lexical_path, filesystem_path, is_symlink in entries:
         if not lexical_path:
             invalid_codes.add("score_evidence_invalid")
             continue

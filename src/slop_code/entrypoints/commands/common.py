@@ -12,6 +12,7 @@ import yaml
 from pydantic import ValidationError
 
 from slop_code import problem_catalog
+from slop_code.evaluation import PassPolicy
 from slop_code.evaluation import ProblemConfig
 from slop_code.execution import docker_runtime
 from slop_code.execution.models import EnvironmentSpec
@@ -72,6 +73,22 @@ def validate_rubric_options(
             )
         )
         raise typer.Exit(1)
+
+
+def require_all_cases_assessment_policy(
+    assessment_policy: str,
+) -> PassPolicy:
+    """Reject assessment policies other than the strict all-cases policy."""
+    if assessment_policy != PassPolicy.ALL_CASES.value:
+        typer.echo(
+            typer.style(
+                "Assessment policy must be 'all-cases'.",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+        )
+        raise typer.Exit(1)
+    return PassPolicy.ALL_CASES
 
 
 def resolve_problem_catalog_root(

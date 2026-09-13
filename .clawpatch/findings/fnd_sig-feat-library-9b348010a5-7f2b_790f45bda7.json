@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-9b348010a5-7f2b_790f45bda7",
+  "featureId": "feat_library_9b348010a5",
+  "title": "Compressed text reads use binary mode with a text encoding",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/file_ops/raw_files.py",
+      "startLine": 85,
+      "endLine": 98,
+      "symbol": "TextHandler.read",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/models.py",
+      "startLine": 91,
+      "endLine": 98,
+      "symbol": "open_stream",
+      "quote": null
+    }
+  ],
+  "reasoning": "TextHandler passes mode 'r' and encoding='utf-8' without requesting text mode. Both gzip.open and bz2.open interpret 'r' as binary mode and reject the encoding argument. Consequently, registered compressed text formats cannot be read, including files produced by TextHandler.write.",
+  "reproduction": "Load a valid .txt.gz or .txt.bz2 file through InputFile.from_path; opening the stream raises ValueError.",
+  "recommendation": "Open text reads explicitly in 'rt' mode for all compression settings.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests do not exercise text handlers or compression.",
+  "suggestedRegressionTest": "Verify text write/read round trips with NONE, GZIP, and BZIP2 compression using Unicode and empty content.",
+  "minimumFixScope": "TextHandler.read stream mode.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170551-8c6cf3",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. TextHandler.read now explicitly uses 'rt' with UTF-8 at raw_files.py:89, and open_stream forwards that mode to gzip.open/bz2.open at models.py:94-98, supporting the intended repair. Existing tests at tests/execution/file_ops_test.py:404-424 cover Unicode and empty-content round trips across all three compression settings. However, targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/execution/file_ops/raw_files.py | sed -n '80,115p'",
+        "nl -ba src/slop_code/execution/file_ops/models.py | sed -n '80,110p'",
+        "rg -n 'text.*round|TextHandler|txt.gz|txt.bz2' tests/execution",
+        "sed -n '380,440p' tests/execution/file_ops_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/execution/file_ops_test.py -k text_handler"
+      ],
+      "createdAt": "2026-09-11T17:06:21.347Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:06:21.920Z"
+    }
+  ],
+  "signature": "sig_feat-library-9b348010a5_7f2b964ace",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:13.990Z",
+  "updatedAt": "2026-09-11T17:06:21.920Z"
+}

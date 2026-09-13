@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+from contextlib import suppress
 from pathlib import Path
 from typing import Annotated
 
@@ -36,10 +39,28 @@ def _load_grades(rubric_file: Path) -> list[dict]:
 
 
 def _save_grades(rubric_file: Path, grades: list[dict]) -> None:
-    """Save grades to rubric.jsonl file."""
-    with rubric_file.open("w") as f:
-        for g in grades:
-            f.write(json.dumps(g) + "\n")
+    """Save grades to rubric.jsonl file atomically."""
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=rubric_file.parent,
+            prefix=f".{rubric_file.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            for grade in grades:
+                temp_file.write(json.dumps(grade) + "\n")
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        temp_path.replace(rubric_file)
+    except Exception:
+        if temp_path is not None:
+            with suppress(OSError):
+                temp_path.unlink(missing_ok=True)
+        raise
 
 
 def _process_single_run(

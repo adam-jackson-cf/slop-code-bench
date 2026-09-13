@@ -19,6 +19,7 @@ import tempfile
 from collections.abc import Callable
 from collections.abc import Sequence
 from pathlib import Path
+from pathlib import PurePath
 
 from slop_code.common import WORKSPACE_TEST_DIR
 from slop_code.execution.assets import ResolvedStaticAsset
@@ -127,11 +128,29 @@ class Workspace:
         def _looks_like_glob(pattern: str) -> bool:
             return any(ch in pattern for ch in ("*", "?", "["))
 
+        workspace_root = self.working_dir.resolve()
+
+        def _normalize_request(raw_path: str) -> str | None:
+            path = PurePath(raw_path)
+            if path.is_absolute() or ".." in path.parts:
+                return None
+            normalized = raw_path
+            while normalized.startswith("./"):
+                normalized = normalized[2:]
+            return normalized or None
+
+        def _is_contained(candidate: Path) -> bool:
+            try:
+                candidate.resolve().relative_to(workspace_root)
+            except ValueError:
+                return False
+            return True
+
         for raw_path in paths:
             if not raw_path:
                 continue
-            normalized = raw_path.lstrip("./")
-            if not normalized:
+            normalized = _normalize_request(raw_path)
+            if normalized is None:
                 continue
 
             if _looks_like_glob(normalized):
@@ -140,18 +159,22 @@ class Workspace:
                 candidates = [self.working_dir / normalized]
 
             for candidate in candidates:
-                if not candidate.exists():
+                if not candidate.exists() or not _is_contained(candidate):
                     continue
 
-                if candidate.is_file():
+                if candidate.is_file() and not candidate.is_symlink():
                     rel_path = candidate.relative_to(
                         self.working_dir
                     ).as_posix()
                     matched_paths.setdefault(rel_path, candidate)
-                elif candidate.is_dir():
-                    # Recursively collect all files in directory
+                elif candidate.is_dir() and not candidate.is_symlink():
+                    # Recursively collect all files in directory.
                     for file_path in candidate.rglob("*"):
-                        if file_path.is_file() and not file_path.is_symlink():
+                        if (
+                            file_path.is_file()
+                            and not file_path.is_symlink()
+                            and _is_contained(file_path)
+                        ):
                             rel_path = file_path.relative_to(
                                 self.working_dir
                             ).as_posix()
@@ -181,8 +204,15 @@ class Workspace:
             return
         logger.debug("Materializing static assets", verbose=True)
         asset_count = 0
+        workspace_root = self.working_dir.resolve()
         for asset in (self._static_assets or {}).values():
             target_path = self.working_dir / asset.save_path
+            try:
+                target_path.resolve().relative_to(workspace_root)
+            except ValueError as exc:
+                raise WorkspaceError(
+                    f"Static asset path escapes workspace: {asset.save_path}"
+                ) from exc
             if asset.absolute_path.is_dir():
                 logger.debug(
                     "Copying directory asset",
@@ -200,6 +230,7 @@ class Workspace:
                     target=target_path,
                     verbose=True,
                 )
+                target_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(asset.absolute_path, target_path)
             asset_count += 1
         logger.debug(

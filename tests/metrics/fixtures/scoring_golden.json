@@ -25,12 +25,12 @@
     {"name":"produced_checkpoint_missing_cost","configured_problem_ids":["alpha"],"configured_checkpoint_counts":[2],"costs":["2",null],"produced":[true,true],"benchmark_score":"100.000000","correctness":"1.000000000000","inertia":"1.000000000000","cost_per_configured_checkpoint":null}
   ],
   "history_cases": [
-    {"name":"prior_missing_current_produced","produced":[false,true],"expected_rework":"1","expected_regression":"1"},
-    {"name":"prior_produced_current_missing","produced":[true,false],"expected_rework":"0","expected_regression":"0"},
-    {"name":"both_missing","produced":[false,false],"expected_rework":"0","expected_regression":"0"},
-    {"name":"produced_after_gap","produced":[true,false,true],"expected_rework":"1","expected_regression":"1"},
-    {"name":"two_produced_after_gap","produced":[true,false,true,true],"expected_rework":"1","expected_regression":"1"},
-    {"name":"wholly_missing_problem","produced":[false,false],"expected_score":"0.000000"}
+    {"name":"prior_missing_current_produced","produced":[false,true],"expected_eligibility_reason":"canonical_provenance_unavailable"},
+    {"name":"prior_produced_current_missing","produced":[true,false],"expected_eligibility_reason":"canonical_provenance_unavailable"},
+    {"name":"both_missing","produced":[false,false],"expected_eligibility_reason":"canonical_provenance_unavailable"},
+    {"name":"produced_after_gap","produced":[true,false,true],"expected_eligibility_reason":"canonical_provenance_unavailable"},
+    {"name":"two_produced_after_gap","produced":[true,false,true,true],"expected_eligibility_reason":"canonical_provenance_unavailable"},
+    {"name":"wholly_missing_problem","produced":[false,false],"expected_eligibility_reason":"canonical_provenance_unavailable"}
   ],
   "multi_problem_case": {"configured_problem_ids":["alpha","beta"],"configured_checkpoint_counts":[2,2],"raw_score_numerator":"142.500000","raw_score_denominator":2,"raw_correctness_numerator":"1.500000000000","raw_correctness_denominator":2,"raw_inertia_numerator":"1.500000000000","raw_inertia_denominator":2,"raw_cost_numerator":"3","raw_cost_denominator":4,"benchmark_score":"71.250000","correctness":"0.750000000000","inertia":"0.750000000000","cost_per_configured_checkpoint":"0.750000000000"},
   "eligibility_case": {"producer_orders":[["score_evidence_invalid","coverage_parity_failed","production_source_loc_zero"],["production_source_loc_zero","score_evidence_invalid","coverage_parity_failed"]],"reasons":["coverage_parity_failed","production_source_loc_zero","score_evidence_invalid"]}

@@ -20,6 +20,7 @@ class TestParseMultiFileResponse:
 === END FILE ===
 """
         result = _parse_multi_file_response(response)
+        assert result is not None
 
         assert len(result) == 1
         assert result[0]["file_name"] == "src/main.py"
@@ -46,6 +47,7 @@ class TestParseMultiFileResponse:
 === END FILE ===
 """
         result = _parse_multi_file_response(response)
+        assert result is not None
 
         assert len(result) == 2
         assert result[0]["file_name"] == "src/main.py"
@@ -63,6 +65,7 @@ class TestParseMultiFileResponse:
 === END FILE ===
 """
         result = _parse_multi_file_response(response)
+        assert result is not None
 
         assert len(result) == 0
 
@@ -79,6 +82,7 @@ class TestParseMultiFileResponse:
 === END FILE ===
 """
         result = _parse_multi_file_response(response)
+        assert result is not None
 
         assert len(result) == 2
         assert all(g["file_name"] == "src/main.py" for g in result)
@@ -103,6 +107,7 @@ class TestParseMultiFileResponse:
 === END FILE ===
 """
         result = _parse_multi_file_response(response)
+        assert result is not None
 
         # Parser doesn't flatten occurrences - returns the structure as-is
         assert len(result) == 1
@@ -121,6 +126,7 @@ class TestParseMultiFileResponse:
 ===  END FILE  ===
 """
         result = _parse_multi_file_response(response)
+        assert result is not None
 
         assert len(result) == 1
         assert result[0]["file_name"] == "src/main.py"
@@ -149,6 +155,7 @@ class TestParseMultiFileResponse:
 === END FILE ===
 """
         result = _parse_multi_file_response(response)
+        assert result is not None
 
         assert len(result) == 1
         assert result[0]["file_name"] == "src/valid.py"

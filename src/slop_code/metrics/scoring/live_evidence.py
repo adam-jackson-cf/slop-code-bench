@@ -6,10 +6,11 @@ import difflib
 import hashlib
 import json
 from collections.abc import Iterable
+from collections.abc import Mapping
 from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 import yaml
 from pydantic import TypeAdapter
@@ -43,6 +44,70 @@ from .production_quality import ProcessExecutor
 from .schema import problem_key
 
 _ENVIRONMENT_ADAPTER = TypeAdapter(EnvironmentSpecType)
+
+_REQUIRED_ARTIFACTS = frozenset(
+    {
+        common.EVALUATION_FILENAME,
+        f"{common.QUALITY_DIR}/{common.QUALITY_METRIC_SAVENAME}",
+        f"{common.QUALITY_DIR}/{common.FILES_QUALITY_SAVENAME}",
+        f"{common.QUALITY_DIR}/{common.SYMBOLS_QUALITY_SAVENAME}",
+    }
+)
+
+
+def _is_string_mapping(value: object) -> TypeGuard[Mapping[str, object]]:
+    return isinstance(value, Mapping) and all(
+        isinstance(key, str) for key in value
+    )
+
+
+def _validate_required_artifacts(
+    checkpoint_dir: Path,
+    rows: object,
+    *,
+    path_field: str,
+    presence_field: str,
+    size_field: str,
+) -> dict[str, bytes]:
+    """Verify the complete required artifact set and every frozen digest."""
+    if not isinstance(rows, list):
+        raise ValueError("canonical_artifact_invalid")
+    artifacts: dict[str, bytes] = {}
+    for item in rows:
+        if not _is_string_mapping(item):
+            raise ValueError("canonical_artifact_invalid")
+        relative = item.get(path_field)
+        present = item.get(presence_field)
+        byte_count = item.get(size_field)
+        digest = item.get("sha256")
+        if (
+            not isinstance(relative, str)
+            or relative not in _REQUIRED_ARTIFACTS
+            or relative in artifacts
+            or not isinstance(present, bool)
+            or not isinstance(byte_count, int)
+            or isinstance(byte_count, bool)
+            or byte_count < 0
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError("canonical_artifact_invalid")
+        if not present:
+            raise ValueError("canonical_provenance_unavailable")
+        try:
+            artifact = (checkpoint_dir / relative).read_bytes()
+        except OSError as error:
+            raise ValueError("canonical_provenance_unavailable") from error
+        if (
+            len(artifact) != byte_count
+            or hashlib.sha256(artifact).hexdigest() != digest
+        ):
+            raise ValueError("canonical_artifact_invalid")
+        artifacts[relative] = artifact
+    if set(artifacts) != _REQUIRED_ARTIFACTS:
+        raise ValueError("canonical_provenance_unavailable")
+    return artifacts
 
 
 def _canonical(value: object) -> bytes:
@@ -80,7 +145,7 @@ def _committed_artifacts(
     checkpoint_id: str,
     problem: ProblemConfig,
 ) -> dict[str, bytes]:
-    """Return bytes verified by one exclusive live or historical bundle."""
+    """Return the complete, digest-verified exclusive provenance artifact set."""
     run_dir = checkpoint_dir.parents[1]
     problem_key = hashlib.sha256(problem.name.encode("utf-8")).hexdigest()
     oracle_dir = (
@@ -102,68 +167,76 @@ def _committed_artifacts(
         if len(historical) != 1:
             raise ValueError("canonical_artifact_invalid")
         bundle_path = historical[0]
-        content = bundle_path.read_bytes()
+        try:
+            content = bundle_path.read_bytes()
+        except OSError as error:
+            raise ValueError("canonical_provenance_unavailable") from error
         if bundle_path.stem != hashlib.sha256(content).hexdigest():
             raise ValueError("canonical_artifact_invalid")
-        payload = json.loads(content)
+        try:
+            payload = json.loads(content)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("canonical_artifact_invalid") from error
         if (
-            payload.get("kind") != "historical_provenance_bundle"
+            not isinstance(payload, dict)
+            or payload.get("kind") != "historical_provenance_bundle"
             or payload.get("source_type") != "historical"
+            or not isinstance(payload.get("problems"), list)
         ):
             raise ValueError("canonical_artifact_invalid")
         problem_rows = [
             item
-            for item in payload.get("problems", ())
-            if item.get("problem_id") == problem.name
+            for item in payload["problems"]
+            if isinstance(item, dict) and item.get("problem_id") == problem.name
         ]
         if len(problem_rows) != 1:
             raise ValueError("canonical_provenance_unavailable")
         checkpoint_rows = [
             item
             for item in problem_rows[0].get("checkpoints", ())
-            if item.get("checkpoint_id") == checkpoint_id
+            if isinstance(item, dict)
+            and item.get("checkpoint_id") == checkpoint_id
         ]
         if len(checkpoint_rows) != 1:
             raise ValueError("canonical_provenance_unavailable")
-        artifacts: dict[str, bytes] = {}
-        for item in checkpoint_rows[0].get("artifacts", ()):
-            relative = item.get("path")
-            if not isinstance(relative, str) or not item.get("presence"):
-                raise ValueError("canonical_artifact_invalid")
-            artifact = (checkpoint_dir / relative).read_bytes()
-            if len(artifact) != item.get("bytes") or hashlib.sha256(
-                artifact
-            ).hexdigest() != item.get("sha256"):
-                raise ValueError("canonical_artifact_invalid")
-            artifacts[relative] = artifact
-        return artifacts
-    if len(live) != 1:
-        raise RuntimeError("committed live oracle is missing")
+        return _validate_required_artifacts(
+            checkpoint_dir,
+            checkpoint_rows[0].get("artifacts"),
+            path_field="path",
+            presence_field="presence",
+            size_field="bytes",
+        )
+    if not live:
+        raise ValueError("canonical_provenance_unavailable")
+    if len(live) > 1:
+        raise ValueError("canonical_artifact_invalid")
     oracle_path = live[0]
-    content = oracle_path.read_bytes()
+    try:
+        content = oracle_path.read_bytes()
+    except OSError as error:
+        raise ValueError("canonical_provenance_unavailable") from error
     if oracle_path.stem != hashlib.sha256(content).hexdigest():
         raise ValueError("canonical_artifact_invalid")
-    payload = json.loads(content)
+    try:
+        payload = json.loads(content)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("canonical_artifact_invalid") from error
     if (
-        payload.get("checkpoint_id") != checkpoint_id
+        not isinstance(payload, dict)
+        or payload.get("checkpoint_id") != checkpoint_id
         or payload.get("problem_name") != problem.name
         or payload.get("problem_key") != problem_key
         or payload.get("source_type") != "live"
         or not isinstance(payload.get("canonical_parity"), dict)
     ):
         raise ValueError("canonical_artifact_invalid")
-    artifacts = {}
-    for item in payload.get("artifacts", ()):
-        relative = item.get("relative_path")
-        if not isinstance(relative, str) or not item.get("present"):
-            raise ValueError("canonical_provenance_unavailable")
-        artifact = (checkpoint_dir / relative).read_bytes()
-        if len(artifact) != item.get("byte_count") or hashlib.sha256(
-            artifact
-        ).hexdigest() != item.get("sha256"):
-            raise ValueError("canonical_artifact_invalid")
-        artifacts[relative] = artifact
-    return artifacts
+    return _validate_required_artifacts(
+        checkpoint_dir,
+        payload.get("artifacts"),
+        path_field="relative_path",
+        presence_field="present",
+        size_field="byte_count",
+    )
 
 
 def _correctness(checkpoint_dir: Path, checkpoint_id: str) -> dict[str, object]:
@@ -323,7 +396,9 @@ def produce_checkpoint_evidence(
     )
     try:
         environment = _saved_environment(checkpoint_dir)
-        entrypoint = snapshot / environment.format_entry_file(problem.entry_file)
+        entrypoint = snapshot / environment.format_entry_file(
+            problem.entry_file
+        )
         evaluator_python = _verified_evaluator_python(checkpoint_dir)
         executor, expected_executable_sha256 = _measurement_executor(
             checkpoint_dir, environment

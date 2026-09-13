@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-14b4e49324-4ad3_3aa2b4b9b6",
+  "featureId": "feat_library_14b4e49324",
+  "title": "Malformed production-quality sidecars escape aggregate validation",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/scoring/finalization.py",
+      "startLine": 77,
+      "endLine": 83,
+      "symbol": "_build_score_evidence",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/finalization.py",
+      "startLine": 106,
+      "endLine": 107,
+      "symbol": "_build_score_evidence",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/finalization.py",
+      "startLine": 423,
+      "endLine": 438,
+      "symbol": "finalize_benchmark_score.finalize_locked",
+      "quote": null
+    }
+  ],
+  "reasoning": "The production-quality branch assumes decoded JSON is a mapping with a hashable parser_tokenizer_schema_id. An empty object raises KeyError; null or an array raises TypeError; an array-valued ID also raises TypeError. These exceptions are outside the handler, so malformed durable evidence aborts finalization instead of returning canonical_artifact_invalid and publishing an ineligible generation.",
+  "reproduction": "Pass _build_score_evidence a sidecar named problems/p/checkpoints/c/production_quality.json containing {}. It raises KeyError before returning eligibility.",
+  "recommendation": "Validate the decoded production-quality shape and schema ID before collecting it, and convert malformed artifact failures into canonical_artifact_invalid.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests do not exercise scoring finalization or malformed producer sidecars.",
+  "suggestedRegressionTest": "Cover malformed JSON shapes, missing required fields, and invalid schema-ID types across producer fragments; assert an ineligible result rather than an uncaught exception.",
+  "minimumFixScope": "src/slop_code/metrics/scoring/finalization.py artifact parsing and focused finalization validation tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T195846-8dd0c6",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and symbols still exist. finalization.py:81–84 now validates ProductionQualityRawEvidence before collecting its schema ID; lines 107–108 convert validation errors into canonical_artifact_invalid. Finalization still passes eligibility to publication at lines 427–441. Focused malformed-sidecar tests now exist, and no linked patch attempts were supplied. The code supports the proposed repair, but targeted pytest validation failed before collection because the read-only environment has no writable temporary directory; the direct reproduction was also blocked. Therefore fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/scoring/finalization.py | sed -n '70,118p;410,460p'",
+        "rg -n 'malformed|production_quality|build_score_evidence' tests/metrics/*final* tests/metrics/scoring*",
+        "sed -n '260,300p;365,440p' tests/metrics/scoring_finalization_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/scoring_finalization_test.py -k malformed_quality_sidecar",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python - <<'PY' (malformed-sidecar probe; shell rejected heredoc temporary-file creation)"
+      ],
+      "createdAt": "2026-09-12T19:59:19.957Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified malformed production-quality shapes and schema IDs yield canonical_artifact_invalid; 132 scoring tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:04:14.825Z"
+    }
+  ],
+  "signature": "sig_feat-library-14b4e49324_4ad39a3169",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:05.163Z",
+  "updatedAt": "2026-09-12T20:04:14.824Z"
+}

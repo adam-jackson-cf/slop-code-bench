@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from collections.abc import Generator
 from collections.abc import Mapping
@@ -15,8 +14,13 @@ from slop_code.execution.runtime import RuntimeResult
 
 __all__ = [
     "AgentCommandResult",
+    "IncompleteStreamError",
     "stream_cli_command",
 ]
+
+
+class IncompleteStreamError(RuntimeError):
+    """Raised when a streaming runtime ends without a terminal result."""
 
 
 @dataclass(slots=True)
@@ -43,7 +47,7 @@ def stream_cli_command(
     *,
     parse_stderr: bool = False,
 ) -> Generator[
-    tuple[float | None, TokenUsage | None, dict | None] | RuntimeResult | None,
+    tuple[float | None, TokenUsage | None, dict | None] | RuntimeResult,
     None,
     None,
 ]:
@@ -60,13 +64,10 @@ def stream_cli_command(
     env = dict(env or {})
     stdout_buffer = ""
     stderr_buffer = ""
-    stdout = stderr = ""
-    start = time.monotonic()
     result: RuntimeResult | None = None
 
     for event in runtime.stream(command=command, env=env, timeout=timeout):
         if event.kind == "stdout":
-            stdout += event.text or ""
             stdout_buffer += event.text or ""
             while "\n" in stdout_buffer:
                 line, stdout_buffer = stdout_buffer.split("\n", 1)
@@ -75,7 +76,6 @@ def stream_cli_command(
                     continue
                 yield parser(line)
         elif event.kind == "stderr":
-            stderr += event.text or ""
             if parse_stderr:
                 stderr_buffer += event.text or ""
                 while "\n" in stderr_buffer:
@@ -104,13 +104,8 @@ def stream_cli_command(
             yield parser(line)
 
     if result is None:
-        result = RuntimeResult(
-            exit_code=0,
-            stdout=stdout,
-            stderr=stderr,
-            setup_stdout="",
-            setup_stderr="",
-            elapsed=time.monotonic() - start,
-            timed_out=False,
+        raise IncompleteStreamError(
+            "Runtime stream ended without a terminal 'finished' result"
         )
+
     yield result

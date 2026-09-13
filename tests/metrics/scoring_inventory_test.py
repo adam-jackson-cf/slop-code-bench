@@ -150,3 +150,30 @@ def test_inventory_symlink_boundaries_and_invalid_content(tmp_path: Path):
         by_path["invalid.py"].ignored_reason == "source_unreadable_or_non_utf8"
     )
     assert result.invalid_codes == ("score_evidence_invalid",)
+
+
+@pytest.mark.parametrize("failing_directory", ("root", "nested"))
+def test_inventory_enumeration_failures_never_publish_partial_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing_directory: str,
+) -> None:
+    (tmp_path / "first.py").write_text("x = 1\n")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "second.py").write_text("x = 2\n")
+    original_scandir = inventory.os.scandir
+
+    def denied(path: str | bytes):
+        directory = Path(os.fsdecode(path))
+        if (
+            failing_directory == "root" and directory == tmp_path
+        ) or directory.name == failing_directory:
+            raise PermissionError("denied")
+        return original_scandir(path)
+
+    monkeypatch.setattr(inventory.os, "scandir", denied)
+
+    result = build_inventory(tmp_path)
+
+    assert result.files == ()
+    assert result.invalid_codes == ("score_evidence_invalid",)

@@ -41,7 +41,7 @@ def _create_snapshot_from_files(
     source_files: set[str] | None = None,
 ) -> SnapshotMetrics:
     """Helper to create SnapshotMetrics from a files dict for testing."""
-    cc_ratings: dict[str, int] = {
+    cc_ratings: dict[Literal["A", "B", "C", "D", "E", "F"], int] = {
         "A": 0,
         "B": 0,
         "C": 0,
@@ -49,7 +49,11 @@ def _create_snapshot_from_files(
         "E": 0,
         "F": 0,
     }
-    mi_ratings: dict[str, int] = {"A": 0, "B": 0, "C": 0}
+    mi_ratings: dict[Literal["A", "B", "C"], int] = {
+        "A": 0,
+        "B": 0,
+        "C": 0,
+    }
 
     file_count = len(files)
     total_symbols = 0
@@ -447,12 +451,18 @@ class TestLanguageRegistry:
 
     @pytest.fixture(autouse=True)
     def clear_registry(self):
-        """Clear the language registry before each test."""
+        """Isolate language registration while preserving prior registries."""
+        original_languages = LANGUAGE_REGISTRY.copy()
+        original_extensions = EXT_TO_LANGUAGE.copy()
         LANGUAGE_REGISTRY.clear()
         EXT_TO_LANGUAGE.clear()
-        yield
-        LANGUAGE_REGISTRY.clear()
-        EXT_TO_LANGUAGE.clear()
+        try:
+            yield
+        finally:
+            LANGUAGE_REGISTRY.clear()
+            LANGUAGE_REGISTRY.update(original_languages)
+            EXT_TO_LANGUAGE.clear()
+            EXT_TO_LANGUAGE.update(original_extensions)
 
     def _dummy_line_metrics(self, path: Path) -> LineCountMetrics:
         """Dummy line metrics function."""
@@ -507,6 +517,39 @@ class TestLanguageRegistry:
         assert EXT_TO_LANGUAGE[".js"] == "javascript"
         assert EXT_TO_LANGUAGE[".jsx"] == "javascript"
         assert EXT_TO_LANGUAGE[".mjs"] == "javascript"
+
+    def test_replacing_language_removes_stale_extension_mappings(self):
+        """Replacement removes only mappings owned by its prior spec."""
+        original = LanguageSpec(
+            extensions={".old", ".shared"},
+            line=self._dummy_line_metrics,
+            lint=self._dummy_lint_metrics,
+            symbol=self._dummy_symbol_metrics,
+            mi=self._dummy_mi,
+        )
+        replacement = LanguageSpec(
+            extensions={".new"},
+            line=self._dummy_line_metrics,
+            lint=self._dummy_lint_metrics,
+            symbol=self._dummy_symbol_metrics,
+            mi=self._dummy_mi,
+        )
+        unrelated = LanguageSpec(
+            extensions={".other"},
+            line=self._dummy_line_metrics,
+            lint=self._dummy_lint_metrics,
+            symbol=self._dummy_symbol_metrics,
+            mi=self._dummy_mi,
+        )
+        register_language("target", original)
+        register_language("unrelated", unrelated)
+
+        register_language("target", replacement)
+
+        assert ".old" not in EXT_TO_LANGUAGE
+        assert ".shared" not in EXT_TO_LANGUAGE
+        assert get_language_by_extension(".new") == replacement
+        assert get_language_by_extension(".other") == unrelated
 
     def test_get_language_by_extension(self):
         """Test retrieving a language by file extension."""

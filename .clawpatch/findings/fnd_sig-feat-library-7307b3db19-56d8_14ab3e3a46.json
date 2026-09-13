@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-7307b3db19-56d8_14ab3e3a46",
+  "featureId": "feat_library_7307b3db19",
+  "title": "Collection metrics command exits successfully after worker failures",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/static.py",
+      "startLine": 383,
+      "endLine": 415,
+      "symbol": "static_metrics",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/static.py",
+      "startLine": 470,
+      "endLine": 487,
+      "symbol": "static_metrics",
+      "quote": null
+    }
+  ],
+  "reasoning": "Executor exceptions and unsuccessful worker results are recorded in run_failures, but the command only prints them before returning normally. Even when every run fails, callers receive exit status zero and can proceed as though metric generation completed successfully.",
+  "reproduction": "Run collection mode with a worker that returns success=False or raises an exception. The command prints a failed-run summary but returns successfully.",
+  "recommendation": "Continue processing the remaining runs, then raise typer.Exit(1) when run_failures is nonempty.",
+  "whyTestsDoNotAlreadyCoverThis": "None of the supplied tests exercise static_metrics collection failure handling or its exit status.",
+  "suggestedRegressionTest": "Cover successful, mixed-success, and all-failed collections, including executor exceptions; verify remaining runs are processed and any failure produces a nonzero exit.",
+  "minimumFixScope": "Propagate collection failures through the exit status in static.py and add collection outcome coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201141-147ad5",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The original evidence remains at static.py:383–415 and 470–487. Both failure paths still accumulate failures and continue processing, but line 486 now raises typer.Exit(1) after the summary. Targeted execution of the existing collection test passed successful, mixed-success, and all-failed outcomes, including an executor exception. Directory creation was mocked for the read-only sandbox; exit-status assertions remained intact. An initial heredoc invocation was blocked by sandbox restrictions; rerunning with python -c succeeded. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/commands/static.py | sed -n '375,495p'",
+        "rg -n 'collection|executor|run_failures' tests/entrypoints/commands/test_static*",
+        "cat tests/entrypoints/commands/test_static.py",
+        ".venv/bin/python -B -c 'import runpy; from pathlib import Path; from unittest.mock import patch; import pytest\nsuite = runpy.run_path(\"tests/entrypoints/commands/test_static.py\")\ntest = suite[\"test_static_collection_processes_every_run_and_surfaces_failures\"]\nfor outcomes, code, saved in [((True, True), None, [\"run_1\", \"run_2\"]), ((False, True), 1, [\"run_2\"]), ((False, RuntimeError(\"executor failure\")), 1, [])]:\n    with pytest.MonkeyPatch.context() as monkeypatch, patch.object(Path, \"mkdir\"):\n        test(Path(\"/__clawpatch_readonly_validation__\"), monkeypatch, outcomes, code, saved)\n    print(f\"PASS outcomes={outcomes}, expected_exit={code}\")'"
+      ],
+      "createdAt": "2026-09-12T20:12:21.139Z"
+    }
+  ],
+  "signature": "sig_feat-library-7307b3db19_56d8decf9a",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:33.678Z",
+  "updatedAt": "2026-09-12T20:12:21.139Z"
+}

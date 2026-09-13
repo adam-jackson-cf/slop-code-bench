@@ -6,7 +6,6 @@ from typing import Any
 
 import yaml
 
-from slop_code.common import PROBLEM_CONFIG_NAME
 from slop_code.common import RUN_INFO_FILENAME
 from slop_code.entrypoints import utils
 from slop_code.evaluation import CorrectnessResults
@@ -48,33 +47,19 @@ def resolve_problem(
     problem_path: Path,
     problem_name: str | None = None,
 ) -> ProblemConfig:
-    found_name = None
-    found_version = None
-    found_cfg = None
-
-    if (submission_dir / PROBLEM_CONFIG_NAME).exists():
+    """Load the requested catalog problem or infer one from the submission."""
+    if problem_name is None:
         logger.info(
-            "Loading problem configuration from submission directory",
-            path=submission_dir / PROBLEM_CONFIG_NAME,
+            "Using submission directory name as problem name",
+            path=submission_dir,
         )
-        with (submission_dir / PROBLEM_CONFIG_NAME).open("r") as f:
-            found_cfg = yaml.safe_load(f)
-            found_name = found_cfg["name"]
-            found_version = found_cfg["version"]
-    # Attempt to find the problem name via the parameter or parent file name.
-    if found_name is None:
-        if problem_name is None:
-            logger.info(
-                "Using submission directory name as problem name",
-                path=submission_dir,
-            )
-            found_name = submission_dir.name
-        else:
-            logger.info(
-                "Using problem name parameter as problem name",
-                problem_name=problem_name,
-            )
-            found_name = problem_name
+        found_name = submission_dir.name
+    else:
+        logger.info(
+            "Using problem name parameter as problem name",
+            problem_name=problem_name,
+        )
+        found_name = problem_name
 
     potential_problem_path = problem_path / found_name
     if not potential_problem_path.exists():
@@ -88,20 +73,7 @@ def resolve_problem(
         raise utils.CLIError(
             f"Problem path '{potential_problem_path}' does not exist."
         )
-    problem_cfg = ProblemConfig.from_yaml(potential_problem_path)
-    if found_version is not None and problem_cfg.version != found_version:
-        logger.error(
-            "Problem version mismatch",
-            path=potential_problem_path,
-            problem_name=found_name,
-            problem_path=str(problem_path),
-            submission_dir=str(submission_dir),
-        )
-        raise utils.CLIError(
-            f"Problem version mismatch: {problem_cfg.version} != {found_version}"
-        )
-
-    return problem_cfg
+    return ProblemConfig.from_yaml(potential_problem_path)
 
 
 def _compute_aggregated_eval_results(
@@ -119,6 +91,9 @@ def _compute_aggregated_eval_results(
     Returns:
         Tuple of (all_passed, all_passed_policy, overall_pass_rate)
     """
+    if not summaries:
+        return False, False, None
+
     pass_rates = []
     all_passed = True
     all_passed_policy = True
@@ -156,7 +131,9 @@ def _compute_aggregated_eval_results(
 def maybe_update_problem_report(
     submission_dir: Path,
     summaries: dict[str, tuple[CorrectnessResults, SnapshotQualityReport]],
-):
+    *,
+    expected_checkpoint_count: int | None = None,
+) -> None:
     """Update problem report with evaluation results.
 
     Updates the summary section of run_info.yaml with aggregated pass/fail status.
@@ -177,10 +154,17 @@ def maybe_update_problem_report(
         run_info.get("assessment_policy", "all-cases")
     )
 
-    # Get expected checkpoint count from run_info if available
+    # Use the requested problem's checkpoints when provided. Historical
+    # metadata remains a fallback for callers that do not have that context.
     summary = run_info.get("summary", {})
     checkpoints_state = summary.get("checkpoints", {})
-    expected_count = len(checkpoints_state) if checkpoints_state else None
+    expected_count = (
+        expected_checkpoint_count
+        if expected_checkpoint_count is not None
+        else len(checkpoints_state)
+        if checkpoints_state
+        else None
+    )
 
     all_passed, all_passed_policy, overall_pass_rate = (
         _compute_aggregated_eval_results(
@@ -195,7 +179,9 @@ def maybe_update_problem_report(
         run_info["summary"] = {}
     run_info["summary"]["passed"] = all_passed
     run_info["summary"]["passed_policy"] = all_passed_policy
-    if overall_pass_rate is not None:
+    if overall_pass_rate is None:
+        run_info["summary"].pop("overall_pass_rate", None)
+    else:
         run_info["summary"]["overall_pass_rate"] = overall_pass_rate
 
     with run_info_path.open("w") as f:

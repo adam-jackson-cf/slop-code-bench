@@ -8,7 +8,7 @@ Mass formula: mass = max(0, metric - baseline) * max(1, size)^alpha
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -51,14 +51,46 @@ SIZE_METRICS = ["statements", "lines"]
 BASELINES = {"complexity": 1}  # All others default to 0
 
 
+class MetricMassSummary(TypedDict):
+    """Mass totals for one metric and size combination."""
+
+    total_mass_before: float
+    total_mass_after: float
+    delta: float
+    symbols_added: int
+    symbols_removed: int
+    symbols_modified: int
+
+
+class TransitionResult(TypedDict):
+    """Results for a single checkpoint transition."""
+
+    metrics: dict[str, dict[str, MetricMassSummary]]
+    distribution: dict[str, int]
+    high_complexity: dict[str, float | int]
+
+
+AggregateMetricSummary = dict[str, float]
+
+
+class AggregateResult(TypedDict):
+    """Results aggregated across all checkpoint transitions."""
+
+    transition_count: int
+    problem_count: int
+    metrics: dict[str, dict[str, AggregateMetricSummary]]
+    distribution: dict[str, float]
+    high_complexity: dict[str, float]
+
+
 def symbol_key(row: pd.Series) -> str:
-    """Generate primary key for symbol matching."""
-    parent = row.get("parent_class") or ""
-    file_path = row["file_path"]
-    name = row["name"]
-    if parent:
-        return f"{file_path}:{parent}.{name}"
-    return f"{file_path}:{name}"
+    """Generate a scope-aware identity for symbol matching."""
+    scope = row.get("scope")
+    if scope is None or pd.isna(scope) or scope == "":
+        scope = row.get("parent_class")
+    if scope is None or pd.isna(scope):
+        scope = ""
+    return f"{row['file_path']}:{scope}:{row['name']}"
 
 
 def calc_mass(
@@ -104,97 +136,81 @@ def discover_checkpoints(run_dir: Path) -> dict[str, dict[int, Path]]:
 def match_symbols(
     df_before: pd.DataFrame, df_after: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Match symbols between two checkpoints.
-
-    Returns: (matched_df, added_df, removed_df)
-    - matched_df has columns from both with _before and _after suffixes
-    - added_df: symbols only in after
-    - removed_df: symbols only in before
-    """
-    # Generate primary keys
-    df_before = df_before.copy()
-    df_after = df_after.copy()
+    """Match symbols between two checkpoints without duplicate pairings."""
+    df_before = df_before.copy().reset_index(drop=True)
+    df_after = df_after.copy().reset_index(drop=True)
     df_before["_key"] = df_before.apply(symbol_key, axis=1)
     df_after["_key"] = df_after.apply(symbol_key, axis=1)
+    df_before["_id"] = np.arange(len(df_before))
+    df_after["_id"] = np.arange(len(df_after))
 
-    # Primary key matching
-    keys_before = set(df_before["_key"])
-    keys_after = set(df_after["_key"])
+    matches: list[tuple[int, int]] = []
+    matched_before_ids: set[int] = set()
+    matched_after_ids: set[int] = set()
 
-    matched_keys = keys_before & keys_after
-    only_before = keys_before - keys_after
-    only_after = keys_after - keys_before
+    def add_unique_group_matches(column: str) -> None:
+        before_groups = (
+            df_before[
+                ~df_before["_id"].isin(matched_before_ids)
+                & df_before[column].notna()
+            ]
+            .groupby(column, sort=False)["_id"]
+            .agg(list)
+        )
+        after_groups = (
+            df_after[
+                ~df_after["_id"].isin(matched_after_ids)
+                & df_after[column].notna()
+            ]
+            .groupby(column, sort=False)["_id"]
+            .agg(list)
+        )
+        for value in before_groups.index.intersection(after_groups.index):
+            before_ids = before_groups[value]
+            after_ids = after_groups[value]
+            if len(before_ids) == len(after_ids) == 1:
+                before_id, after_id = before_ids[0], after_ids[0]
+                matches.append((before_id, after_id))
+                matched_before_ids.add(before_id)
+                matched_after_ids.add(after_id)
 
-    # Try fallback matching for unmatched symbols
-    unmatched_before = df_before[df_before["_key"].isin(only_before)].copy()
-    unmatched_after = df_after[df_after["_key"].isin(only_after)].copy()
-
-    additional_matches = []
-
+    add_unique_group_matches("_key")
     for hash_col in ["signature_hash", "body_hash", "structure_hash"]:
-        if len(unmatched_before) == 0 or len(unmatched_after) == 0:
-            break
+        if hash_col in df_before and hash_col in df_after:
+            add_unique_group_matches(hash_col)
 
-        # Build hash lookup for remaining unmatched
-        before_hashes = (
-            unmatched_before[unmatched_before[hash_col].notna()]
-            .set_index(hash_col)["_key"]
-            .to_dict()
+    matched_rows = []
+    for before_id, after_id in matches:
+        before_row = df_before.iloc[before_id]
+        after_row = df_after.iloc[after_id]
+        row = {"_key": before_row["_key"]}
+        row.update(
+            {
+                f"{column}_before": value
+                for column, value in before_row.items()
+                if column not in {"_key", "_id"}
+            }
         )
+        row.update(
+            {
+                f"{column}_after": value
+                for column, value in after_row.items()
+                if column not in {"_key", "_id"}
+            }
+        )
+        matched_rows.append(row)
 
-        for idx, row in unmatched_after[
-            unmatched_after[hash_col].notna()
-        ].iterrows():
-            h = row[hash_col]
-            if h in before_hashes:
-                before_key = before_hashes[h]
-                after_key = row["_key"]
-                additional_matches.append((before_key, after_key))
-                # Remove from unmatched
-                unmatched_before = unmatched_before[
-                    unmatched_before["_key"] != before_key
-                ]
-                unmatched_after = unmatched_after[
-                    unmatched_after["_key"] != after_key
-                ]
-                del before_hashes[h]
-
-    # Build matched dataframe
-    matched_before = df_before[df_before["_key"].isin(matched_keys)]
-    matched_after = df_after[df_after["_key"].isin(matched_keys)]
-
-    matched = matched_before.merge(
-        matched_after, on="_key", suffixes=("_before", "_after")
+    matched = pd.DataFrame(matched_rows)
+    added = df_after[~df_after["_id"].isin(matched_after_ids)].drop(
+        columns=["_id"]
     )
-
-    # Add fallback matches
-    for before_key, after_key in additional_matches:
-        before_row = df_before[df_before["_key"] == before_key].iloc[0]
-        after_row = df_after[df_after["_key"] == after_key].iloc[0]
-
-        row_dict = {"_key": before_key}
-        for col in before_row.index:
-            if col != "_key":
-                row_dict[f"{col}_before"] = before_row[col]
-        for col in after_row.index:
-            if col != "_key":
-                row_dict[f"{col}_after"] = after_row[col]
-
-        matched = pd.concat(
-            [matched, pd.DataFrame([row_dict])], ignore_index=True
-        )
-
-    # Unmatched symbols
-    final_only_before = set(unmatched_before["_key"])
-    final_only_after = set(unmatched_after["_key"])
-
-    added = df_after[df_after["_key"].isin(final_only_after)]
-    removed = df_before[df_before["_key"].isin(final_only_before)]
-
+    removed = df_before[~df_before["_id"].isin(matched_before_ids)].drop(
+        columns=["_id"]
+    )
     return matched, added, removed
 
 
-def compute_distribution(masses: np.ndarray) -> dict:
+def compute_distribution(masses: np.ndarray) -> dict[str, int]:
     """Compute how many symbols account for top 50%, 75%, 90% of mass."""
     if len(masses) == 0 or masses.sum() == 0:
         return {
@@ -215,13 +231,15 @@ def compute_distribution(masses: np.ndarray) -> dict:
         (0.90, "top_90_pct"),
     ]:
         threshold = total * pct
-        count = int(np.searchsorted(cumsum, threshold, side="right")) + 1
-        result[f"{name}_symbol_count"] = min(count, len(masses))
+        count = int(np.searchsorted(cumsum, threshold, side="left")) + 1
+        result[f"{name}_symbol_count"] = count
 
     return result
 
 
-def compute_high_complexity(df: pd.DataFrame, mass_col: str) -> dict:
+def compute_high_complexity(
+    df: pd.DataFrame, mass_col: str
+) -> dict[str, float | int]:
     """Compute mass in functions with complexity > 10."""
     total_mass = df[mass_col].sum() if len(df) > 0 else 0
     high_cx = (
@@ -241,11 +259,15 @@ def compute_high_complexity(df: pd.DataFrame, mass_col: str) -> dict:
 
 def analyze_transition(
     df_before: pd.DataFrame, df_after: pd.DataFrame, alpha: float
-) -> dict:
+) -> TransitionResult:
     """Analyze a single checkpoint transition."""
     matched, added, removed = match_symbols(df_before, df_after)
 
-    result = {"metrics": {}}
+    result: TransitionResult = {
+        "metrics": {},
+        "distribution": {},
+        "high_complexity": {},
+    }
 
     # Compute mass for each metric/size combination
     for metric in METRICS:
@@ -396,7 +418,7 @@ def analyze_problem(checkpoints: dict[int, Path], alpha: float) -> dict:
     return result
 
 
-def aggregate_transitions(problems: dict) -> dict:
+def aggregate_transitions(problems: dict) -> AggregateResult:
     """Compute mean statistics across all transitions in all problems."""
     # Collect all transition data
     all_metrics_data = {
@@ -428,7 +450,7 @@ def aggregate_transitions(problems: dict) -> dict:
                 all_high_complexity.append(trans_data["high_complexity"])
 
     # Compute means
-    result = {
+    result: AggregateResult = {
         "transition_count": sum(
             len(p.get("transitions", {})) for p in problems.values()
         ),
@@ -614,27 +636,29 @@ def flatten_transition(
     return row
 
 
-def flatten_aggregate(run: str, data: dict) -> dict:
+def flatten_aggregate(
+    run: str, data: AggregateResult
+) -> dict[str, str | int | float]:
     """Flatten aggregated run data into a single row."""
-    row = {
+    row: dict[str, str | int | float] = {
         "run": run,
-        "transition_count": data.get("transition_count", 0),
-        "problem_count": data.get("problem_count", 0),
+        "transition_count": data["transition_count"],
+        "problem_count": data["problem_count"],
     }
 
     # Flatten metrics
-    for metric, metric_data in data.get("metrics", {}).items():
+    for metric, metric_data in data["metrics"].items():
         for size_key, size_data in metric_data.items():
             prefix = f"{metric}_{size_key}"
             for key, value in size_data.items():
                 row[f"{prefix}_{key}"] = value
 
     # Flatten distribution
-    for key, value in data.get("distribution", {}).items():
+    for key, value in data["distribution"].items():
         row[f"dist_{key}"] = value
 
     # Flatten high complexity
-    for key, value in data.get("high_complexity", {}).items():
+    for key, value in data["high_complexity"].items():
         row[f"high_cx_{key}"] = value
 
     return row

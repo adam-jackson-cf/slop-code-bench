@@ -53,6 +53,14 @@ async def grade_file_async(
             grade_file_async as openrouter_grade,
         )
 
+        overrides: dict[str, Any] = {}
+        if api_key is not None:
+            overrides["api_key"] = api_key
+        if api_key_env:
+            overrides["api_key_env"] = api_key_env
+        if api_url:
+            overrides["api_url"] = api_url
+
         return await openrouter_grade(
             prompt_prefix=prompt_prefix,
             criteria_text=criteria_text,
@@ -61,9 +69,7 @@ async def grade_file_async(
             temperature=temperature,
             thinking_tokens=thinking_tokens,
             client=client,
-            api_key=api_key,
-            api_key_env=api_key_env,
-            api_url=api_url,
+            **overrides,
         )
     if provider == RubricProvider.BEDROCK:
         from slop_code.metrics.rubric.bedrock_grade import (

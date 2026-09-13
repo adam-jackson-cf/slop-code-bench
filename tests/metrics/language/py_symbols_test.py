@@ -454,8 +454,19 @@ class TestCountExpressions:
         """)
         node = get_function_node(code)
         top_level, total = _count_expressions(node)
-        # Only top-level print("done") at block level
-        # total includes nested ones
+        assert (top_level, total) == (1, 3)
+
+        deeper_node = get_function_node(
+            dedent("""
+            def foo(x):
+                if x > 0:
+                    if x:
+                        print(x)
+                print("done")
+            """)
+        )
+        deeper_top_level, deeper_total = _count_expressions(deeper_node)
+        assert (deeper_top_level, deeper_total) == (1, 3)
 
 
 # =============================================================================

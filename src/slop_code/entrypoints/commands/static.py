@@ -483,6 +483,7 @@ def static_metrics(
                     tb_lines = tb.strip().split("\n")[-3:]
                     for line in tb_lines:
                         console.print(f"      [dim]{line}[/dim]")
+            raise typer.Exit(1)
 
         return
 

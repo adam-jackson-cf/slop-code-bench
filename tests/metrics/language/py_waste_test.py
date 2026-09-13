@@ -284,20 +284,28 @@ class TestCallSiteDetection:
         source = tmp_path / "method_call.py"
         source.write_text(
             dedent("""
+        method = lambda: 0
+
         class MyClass:
             def method(self):
                 return 1
 
         def main():
+            method = lambda: 0
             obj = MyClass()
-            return obj.method()
+            return obj.method() + method() + method()
         """)
         )
 
         symbols = get_symbols(source)
-        calculate_waste_metrics(source, symbols)
+        metrics = calculate_waste_metrics(source, symbols)
 
-        # method is called once
+        method = next(
+            item
+            for item in metrics.single_use_functions
+            if item.name == "method"
+        )
+        assert method.called_from_line == 11
 
     def test_qualified_call(self, tmp_path):
         """Test detection of qualified function calls."""
@@ -340,6 +348,26 @@ class TestCallSiteDetection:
         single_use_names = {s.name for s in metrics.single_use_functions}
         # util is called 3 times, not single use
         assert "util" not in single_use_names
+
+    def test_method_called_twice_is_not_single_use(self, tmp_path):
+        """Repeated method calls are not classified as single-use."""
+        source = tmp_path / "method_twice.py"
+        source.write_text(
+            dedent("""
+        class MyClass:
+            def method(self):
+                return 1
+
+        def main():
+            obj = MyClass()
+            return obj.method() + obj.method()
+        """)
+        )
+
+        metrics = calculate_waste_metrics(source, get_symbols(source))
+
+        single_use_names = {item.name for item in metrics.single_use_functions}
+        assert "method" not in single_use_names
 
 
 class TestWasteEdgeCases:
@@ -449,9 +477,35 @@ class TestWasteEdgeCases:
         )
 
         symbols = get_symbols(source)
-        calculate_waste_metrics(source, symbols)
+        metrics = calculate_waste_metrics(source, symbols)
 
-        # decorated is called once
+        single_use_names = {item.name for item in metrics.single_use_functions}
+        assert "decorated" in single_use_names
+
+    def test_decorated_function_called_twice_is_not_single_use(self, tmp_path):
+        """A decorated function with multiple callers is not single-use."""
+        source = tmp_path / "decorated_twice.py"
+        source.write_text(
+            dedent("""
+        def decorator(f):
+            return f
+
+        @decorator
+        def decorated():
+            return 42
+
+        def first():
+            return decorated()
+
+        def second():
+            return decorated()
+        """)
+        )
+
+        metrics = calculate_waste_metrics(source, get_symbols(source))
+
+        single_use_names = {item.name for item in metrics.single_use_functions}
+        assert "decorated" not in single_use_names
 
     def test_lambda_not_waste(self, tmp_path):
         """Test that lambdas don't create false positives."""
@@ -774,6 +828,110 @@ class TestUnusedVariables:
         }
         assert "dead" in module_unused
         assert "result" not in module_unused
+
+    def test_module_binding_used_in_functions_is_not_unused(self, tmp_path):
+        """Function and method references count as module-binding uses."""
+        source = tmp_path / "test.py"
+        source.write_text(
+            dedent("""
+        shared = build()
+        unused = build()
+
+        def once():
+            return shared
+
+        class Reader:
+            def twice(self):
+                return shared
+
+            def shadowed(self):
+                shared = build()
+                return shared
+        """)
+        )
+
+        metrics = calculate_waste_metrics(source, get_symbols(source))
+
+        module_unused = {
+            item.name
+            for item in metrics.unused_variables
+            if item.scope == "module"
+        }
+        module_single_use = {
+            item.name
+            for item in metrics.single_use_variables
+            if item.scope == "module"
+        }
+        assert "shared" not in module_unused
+        assert "shared" not in module_single_use
+        assert "unused" in module_unused
+
+    def test_module_references_respect_method_lexical_scope(self, tmp_path):
+        """Methods and defaults resolve module names without false shadows."""
+        source = tmp_path / "test.py"
+        source.write_text(
+            dedent("""
+        LIMIT = build()
+        DEFAULT_LIMIT = build()
+        CLASS_LIMIT = build()
+        LOCAL_LIMIT = build()
+        GLOBAL_LIMIT = build()
+        NONLOCAL_LIMIT = build()
+
+
+        class Reader:
+            LIMIT = build()
+            CLASS_LIMIT = build()
+
+            def first(self):
+                return LIMIT
+
+            def second(self):
+                return LIMIT
+
+            def class_default(self, value=CLASS_LIMIT):
+                return value
+
+        def configured(first=DEFAULT_LIMIT, second=DEFAULT_LIMIT):
+            return first + second
+
+        def local_shadow():
+            LOCAL_LIMIT = build()
+            return LOCAL_LIMIT
+
+        def global_reader():
+            global GLOBAL_LIMIT
+            return GLOBAL_LIMIT
+
+        def enclosing_scope():
+            NONLOCAL_LIMIT = build()
+
+            def nonlocal_reader():
+                nonlocal NONLOCAL_LIMIT
+                return NONLOCAL_LIMIT
+
+            return nonlocal_reader()
+        """)
+        )
+
+        metrics = calculate_waste_metrics(source, get_symbols(source))
+
+        module_unused = {
+            item.name
+            for item in metrics.unused_variables
+            if item.scope == "module"
+        }
+        module_single_use = {
+            item.name
+            for item in metrics.single_use_variables
+            if item.scope == "module"
+        }
+        assert not {"LIMIT", "DEFAULT_LIMIT"} & (
+            module_unused | module_single_use
+        )
+        assert {"CLASS_LIMIT", "LOCAL_LIMIT"} <= module_unused
+        assert "GLOBAL_LIMIT" in module_single_use
+        assert "NONLOCAL_LIMIT" in module_unused
 
     def test_multiple_unused_in_function(self, tmp_path):
         """Multiple unused variables in a single function."""

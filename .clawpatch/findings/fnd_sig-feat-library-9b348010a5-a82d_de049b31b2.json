@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-9b348010a5-a82d_de049b31b2",
+  "featureId": "feat_library_9b348010a5",
+  "title": "SQLite reads discard columns required to recreate empty tables",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/file_ops/structured_files.py",
+      "startLine": 150,
+      "endLine": 161,
+      "symbol": "SQLiteHandler.read",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/structured_files.py",
+      "startLine": 217,
+      "endLine": 240,
+      "symbol": "SQLiteHandler._normalize_table_payload",
+      "quote": null
+    }
+  ],
+  "reasoning": "SQLiteHandler.read represents each table solely as a list of rows. An empty table becomes an empty list, from which write cannot deduce any columns. The writer then rejects the reader's output, preventing materialization of otherwise valid databases containing empty tables.",
+  "reproduction": "Read a database containing CREATE TABLE items (id INTEGER) with no rows, then pass the returned content to SQLiteHandler.write; it raises InputFileWriteError.",
+  "recommendation": "Include column metadata in the reader's table payload using the writer's supported columns/rows representation.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests exercise metrics models rather than SQLite file round trips.",
+  "suggestedRegressionTest": "Round-trip databases with populated tables, empty tables, and mixtures of both; verify table names, columns, and rows survive.",
+  "minimumFixScope": "SQLiteHandler.read table metadata serialization.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170622-c95058",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the symbols moved: SQLiteHandler.read is at lines 179–205 and _normalize_table_payload at 258–291. The reader now preserves column names from cursor.description alongside rows, including empty tables, and the writer accepts that representation. Existing SQLite tests cover populated and empty tables. This supports a repair, but targeted validation exited 1 before tests ran because the read-only environment has no usable temporary directory; therefore fixed cannot be confirmed. No linked patch attempts or prior command results were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/execution/file_ops/structured_files.py | sed -n '170,305p'",
+        "rg -n 'sqlite|SQLite' tests/execution -g '*test*.py'",
+        "sed -n '345,455p' tests/execution/file_ops_test.py",
+        "ls .venv/bin/python*",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/execution/file_ops_test.py -k sqlite"
+      ],
+      "createdAt": "2026-09-11T17:06:46.665Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:06:47.314Z"
+    }
+  ],
+  "signature": "sig_feat-library-9b348010a5_a82d707528",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:13.990Z",
+  "updatedAt": "2026-09-11T17:06:47.314Z"
+}

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-e7dd745c57-2c72_f613e51241",
+  "featureId": "feat_library_e7dd745c57",
+  "title": "Single-file JSON responses silently lose all grades",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/rubric/llm_grade.py",
+      "startLine": 340,
+      "endLine": 380,
+      "symbol": "_extract_grades",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/rubric/bedrock_grade.py",
+      "startLine": 253,
+      "endLine": 284,
+      "symbol": "_extract_grades",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both extractors explicitly document single-file responses annotated with the supplied file_name, but invoke only the file-marker parser. A valid JSON grade array without FILE delimiters returns an empty list, silently turning reported issues into no issues. The supplied file_name is never used for annotation.",
+  "reproduction": "Pass either extractor a choices/message/content response containing [{\"criteria\":\"test\",\"start\":1}] and file_name=\"app.py\". It returns [] instead of the annotated grade.",
+  "recommendation": "Implement the documented single-file JSON path when file markers are absent and a file_name is supplied, preserving existing multi-file behavior.",
+  "whyTestsDoNotAlreadyCoverThis": "OpenRouter tests exercise the multi-file parser directly. The Bedrock request test supplies plain [] but never asserts extracted grades, so it cannot detect loss of nonempty single-file results.",
+  "suggestedRegressionTest": "Cover both providers with nonempty plain and fenced single-file JSON, valid empty arrays, and multi-file responses; assert grade preservation and filename annotation.",
+  "minimumFixScope": "Both _extract_grades implementations and their associated tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201350-6bb2f8",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both original paths and extractor definitions still exist at llm_grade.py:340 and bedrock_grade.py:253. Current implementations parse single-file JSON and annotate grades with file_name at lines 378–394 and 282–298, respectively. Shared tests in tests/metrics/rubric/grade_test.py:267–300 cover both providers with nonempty plain/fenced JSON, empty arrays, and multi-file responses. No linked patch attempts were supplied. The code supports the repair, but targeted pytest validation exited 1 before collection because the read-only environment provided no usable temporary directory; therefore fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/rubric/llm_grade.py | sed -n '340,410p'",
+        "nl -ba src/slop_code/metrics/rubric/bedrock_grade.py | sed -n '250,325p'",
+        "rg -n 'extract_grades|single_file|fenced' tests/metrics/rubric",
+        "sed -n '260,310p' tests/metrics/rubric/grade_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/rubric/grade_test.py tests/metrics/rubric/llm_grade_test.py tests/metrics/rubric/bedrock_grade_test.py"
+      ],
+      "createdAt": "2026-09-12T20:14:15.498Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified both providers preserve plain/fenced single-file JSON including empty arrays and existing multi-file markers; 59 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:14:52.115Z"
+    }
+  ],
+  "signature": "sig_feat-library-e7dd745c57_2c72d049d6",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:52.707Z",
+  "updatedAt": "2026-09-12T20:14:52.114Z"
+}

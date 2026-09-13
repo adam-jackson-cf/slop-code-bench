@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -20,6 +22,7 @@ from slop_code.common.llms import APIPricing
 from slop_code.common.llms import ModelCatalog
 from slop_code.common.llms import ModelDefinition
 from slop_code.common.llms import TokenUsage
+from slop_code.execution import Session
 from slop_code.execution.runtime import RuntimeEvent
 from slop_code.execution.runtime import RuntimeResult
 
@@ -30,13 +33,16 @@ class FakeRuntime:
     def __init__(self) -> None:
         self.events: list[RuntimeEvent] = []
         self.cleaned = False
-        self.last_stream_args: tuple[tuple, dict] | None = None
+        self.last_stream_args: (
+            tuple[tuple[str, dict[str, str], float | None], dict[str, Any]]
+            | None
+        ) = None
         self.kill_calls = 0
 
     def stream(
         self,
         command: str,
-        env: dict,
+        env: dict[str, str],
         timeout: float | None,
     ) -> Iterable[RuntimeEvent]:
         self.last_stream_args = ((command, env, timeout), {})
@@ -55,17 +61,18 @@ class FakeSession:
     working_dir: str
 
     spec: object | None = None
-    spawn_kwargs: dict[str, object] | None = None
+    spawn_kwargs: dict[str, Any] | None = None
 
-    def spawn(
-        self, **kwargs: object
-    ) -> FakeRuntime:  # pragma: no cover - trivial
+    def spawn(self, **kwargs: Any) -> FakeRuntime:  # pragma: no cover - trivial
         self.spawn_kwargs = kwargs
         return self.runtime
 
 
 @pytest.fixture
-def make_agent(tmp_path_factory, request):
+def make_agent(
+    tmp_path_factory: pytest.TempPathFactory,
+    request: pytest.FixtureRequest,
+) -> Callable[..., tuple[OpenCodeAgent, FakeRuntime]]:
     def _make(
         *,
         cost_limits: AgentCostLimits = AgentCostLimits(
@@ -73,6 +80,7 @@ def make_agent(tmp_path_factory, request):
             cost_limit=100.0,
             net_cost_limit=200.0,
         ),
+        env: dict[str, str] | None = None,
     ) -> tuple[OpenCodeAgent, FakeRuntime]:
         tmp_dir = tmp_path_factory.mktemp("opencode_agent")
         runtime = FakeRuntime()
@@ -91,17 +99,17 @@ def make_agent(tmp_path_factory, request):
             model_id="glm-4.6",
             provider="zai-coding-plan",
             opencode_config={},
-            env={},
+            env=env or {},
             thinking=None,
         )
-        agent.setup(session)
+        agent.setup(cast(Session, session))
         request.addfinalizer(agent.cleanup)
         return agent, runtime
 
     return _make
 
 
-def _token_usage_from_part(part: dict[str, dict]) -> TokenUsage:
+def _token_usage_from_part(part: dict[str, Any]) -> TokenUsage:
     tokens = part["tokens"]
     return TokenUsage(
         input=tokens["input"],
@@ -142,8 +150,12 @@ def _runtime_events_from_stdout_chunks(
 class TestOpenCodeConfigGeneration:
     """Tests for _make_opencode_config behavior."""
 
-    def _make_bare_agent(self, tmp_path, **overrides):
-        defaults = dict(
+    def _make_bare_agent(
+        self,
+        tmp_path: Path,
+        **overrides: Any,
+    ) -> OpenCodeAgent:
+        defaults: dict[str, Any] = dict(
             problem_name="test",
             verbose=False,
             cost_limits=AgentCostLimits(
@@ -287,11 +299,13 @@ def test_from_config_with_opencode_auth_file_mounts_auth_without_base_url(
         verbose=False,
         image="test-image",
     )
+    agent = cast(OpenCodeAgent, agent)
+
     assert agent.provider == "openai"
 
     runtime = FakeRuntime()
     session = FakeSession(runtime=runtime, working_dir=str(tmp_path))
-    agent.setup(session)
+    agent.setup(cast(Session, session))
     assert session.spawn_kwargs is not None
     mounts = session.spawn_kwargs["mounts"]
     assert isinstance(mounts, dict)
@@ -361,7 +375,11 @@ def test_run_collects_messages_and_updates_usage(make_agent):
     assert messages[2] == final_step
 
     assert agent.usage.steps == 2
-    expected_cost = first_step["part"]["cost"] + final_step["part"]["cost"]
+    first_part = cast(dict[str, Any], first_step["part"])
+    final_part = cast(dict[str, Any], final_step["part"])
+    expected_cost = cast(float, first_part["cost"]) + cast(
+        float, final_part["cost"]
+    )
     assert agent.usage.cost == pytest.approx(expected_cost)
     assert agent.usage.current_tokens == TokenUsage(
         input=5,
@@ -400,7 +418,9 @@ def test_run_falls_back_to_pricing_when_reported_cost_is_zero(make_agent):
 
     agent.run("fallback-pricing")
 
-    expected_cost = agent.pricing.get_cost(_token_usage_from_part(step["part"]))
+    expected_cost = agent.pricing.get_cost(
+        _token_usage_from_part(cast(dict[str, Any], step["part"]))
+    )
     assert agent.usage.steps == 1
     assert agent.usage.cost == pytest.approx(expected_cost)
     assert agent.usage.cost > 0
@@ -425,7 +445,7 @@ def test_run_falls_back_to_pricing_when_reported_cost_is_absent(make_agent):
 
     agent.run("subscription-pricing")
 
-    expected_tokens = _token_usage_from_part(step["part"])
+    expected_tokens = _token_usage_from_part(cast(dict[str, Any], step["part"]))
     assert agent.usage.steps == 1
     assert agent.usage.current_tokens == expected_tokens
     assert agent.usage.net_tokens == expected_tokens
@@ -455,7 +475,7 @@ def test_run_uses_catalog_pricing_for_subscription_model(make_agent):
 
     agent.run("subscription-pricing")
 
-    expected_tokens = _token_usage_from_part(step["part"])
+    expected_tokens = _token_usage_from_part(cast(dict[str, Any], step["part"]))
     assert agent.usage.cost == pytest.approx(
         agent.pricing.get_cost(expected_tokens)
     )
@@ -569,6 +589,7 @@ def test_from_config_falls_back_to_model_provider_when_provider_name_missing(
         verbose=False,
         image="test-image",
     )
+    agent = cast(OpenCodeAgent, agent)
 
     assert agent.provider == "openai"
 
@@ -600,6 +621,7 @@ def test_from_config_uses_provider_override_for_moonshot_kimi_model():
         verbose=False,
         image="test-image",
     )
+    agent = cast(OpenCodeAgent, agent)
 
     assert agent.provider == "moonshot"
     assert agent.model_id == "kimi-k2.5"
@@ -632,6 +654,7 @@ def test_from_config_keeps_openrouter_default_for_kimi_model():
         verbose=False,
         image="test-image",
     )
+    agent = cast(OpenCodeAgent, agent)
 
     assert agent.provider == "openrouter"
     assert agent.model_id == "moonshotai/kimi-k2.5"
@@ -667,10 +690,9 @@ def test_setup_exports_moonshot_api_key_for_moonshot_provider(tmp_path):
 
     runtime = FakeRuntime()
     session = FakeSession(runtime=runtime, working_dir=str(tmp_path))
-    agent.setup(session)
+    agent.setup(cast(Session, session))
     assert session.spawn_kwargs is not None
-    env_vars = session.spawn_kwargs["env_vars"]
-    assert isinstance(env_vars, dict)
+    env_vars = cast(dict[str, str], session.spawn_kwargs["env_vars"])
     assert env_vars["MOONSHOT_API_KEY"] == "test-moonshot-key"
     agent.cleanup()
 
@@ -702,6 +724,7 @@ def test_provider_override_only_applies_when_model_opts_in():
         verbose=False,
         image="test-image",
     )
+    agent = cast(OpenCodeAgent, agent)
 
     assert agent.provider == "openrouter"
     assert agent.model_id == "z-ai/glm-5.1"
@@ -734,10 +757,12 @@ def test_glm_5_1_openrouter_provider_order_is_preserved():
         verbose=False,
         image="test-image",
     )
+    agent = cast(OpenCodeAgent, agent)
 
-    provider_options = agent.open_code_config["provider"]["openrouter"][
-        "models"
-    ]["z-ai/glm-5.1"]["options"]["provider"]
+    config = cast(dict[str, Any], agent.open_code_config)
+    provider_options = config["provider"]["openrouter"]["models"][
+        "z-ai/glm-5.1"
+    ]["options"]["provider"]
     assert provider_options["order"] == [
         "z-ai",
         "fireworks",
@@ -747,13 +772,14 @@ def test_glm_5_1_openrouter_provider_order_is_preserved():
     assert provider_options["allow_fallbacks"] is False
 
 
-def test_setup_sets_runtime_environment(make_agent):
-    agent, _ = make_agent()
+def test_setup_sets_runtime_environment(make_agent, tmp_path: Path):
+    expected_home = str(tmp_path / "agent_home")
+    agent, _ = make_agent(env={"HOME": expected_home})
+    session = cast(FakeSession, agent.session)
 
-    assert isinstance(agent.session, FakeSession)
-    assert agent.session.spawn_kwargs is not None
-    env_vars = agent.session.spawn_kwargs["env_vars"]
-    assert env_vars["HOME"] == "/tmp/agent_home"
+    assert session.spawn_kwargs is not None
+    env_vars = cast(dict[str, str], session.spawn_kwargs["env_vars"])
+    assert env_vars["HOME"] == expected_home
     assert env_vars["OPENCODE_FAKE_VCS"] == "git"
 
 
@@ -782,7 +808,8 @@ def test_run_skips_invalid_json_lines(make_agent):
 
     assert messages == [good_step]
     assert agent.usage.steps == 1
-    assert agent.usage.cost == pytest.approx(good_step["part"]["cost"])
+    good_part = cast(dict[str, Any], good_step["part"])
+    assert agent.usage.cost == pytest.approx(cast(float, good_part["cost"]))
 
 
 def test_run_raises_when_finished_event_missing(make_agent):
@@ -811,6 +838,38 @@ def test_run_raises_when_finished_event_missing(make_agent):
 
     with pytest.raises(AgentError):
         agent.run("no finished event")
+
+
+def test_run_raises_on_nonzero_exit_before_step_finish(make_agent):
+    agent, runtime = make_agent()
+    runtime.events = _runtime_events_from_stdout_chunks([], exit_code=1)
+
+    with pytest.raises(AgentError, match="exit code 1"):
+        agent.run("process fails before producing a step")
+
+
+def test_run_raises_on_nonzero_exit_after_step_finish(make_agent):
+    agent, runtime = make_agent()
+    completed_step = {
+        "type": "step_finish",
+        "part": {
+            "reason": "stop",
+            "cost": 0.1,
+            "tokens": {
+                "input": 1,
+                "output": 1,
+                "reasoning": 0,
+                "cache": {"read": 0, "write": 0},
+            },
+        },
+    }
+    runtime.events = _runtime_events_from_stdout_chunks(
+        [json.dumps(completed_step)],
+        exit_code=1,
+    )
+
+    with pytest.raises(AgentError, match="exit code 1"):
+        agent.run("process fails after producing a step")
 
 
 def test_run_raises_on_opencode_error_event(make_agent):
@@ -861,7 +920,8 @@ def test_run_raises_when_no_step_finish_messages(make_agent):
         agent.run("no step finish")
 
 
-def test_run_respects_step_limit(make_agent):
+@pytest.mark.parametrize("exit_code", [-9, 137])
+def test_run_respects_step_limit(make_agent, exit_code):
     limits = AgentCostLimits(
         step_limit=1,
         cost_limit=100.0,
@@ -882,7 +942,10 @@ def test_run_respects_step_limit(make_agent):
             },
         },
     }
-    runtime.events = _runtime_events_from_stdout_chunks([json.dumps(step)])
+    runtime.events = _runtime_events_from_stdout_chunks(
+        [json.dumps(step)],
+        exit_code=exit_code,
+    )
 
     agent.run("should stop by step")
     assert agent.messages[0] == step
@@ -892,6 +955,36 @@ def test_run_respects_step_limit(make_agent):
     )
     assert agent.continue_on_run is False
     assert agent.usage.steps == limits.step_limit
+    assert runtime.kill_calls == 1
+
+
+def test_run_rejects_unexpected_exit_after_step_limit(make_agent):
+    limits = AgentCostLimits(
+        step_limit=1,
+        cost_limit=100.0,
+        net_cost_limit=200.0,
+    )
+    agent, runtime = make_agent(cost_limits=limits)
+    step = {
+        "type": "step_finish",
+        "part": {
+            "reason": "tool-calls",
+            "cost": 0.1,
+            "tokens": {
+                "input": 1,
+                "output": 2,
+                "reasoning": 0,
+                "cache": {"read": 0, "write": 0},
+            },
+        },
+    }
+    runtime.events = _runtime_events_from_stdout_chunks(
+        [json.dumps(step)],
+        exit_code=1,
+    )
+
+    with pytest.raises(AgentError, match="exit code 1"):
+        agent.run("process fails despite limit termination")
 
 
 def test_run_respects_cost_limit(make_agent):

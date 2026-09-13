@@ -14,12 +14,15 @@ import yaml
 
 from slop_code.agent_runner.agents.pi import PiAgent
 from slop_code.agent_runner.agents.pi import PiConfig
+from slop_code.agent_runner.agents.pi import PiParser
 from slop_code.agent_runner.agents.utils import HOME_PATH
 from slop_code.agent_runner.credentials import CredentialType
 from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
 from slop_code.agent_runner.models import AgentError
 from slop_code.agent_runner.registry import build_agent_config
+from slop_code.agent_runner.trajectory import ToolUseStep
+from slop_code.agent_runner.trajectory_parsing import ParseError
 from slop_code.common.llms import APIPricing
 from slop_code.common.llms import ModelDefinition
 from slop_code.execution import DockerConfig
@@ -905,6 +908,166 @@ class TestPiAgent:
         assert agent._last_command is not None
         assert agent._last_command.result is not None
         assert agent._last_command.result.exit_code == 143
+
+
+class TestPiParser:
+    """Tests for PI trajectory parsing."""
+
+    @pytest.mark.parametrize(
+        "record",
+        [[], "event", 1, True, None],
+        ids=["array", "string", "number", "boolean", "null"],
+    )
+    def test_parse_line_rejects_non_object_json(
+        self,
+        mock_pricing: APIPricing,
+        record: object,
+    ) -> None:
+        cost, tokens, payload = PiAgent.parse_line(
+            json.dumps(record),
+            pricing=mock_pricing,
+        )
+
+        assert cost is None
+        assert tokens is None
+        assert payload is None
+
+    @pytest.mark.parametrize(
+        "record",
+        [[], "event", 1, True, None],
+        ids=["array", "string", "number", "boolean", "null"],
+    )
+    def test_parser_rejects_non_object_json_records(
+        self,
+        tmp_path: Path,
+        record: object,
+    ) -> None:
+        (tmp_path / "stdout.jsonl").write_text(f"{json.dumps(record)}\n")
+        parser = PiParser()
+
+        assert parser.can_parse(tmp_path) is False
+        with pytest.raises(
+            ParseError,
+            match=r"Invalid JSON record at line 1: expected object",
+        ):
+            parser.parse(tmp_path)
+
+    def test_parser_reuses_tool_step_for_complete_lifecycle(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        events = [
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "toolCall",
+                            "id": "call-1",
+                            "name": "bash",
+                            "arguments": {"command": "pwd"},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "tool_execution_start",
+                "toolCallId": "call-1",
+                "toolName": "bash",
+                "args": {"command": "pwd"},
+            },
+            {
+                "type": "tool_execution_end",
+                "toolCallId": "call-1",
+                "toolName": "bash",
+                "result": "/workspace",
+            },
+        ]
+        (tmp_path / "stdout.jsonl").write_text(
+            "\n".join(json.dumps(event) for event in events)
+        )
+
+        trajectory = PiParser().parse(tmp_path)
+        tool_steps = [
+            step for step in trajectory.steps if isinstance(step, ToolUseStep)
+        ]
+
+        assert len(tool_steps) == 1
+        assert tool_steps[0].arguments == {"command": "pwd"}
+        assert tool_steps[0].result == "/workspace"
+
+    def test_parser_reuses_tool_steps_for_interleaved_lifecycles(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        events = [
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "toolCall",
+                            "id": "call-1",
+                            "name": "bash",
+                            "arguments": {"command": "first"},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "tool_execution_start",
+                "toolCallId": "call-1",
+                "toolName": "bash",
+                "args": {"command": "first"},
+            },
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "toolCall",
+                            "id": "call-2",
+                            "name": "bash",
+                            "arguments": {"command": "second"},
+                        }
+                    ],
+                },
+            },
+            {
+                "type": "tool_execution_start",
+                "toolCallId": "call-2",
+                "toolName": "bash",
+                "args": {"command": "second"},
+            },
+            {
+                "type": "tool_execution_end",
+                "toolCallId": "call-2",
+                "toolName": "bash",
+                "result": "second result",
+            },
+            {
+                "type": "tool_execution_end",
+                "toolCallId": "call-1",
+                "toolName": "bash",
+                "result": "first result",
+            },
+        ]
+        (tmp_path / "stdout.jsonl").write_text(
+            "\n".join(json.dumps(event) for event in events)
+        )
+
+        trajectory = PiParser().parse(tmp_path)
+        tool_steps = [
+            step for step in trajectory.steps if isinstance(step, ToolUseStep)
+        ]
+
+        assert [step.result for step in tool_steps] == [
+            "first result",
+            "second result",
+        ]
 
 
 class TestPiAgentRegistration:

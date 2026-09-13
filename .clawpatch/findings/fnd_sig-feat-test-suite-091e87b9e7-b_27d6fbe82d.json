@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-091e87b9e7-b_27d6fbe82d",
+  "featureId": "feat_test-suite_091e87b9e7",
+  "title": "Batch-splitting tests do not verify preservation of input files",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/metrics/rubric/driver_test.py",
+      "startLine": 99,
+      "endLine": 117,
+      "symbol": "TestBatchFilesBySize.test_respects_max_batch_lines",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/rubric/driver_test.py",
+      "startLine": 119,
+      "endLine": 135,
+      "symbol": "TestBatchFilesBySize.test_respects_max_batch_files",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both split scenarios assert batch counts, but neither checks which files the batches contain. Returning the first file three times satisfies the line-limit test; repeating the first two files in every batch satisfies the file-limit test. These regressions would omit files from grading while these tests remain green.",
+  "reproduction": null,
+  "recommendation": "Expand both existing scenarios to assert that flattening the batches preserves every input file exactly once, alongside the applicable batch limits.",
+  "whyTestsDoNotAlreadyCoverThis": "Other scenarios verify file identities when batching does not split small files across multiple batches. They do not protect file preservation at split boundaries.",
+  "suggestedRegressionTest": "Compare the multiset of flattened output paths with the input paths in both split scenarios, and assert each resulting batch respects its configured limit.",
+  "minimumFixScope": "tests/metrics/rubric/driver_test.py::TestBatchFilesBySize",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201348-25cab4",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "Both evidence ranges still exist unchanged. The line-limit scenario asserts only three batches; the file-limit scenario asserts three batches and at most two files per batch. Neither checks preservation of input paths, so the described duplicate-and-omit outputs still satisfy their assertions. Repository search found no additional tests covering batch_files_by_size. The current implementation appears to preserve files, but that does not repair this test gap. No linked patch attempts or validation results were supplied; assessment used current source inspection, without executing tests.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba tests/metrics/rubric/driver_test.py",
+        "rg -n 'batch_files_by_size|test_respects_max_batch' tests src/slop_code/metrics/driver.py",
+        "sed -n '650,755p' src/slop_code/metrics/driver.py"
+      ],
+      "createdAt": "2026-09-12T20:14:09.987Z"
+    },
+    {
+      "runId": "20260912T201501-605876",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Current source supports the repair: both original scenarios still exist, now at lines 100–126 and 128–151. Counter assertions at lines 119–121 and 144–146 require every input path exactly once; both scenarios also check batch line and file limits. These assertions reject the reported duplicate-and-omit outputs. No linked patch attempts were supplied. Targeted pytest validation could not start because sandbox permissions blocked uv cache access, so fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba tests/metrics/rubric/driver_test.py | sed -n '90,165p'",
+        "sed -n '650,755p' src/slop_code/metrics/driver.py",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/metrics/rubric/driver_test.py"
+      ],
+      "createdAt": "2026-09-12T20:15:20.889Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified both split scenarios compare flattened output Counter exactly to inputs and enforce applicable file and line limits; 6 focused tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:15:34.275Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-091e87b9e7_b4ca1b58a9",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:00.227Z",
+  "updatedAt": "2026-09-12T20:15:34.274Z"
+}

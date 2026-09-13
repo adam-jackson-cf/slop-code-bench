@@ -109,7 +109,7 @@ packages = ["src/slop_code"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--ignore=src --ignore=data --ignore=scratch --ignore=tests/evaluation/fixtures --ignore=tests/agent_runner/resources/"
+addopts = "--import-mode=importlib --ignore=src --ignore=data --ignore=scratch --ignore=tests/evaluation/fixtures --ignore=tests/agent_runner/resources/"
 testpaths = [
     "tests"
 ]

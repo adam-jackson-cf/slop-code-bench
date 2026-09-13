@@ -16,6 +16,7 @@ from slop_code.common import WORKSPACE_TEST_DIR
 from slop_code.evaluation import coverage_plugin
 from slop_code.evaluation.config import CheckpointConfig
 from slop_code.evaluation.config import ProblemConfig
+from slop_code.evaluation.config import classify_test_group
 from slop_code.evaluation.locked_environment import LockedEnvironmentError
 from slop_code.evaluation.locked_environment import (
     ensure_locked_evaluator_environment,
@@ -155,7 +156,9 @@ class PytestRunner:
         self.checkpoint = checkpoint
         self.environment = environment
         self.submission_path = submission_path
-        self.evaluator_environment_parent = evaluator_environment_parent.resolve()
+        self.evaluator_environment_parent = (
+            evaluator_environment_parent.resolve()
+        )
         self.measurement_coverage = measurement_coverage
         self._evaluator_environment = None
 
@@ -578,26 +581,12 @@ markers =
         markers: list[str],
         current_checkpoint: str,
     ) -> GroupType:
-        """Assign `GroupType` from checkpoint provenance and markers."""
-        is_current = test_checkpoint == current_checkpoint
-
-        if not is_current:
-            return GroupType.REGRESSION
-
-        if "error" in markers:
-            return GroupType.ERROR
-
-        if "regression" in markers:
-            return GroupType.REGRESSION
-
-        for marker in markers:
-            if marker in self.problem.markers:
-                return self.problem.markers[marker].group
-
-        if "functionality" in markers:
-            return GroupType.FUNCTIONALITY
-
-        return GroupType.CORE
+        return classify_test_group(
+            test_checkpoint=test_checkpoint,
+            current_checkpoint=current_checkpoint,
+            markers=markers,
+            custom_markers=self.problem.markers,
+        )
 
     def _parse_pytest_json_report(
         self, report_path: Path

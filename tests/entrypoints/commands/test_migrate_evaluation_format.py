@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
+from typing import cast
 
+import pytest
+import typer
+
+from slop_code.entrypoints.commands import migrate_evaluation_format as command
 from slop_code.entrypoints.commands.migrate_evaluation_format import (
     _convert_tests_to_grouped_format,
 )
@@ -233,3 +239,36 @@ class TestMigrateSingleFile:
 
         # File should be unchanged
         assert eval_path.read_text() == original_content
+
+
+@pytest.mark.parametrize(
+    ("result", "should_fail"),
+    [
+        ((1, 1, 0, 0), False),
+        ((1, 0, 1, 0), False),
+        ((2, 1, 0, 1), True),
+        ((1, 0, 0, 1), True),
+    ],
+)
+def test_migrate_evaluation_format_exits_nonzero_only_for_file_failures(
+    tmp_path, monkeypatch, result, should_fail
+):
+    logger = SimpleNamespace(
+        info=lambda *args, **kwargs: None,
+        debug=lambda *args, **kwargs: None,
+        warning=lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(command, "setup_logging", lambda **_: logger)
+    monkeypatch.setattr(
+        command,
+        "_migrate_directory",
+        lambda *args, **kwargs: result,
+    )
+    ctx = cast(typer.Context, SimpleNamespace(obj=SimpleNamespace(verbosity=0)))
+
+    if should_fail:
+        with pytest.raises(typer.Exit) as exit_info:
+            command.migrate_evaluation_format(ctx, tmp_path)
+        assert exit_info.value.exit_code == 1
+    else:
+        command.migrate_evaluation_format(ctx, tmp_path)

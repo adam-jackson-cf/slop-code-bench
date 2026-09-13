@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-55712dbf64-4159_8cdc227be0",
+  "featureId": "feat_library_55712dbf64",
+  "title": "Missing rubric columns produce misaligned new-flag values",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/graphs/comparison.py",
+      "startLine": 100,
+      "endLine": 107,
+      "symbol": "build_problem_comparison_chart",
+      "quote": null
+    }
+  ],
+  "reasoning": "Fallback Series use a fresh RangeIndex, while filtering by problem and display name preserves the original dataframe index. Pandas aligns subtraction and assignment by index. If either rubric column is absent, rows outside the fallback index receive NaN instead of the intended zero-based calculation, silently removing or corrupting the New Rubric Flags trace.",
+  "reproduction": "Provide a selected problem whose rows retain indices 10 and 11, with rubric_total_flags present and rubric_carried_over absent. The resulting _new_flags values are NaN instead of the total flag counts.",
+  "recommendation": "Construct fallback Series with index=run_df.index, or use scalar zero defaults where appropriate.",
+  "whyTestsDoNotAlreadyCoverThis": "No supplied test exercises the problem comparison chart, optional rubric columns, or filtered dataframe indices.",
+  "suggestedRegressionTest": "Test missing combinations of rubric columns using noncontiguous indices and verify new-flag values remain aligned with their checkpoints.",
+  "minimumFixScope": "Rubric fallback Series in comparison.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T203254-6575d1",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path still exists. comparison.py:92 now creates zeroes with index=run_df.index, and lines 102–104 use that aligned fallback for both rubric columns, supporting the intended repair. An existing test at tests/dashboard/graphs/quality_test.py:131 covers all three missing-column combinations with noncontiguous indices [4, 19]. However, targeted validation exited 1 before running because the read-only environment had no usable temporary directory. No linked patch attempts were supplied. The code appears repaired, but failed validation prevents confirming fixed.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/graphs/comparison.py | sed -n '80,112p'",
+        "rg -n 'rubric|comparison' tests/dashboard/graphs",
+        "sed -n '1,65p' tests/dashboard/graphs/quality_test.py",
+        "sed -n '130,160p' tests/dashboard/graphs/quality_test.py",
+        ".venv/bin/python -B -m pytest -q -p no:cacheprovider tests/dashboard/graphs/quality_test.py -k missing_rubric_columns_preserve_checkpoint_alignment"
+      ],
+      "createdAt": "2026-09-12T20:33:17.013Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified missing rubric fallbacks align to noncontiguous run_df indices and preserve checkpoint values; 7 graph tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:33:59.280Z"
+    }
+  ],
+  "signature": "sig_feat-library-55712dbf64_4159bc4acd",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:50.298Z",
+  "updatedAt": "2026-09-12T20:33:59.279Z"
+}

@@ -78,6 +78,30 @@ def _calculate_file_metrics(
     )
 
 
+def _resolve_entry_file(entry_file: str | Path, snapshot_dir: Path) -> Path:
+    """Resolve an extensionless entrypoint to its measured source file."""
+    entry_path = Path(entry_file)
+    target_path = (
+        entry_path if entry_path.is_absolute() else snapshot_dir / entry_path
+    ).resolve()
+    if target_path.exists() or entry_path.suffix:
+        return target_path
+
+    candidates = sorted(
+        path
+        for path in target_path.parent.glob(f"{target_path.name}.*")
+        if path.is_file()
+    )
+    return next(
+        (
+            path.resolve()
+            for path in candidates
+            if get_language_by_extension(path.suffix) is not None
+        ),
+        target_path,
+    )
+
+
 def measure_files(
     dir_path: Path,
     exclude_patterns: set[str],
@@ -410,18 +434,10 @@ def measure_snapshot_quality(
 
     lint_count = Counter()
     lint_fixable = lint_errors = 0
+    lint_unavailable = False
 
-    entry_path = Path(entry_file)
-    # Normalize entry path relative to the snapshot root for comparison
-    target_entry_path = (
-        entry_path if entry_path.is_absolute() else (snapshot_dir / entry_path)
-    ).resolve()
-
-    entry_language = (
-        get_language_by_extension(target_entry_path.suffix)
-        if target_entry_path.suffix
-        else None
-    )
+    target_entry_path = _resolve_entry_file(entry_file, snapshot_dir)
+    entry_language = get_language_by_extension(target_entry_path.suffix)
     entry_extensions = entry_language.extensions if entry_language else None
 
     for file_path, file_metric in measure_files(
@@ -439,17 +455,16 @@ def measure_snapshot_quality(
         total_comments += file_metric.lines.comments
         total_multi_comment += file_metric.lines.multi_comment
         total_single_comment += file_metric.lines.single_comment
-        lint_count += file_metric.lint.counts
-        lint_fixable += file_metric.lint.fixable
-        lint_errors += file_metric.lint.errors
-
-        if file_path.resolve() == target_entry_path or (
-            not entry_path.is_absolute()
-            and relative_path.with_suffix("").as_posix()
-            == entry_path.as_posix()
+        if (
+            file_metric.lint.available
+            and file_metric.lint.errors is not None
+            and file_metric.lint.fixable is not None
         ):
-            # Update target_entry_path to the actual file path found
-            target_entry_path = file_path.resolve()
+            lint_count += file_metric.lint.counts
+            lint_fixable += file_metric.lint.fixable
+            lint_errors += file_metric.lint.errors
+        else:
+            lint_unavailable = True
 
     snapshot_line_metrics = LineCountMetrics(
         total_lines=total_lines,
@@ -459,8 +474,20 @@ def measure_snapshot_quality(
         single_comment=total_single_comment,
     )
 
-    snapshot_lint_metrics = LintMetrics(
-        errors=lint_errors, fixable=lint_fixable, counts=lint_count
+    snapshot_lint_metrics = (
+        LintMetrics(
+            errors=None,
+            fixable=None,
+            counts={},
+            available=False,
+            unavailable_reason="lint_unavailable_in_snapshot",
+        )
+        if lint_unavailable
+        else LintMetrics(
+            errors=lint_errors,
+            fixable=lint_fixable,
+            counts=lint_count,
+        )
     )
 
     # Trace source files from entrypoint for Python files

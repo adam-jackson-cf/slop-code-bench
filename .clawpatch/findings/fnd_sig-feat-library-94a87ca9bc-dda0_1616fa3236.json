@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-94a87ca9bc-dda0_1616fa3236",
+  "featureId": "feat_library_94a87ca9bc",
+  "title": "Command unwrapping removes quotes belonging to the command",
+  "category": "data-loss",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/codex/parser.py",
+      "startLine": 117,
+      "endLine": 124,
+      "symbol": "CodexParser._unwrap_bash_command",
+      "quote": null
+    }
+  ],
+  "reasoning": "rstrip removes every trailing single or double quote, including quotes inside the wrapped command. For example, unwrapping /bin/bash -lc 'echo \"hello\"' produces echo \"hello with an unmatched quote. The stored trajectory therefore corrupts valid commands and can mislead downstream analysis.",
+  "reproduction": "Pass /bin/bash -lc 'echo \"hello\"' to _unwrap_bash_command and compare the result with echo \"hello\".",
+  "recommendation": "Parse the wrapper using shell-aware tokenization and extract the command argument without stripping characters from its contents.",
+  "whyTestsDoNotAlreadyCoverThis": "No parser tests were included for nested shell quoting.",
+  "suggestedRegressionTest": "Cover wrapped commands containing nested quotes, escaped quotes, multiline text, and trailing quoted arguments, asserting the inner command is preserved exactly.",
+  "minimumFixScope": "CodexParser._unwrap_bash_command and shell-wrapper parsing coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193814-38c376",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The evidence file exists, but the method moved from lines 117–124 to 135–147. It now uses shlex.split and returns the command argument without stripping its quotes. Targeted execution of the current method passed the original reproduction, 14 quoting round trips covering nested/escaped quotes, multiline scripts and trailing quoted arguments, and three unchanged-input checks. An initial heredoc invocation was blocked by the read-only sandbox; the equivalent inline validation succeeded. Existing parser tests lack nested-quoting coverage. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/codex/parser.py | sed -n '100,160p'",
+        "rg -n 'unwrap_bash|hello|CodexParser' tests --glob '*.py' --glob '!**/resources/**' --glob '!**/fixtures/**'",
+        "sed -n '155,235p' tests/agent_runner/parsers/test_new_parsers.py",
+        "python3 -B -c '<AST-extract current _unwrap_bash_command; assert original reproduction, 14 quoting round trips, and 3 unchanged-input checks>'"
+      ],
+      "createdAt": "2026-09-12T19:38:55.633Z"
+    }
+  ],
+  "signature": "sig_feat-library-94a87ca9bc_dda0ac1765",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:57.516Z",
+  "updatedAt": "2026-09-12T19:38:55.633Z"
+}

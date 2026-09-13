@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-4ddc042c0c-0bf5_63f5fb704b",
+  "featureId": "feat_library_4ddc042c0c",
+  "title": "CLI argument boundaries are lost when constructing the shell command",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/gemini/agent.py",
+      "startLine": 651,
+      "endLine": 674,
+      "symbol": "GeminiAgent._prepare_runtime_execution / GeminiAgent._build_command",
+      "quote": null
+    }
+  ],
+  "reasoning": "Only the prompt is shell-quoted before the argument list is joined with spaces. Binary paths, model values, and extra_args therefore lose their argument boundaries when they contain whitespace, and shell metacharacters can be interpreted as executable syntax. A configured binary path containing spaces or an extra argument containing a literal space cannot be passed reliably.",
+  "reproduction": "Configure binary as '/opt/Gemini CLI/bin/gemini', or pass an extra_args element containing spaces. The generated command splits that single value into multiple shell words.",
+  "recommendation": "Build an unquoted argument vector and apply shlex.join once at the shell boundary, removing the existing prompt-only quoting; alternatively pass the vector directly if the runtime supports it.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included demonstrating preservation of CLI arguments through shell serialization.",
+  "suggestedRegressionTest": "Verify argument round-tripping for prompts, binary paths, model values, and extra arguments containing spaces, quotes, dollar signs, and shell metacharacters.",
+  "minimumFixScope": "GeminiAgent._build_command, command serialization, and argument-boundary tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193626-522945",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original path and lines still exist. Current agent.py:655-678 builds raw arguments and serializes them once with shlex.join, supporting the intended repair. tests/agent_runner/agents/gemini_agent_test.py:636-661 covers round-tripping binary paths, models, prompts, and extra arguments containing spaces, quotes, and shell metacharacters. No linked patch attempts were supplied. Targeted pytest validation exited 1 before collection because the read-only environment provides no usable temporary directory, so the repair cannot be reported as verified fixed.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/gemini/agent.py | sed -n '640,710p'",
+        "rg -n 'round.trip|shell|quot|build_command|prepare_runtime' tests/agent_runner -g '*gemini*'",
+        "sed -n '636,662p' tests/agent_runner/agents/gemini_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/gemini_agent_test.py -k 'build_command or serializes_complex_argv'"
+      ],
+      "createdAt": "2026-09-12T19:37:03.454Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified raw argv serialization preserves CLI argument boundaries; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:37:37.195Z"
+    }
+  ],
+  "signature": "sig_feat-library-4ddc042c0c_0bf53e5bb0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:33.474Z",
+  "updatedAt": "2026-09-12T19:37:37.192Z"
+}

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-cli-command-07e2c9afa6-_34fde2045e",
+  "featureId": "feat_cli-command_07e2c9afa6",
+  "title": "Wire parsing depends on JSON member order and absorbs trailing diagnostics",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/kimi_cli/parser.py",
+      "startLine": 60,
+      "endLine": 76,
+      "symbol": "_iter_jsonrpc_messages",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/kimi_cli/agent.py",
+      "startLine": 433,
+      "endLine": 446,
+      "symbol": "KimiCliAgent._parse_streamed_wire_event",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/kimi_cli/agent.py",
+      "startLine": 369,
+      "endLine": 375,
+      "symbol": "KimiCliAgent.run",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both parsers recognize messages only when the first serialized member is exactly \"jsonrpc\". Valid JSON-RPC messages with reordered members or whitespace after the opening brace are silently discarded. The batch parser also appends every subsequent nonmatching line to the preceding message, so a diagnostic after a complete response makes that response fail JSON decoding. These framing assumptions can lose trajectory events and token usage, and cause a successful invocation to raise \"completed without a final response\".",
+  "reproduction": "Pass '{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":{}}' to has_final_result: it returns false. Likewise, '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\\nDiagnostic message' returns false because the diagnostic is appended to the JSON.",
+  "recommendation": "Use shared JSON-aware framing for batch and streaming parsing. Validate jsonrpc after decoding, accept arbitrary member order and legal whitespace, and stop accumulating a message once its JSON object is complete while retaining support for multiline payloads.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included, so existing coverage could not be assessed. The supplied implementation contains no alternative framing path for these inputs.",
+  "suggestedRegressionTest": "Exercise equivalent wire messages across member order, legal whitespace, multiline control-character payloads, and surrounding diagnostic lines; assert identical events, usage, and final-result detection.",
+  "minimumFixScope": "Replace the framing logic in parser.py and reuse it for streamed event parsing in agent.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193623-f6d197",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files exist, but the original parser symbols were replaced. parser.py:60-160 now frames complete JSON objects independently of member order and trailing diagnostics; agent.py:390-424 shares that framer for streaming and batch processing. Tests at kimi_cli_agent_test.py:176-232 cover multiline payloads, reordered members, and surrounding diagnostics. No linked patch attempts were supplied. However, targeted pytest validation failed before collection because the read-only environment provided no usable temporary directory, so fixed cannot be confirmed. The recommended jsonrpc field validation is also absent.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "rg -n 'JsonRpcMessageFramer|_iter_jsonrpc_messages|_parse_streamed_wire_event|framing|diagnostic|member_order' src/slop_code/agent_runner/agents/kimi_cli tests/agent_runner --glob '*.py'",
+        "sed -n '140,250p' tests/agent_runner/agents/kimi_cli_agent_test.py",
+        "sed -n '60,195p' src/slop_code/agent_runner/agents/kimi_cli/parser.py",
+        "sed -n '350,435p' src/slop_code/agent_runner/agents/kimi_cli/agent.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/kimi_cli_agent_test.py"
+      ],
+      "createdAt": "2026-09-12T19:37:03.000Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified JSON-aware framing preserves adjacent records and trailing diagnostics; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:37:37.869Z"
+    }
+  ],
+  "signature": "sig_feat-cli-command-07e2c9afa6_925037a768",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105427-40c416",
+  "createdAt": "2026-09-11T10:54:51.234Z",
+  "updatedAt": "2026-09-12T19:37:37.868Z"
+}

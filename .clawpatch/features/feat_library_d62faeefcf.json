@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_d62faeefcf",
+  "title": "Python source src/slop_code/dashboard/pages/:head",
+  "summary": "Python source group src/slop_code/dashboard/pages/:head with 5 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/dashboard/pages/:head",
+      "symbol": "src/slop_code/dashboard/pages/:head",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head.py",
+      "reason": "source group src/slop_code/dashboard/pages/:head"
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_checkpoints.py",
+      "reason": "source group src/slop_code/dashboard/pages/:head"
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_efficiency.py",
+      "reason": "source group src/slop_code/dashboard/pages/:head"
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_evolution.py",
+      "reason": "source group src/slop_code/dashboard/pages/:head"
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_quality.py",
+      "reason": "source group src/slop_code/dashboard/pages/:head"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    }
+  ],
+  "tests": [],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-d62faeefcf-1913_5bf9f18c3d",
+    "fnd_sig-feat-library-d62faeefcf-eb08_7acc2861e8"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "2 finding(s); prompt=68797 bytes; approxTokens=17200; includedFiles=6; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:59:35.895Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:42:40.526Z"
+}

@@ -1,14 +1,14 @@
 """Tests for metrics driver (file measurement orchestration)."""
 
 from __future__ import annotations
-import json
 
+import json
 from pathlib import Path
 
 import pytest
+
 from slop_code.common import FILES_QUALITY_SAVENAME
 from slop_code.common import QUALITY_DIR
-
 from slop_code.metrics.driver import _calculate_file_metrics
 from slop_code.metrics.driver import measure_files
 from slop_code.metrics.driver import measure_snapshot_quality
@@ -28,6 +28,8 @@ class TestCalculateFileMetrics:
     @pytest.fixture(autouse=True)
     def setup_test_language(self):
         """Register a test language spec."""
+        original_languages = LANGUAGE_REGISTRY.copy()
+        original_extensions = EXT_TO_LANGUAGE.copy()
         LANGUAGE_REGISTRY.clear()
         EXT_TO_LANGUAGE.clear()
 
@@ -74,10 +76,13 @@ class TestCalculateFileMetrics:
         LANGUAGE_REGISTRY["test"] = spec
         EXT_TO_LANGUAGE[".test"] = "test"
 
-        yield
-
-        LANGUAGE_REGISTRY.clear()
-        EXT_TO_LANGUAGE.clear()
+        try:
+            yield
+        finally:
+            LANGUAGE_REGISTRY.clear()
+            LANGUAGE_REGISTRY.update(original_languages)
+            EXT_TO_LANGUAGE.clear()
+            EXT_TO_LANGUAGE.update(original_extensions)
 
     def test_calculate_file_metrics_supported_extension(self, tmp_path):
         """Test calculating metrics for a file with supported extension."""
@@ -114,6 +119,8 @@ class TestMeasureFiles:
     @pytest.fixture(autouse=True)
     def setup_test_language(self):
         """Register a test language spec."""
+        original_languages = LANGUAGE_REGISTRY.copy()
+        original_extensions = EXT_TO_LANGUAGE.copy()
         LANGUAGE_REGISTRY.clear()
         EXT_TO_LANGUAGE.clear()
 
@@ -137,7 +144,7 @@ class TestMeasureFiles:
             return 20.0
 
         spec = LanguageSpec(
-            extensions={".py"},
+            extensions={".py", ".pyc"},
             line=line_fn,
             lint=lint_fn,
             symbol=symbol_fn,
@@ -146,11 +153,15 @@ class TestMeasureFiles:
 
         LANGUAGE_REGISTRY["python"] = spec
         EXT_TO_LANGUAGE[".py"] = "python"
+        EXT_TO_LANGUAGE[".pyc"] = "python"
 
-        yield
-
-        LANGUAGE_REGISTRY.clear()
-        EXT_TO_LANGUAGE.clear()
+        try:
+            yield
+        finally:
+            LANGUAGE_REGISTRY.clear()
+            LANGUAGE_REGISTRY.update(original_languages)
+            EXT_TO_LANGUAGE.clear()
+            EXT_TO_LANGUAGE.update(original_extensions)
 
     def test_measure_files_finds_python_files(self, tmp_path):
         """Test that measure_files finds Python files in directory tree."""
@@ -310,13 +321,16 @@ class TestMeasureFiles:
         (tmp_path / "module.pyc").write_text("compiled")
         (tmp_path / "other.cpython-312.pyc").write_text("compiled")
 
-        exclude_patterns = {"*.pyc"}
-        results = list(
-            measure_files(tmp_path, exclude_patterns=exclude_patterns)
-        )
+        unexcluded = list(measure_files(tmp_path, exclude_patterns=set()))
+        assert {path.name for path, _ in unexcluded} == {
+            "module.py",
+            "module.pyc",
+            "other.cpython-312.pyc",
+        }
 
-        assert len(results) == 1
-        assert results[0][0].name == "module.py"
+        results = list(measure_files(tmp_path, exclude_patterns={"*.pyc"}))
+
+        assert [path.name for path, _ in results] == ["module.py"]
 
     def test_measure_files_deeply_nested_venv_excluded(self, tmp_path):
         """Test that deeply nested files in venv are still excluded."""
@@ -343,6 +357,31 @@ class TestMeasureFiles:
         assert len(results) == 1
         assert results[0][0].name == "main.py"
 
+    @pytest.mark.parametrize(
+        ("pattern", "directory"),
+        [
+            (".venv", ".venv"),
+            ("__pycache__", "__pycache__"),
+            (".git", ".git"),
+            ("node_modules", "node_modules"),
+            (".tox", ".tox"),
+        ],
+    )
+    def test_measure_files_exclusions_remove_supported_files(
+        self, tmp_path, pattern, directory
+    ):
+        """Each explicit exclusion removes a file that is otherwise measured."""
+        (tmp_path / "keep.py").write_text("# keep")
+        excluded_path = tmp_path / directory / "nested.py"
+        excluded_path.parent.mkdir(parents=True)
+        excluded_path.write_text("# excluded")
+
+        unexcluded = list(measure_files(tmp_path, exclude_patterns=set()))
+        assert {path.name for path, _ in unexcluded} == {"keep.py", "nested.py"}
+
+        excluded = list(measure_files(tmp_path, exclude_patterns={pattern}))
+        assert [path.name for path, _ in excluded] == ["keep.py"]
+
 
 class TestMeasureSnapshotQuality:
     """Tests for measure_snapshot_quality function."""
@@ -350,6 +389,8 @@ class TestMeasureSnapshotQuality:
     @pytest.fixture(autouse=True)
     def setup_test_language(self):
         """Register a test language spec with predictable metrics."""
+        original_languages = LANGUAGE_REGISTRY.copy()
+        original_extensions = EXT_TO_LANGUAGE.copy()
         LANGUAGE_REGISTRY.clear()
         EXT_TO_LANGUAGE.clear()
 
@@ -398,10 +439,13 @@ class TestMeasureSnapshotQuality:
         LANGUAGE_REGISTRY["python"] = spec
         EXT_TO_LANGUAGE[".py"] = "python"
 
-        yield
-
-        LANGUAGE_REGISTRY.clear()
-        EXT_TO_LANGUAGE.clear()
+        try:
+            yield
+        finally:
+            LANGUAGE_REGISTRY.clear()
+            LANGUAGE_REGISTRY.update(original_languages)
+            EXT_TO_LANGUAGE.clear()
+            EXT_TO_LANGUAGE.update(original_extensions)
 
     def test_measure_snapshot_quality_aggregates_metrics(self, tmp_path):
         """Test that measure_snapshot_quality aggregates file metrics correctly."""
@@ -448,9 +492,7 @@ class TestMeasureSnapshotQuality:
         save_quality_metrics(output_dir, snapshot, file_metrics)
         rows = [
             json.loads(line)
-            for line in (
-                output_dir / QUALITY_DIR / FILES_QUALITY_SAVENAME
-            )
+            for line in (output_dir / QUALITY_DIR / FILES_QUALITY_SAVENAME)
             .read_text()
             .splitlines()
         ]
@@ -458,6 +500,42 @@ class TestMeasureSnapshotQuality:
         assert [(row["file_path"], row["success"]) for row in rows] == [
             ("file.py", True)
         ]
+        assert rows[0]["lint_available"] is True
+        assert rows[0]["lint_unavailable_reason"] is None
+
+    def test_unavailable_file_lint_propagates_to_snapshot(self, tmp_path):
+        """A partially measured lint aggregate remains explicitly unavailable."""
+        unavailable_spec = LANGUAGE_REGISTRY["python"].model_copy(
+            update={
+                "lint": lambda _: LintMetrics(
+                    errors=None,
+                    fixable=None,
+                    counts={},
+                    available=False,
+                    unavailable_reason="checker_operational_failure",
+                )
+            }
+        )
+        LANGUAGE_REGISTRY["python"] = unavailable_spec
+        (tmp_path / "main.py").write_text("# main")
+
+        snapshot, file_metrics = measure_snapshot_quality("main.py", tmp_path)
+
+        assert file_metrics[0].lint.available is False
+        assert snapshot.lint.errors is None
+        assert snapshot.lint.fixable is None
+        assert snapshot.lint.available is False
+        assert (
+            snapshot.lint.unavailable_reason == "lint_unavailable_in_snapshot"
+        )
+        output_dir = tmp_path / "output"
+        save_quality_metrics(output_dir, snapshot, file_metrics)
+        row = json.loads(
+            (output_dir / QUALITY_DIR / FILES_QUALITY_SAVENAME).read_text()
+        )
+        assert row["lint_errors"] is None
+        assert row["lint_available"] is False
+        assert row["lint_unavailable_reason"] == "checker_operational_failure"
 
     def test_measure_snapshot_quality_excludes_patterns(self, tmp_path):
         """Test that default exclude patterns are applied.
@@ -478,6 +556,22 @@ class TestMeasureSnapshotQuality:
         file_paths = {fm.file_path for fm in file_metrics_list}
         assert file_paths == {"keep.py", "subdir/also_keep.py"}
         assert all(fm.is_entry_language for fm in file_metrics_list)
+
+    def test_default_exclusions_skip_supported_files(self, tmp_path):
+        """Default exclusions remove source files that are otherwise measurable."""
+        (tmp_path / "keep.py").write_text("# keep")
+        excluded = tmp_path / "node_modules" / "dependency.py"
+        excluded.parent.mkdir()
+        excluded.write_text("# dependency")
+
+        unexcluded = list(measure_files(tmp_path, exclude_patterns=set()))
+        assert {path.name for path, _ in unexcluded} == {
+            "keep.py",
+            "dependency.py",
+        }
+
+        _, file_metrics = measure_snapshot_quality("keep.py", tmp_path)
+        assert {metric.file_path for metric in file_metrics} == {"keep.py"}
 
     def test_measure_snapshot_quality_nested_structure(self, tmp_path):
         """Test with nested directory structure."""
@@ -527,3 +621,67 @@ class TestMeasureSnapshotQuality:
         assert len(file_metrics_list) == 1
         assert file_metrics_list[0].file_path == "code.py"
         assert file_metrics_list[0].is_entry_language is True
+
+    def test_extensionless_entry_matches_explicit_entry_language(
+        self, tmp_path
+    ):
+        """Resolving an entrypoint precedes language-based file measurement."""
+        alternate_spec = LANGUAGE_REGISTRY["python"].model_copy(
+            update={"extensions": {".alt"}}
+        )
+        LANGUAGE_REGISTRY["alternate"] = alternate_spec
+        EXT_TO_LANGUAGE[".alt"] = "alternate"
+        (tmp_path / "main.py").write_text("# entry")
+        (tmp_path / "other.alt").write_text("# alternate")
+
+        explicit_snapshot, explicit_files = measure_snapshot_quality(
+            "main.py", tmp_path
+        )
+        extensionless_snapshot, extensionless_files = measure_snapshot_quality(
+            "main", tmp_path
+        )
+
+        explicit_flags = {
+            metric.file_path: metric.is_entry_language
+            for metric in explicit_files
+        }
+        extensionless_flags = {
+            metric.file_path: metric.is_entry_language
+            for metric in extensionless_files
+        }
+        assert (
+            extensionless_flags
+            == explicit_flags
+            == {
+                "main.py": True,
+                "other.alt": False,
+            }
+        )
+
+        explicit_dir = tmp_path / "explicit"
+        extensionless_dir = tmp_path / "extensionless"
+        save_quality_metrics(explicit_dir, explicit_snapshot, explicit_files)
+        save_quality_metrics(
+            extensionless_dir, extensionless_snapshot, extensionless_files
+        )
+        explicit_rows = [
+            json.loads(line)
+            for line in (explicit_dir / QUALITY_DIR / FILES_QUALITY_SAVENAME)
+            .read_text()
+            .splitlines()
+        ]
+        extensionless_rows = [
+            json.loads(line)
+            for line in (
+                extensionless_dir / QUALITY_DIR / FILES_QUALITY_SAVENAME
+            )
+            .read_text()
+            .splitlines()
+        ]
+        assert [
+            (row["file_path"], row["is_entry_language"])
+            for row in extensionless_rows
+        ] == [
+            (row["file_path"], row["is_entry_language"])
+            for row in explicit_rows
+        ]

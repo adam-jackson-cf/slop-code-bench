@@ -51,7 +51,6 @@ def build_checkpoint_delta_boxplot(context: ChartContext) -> go.Figure:
         context.color_map, context.base_color_map, variation_info
     )
 
-    # Sort runs according to the new logic
     sorted_unique_runs = (
         deltas[
             [
@@ -62,7 +61,6 @@ def build_checkpoint_delta_boxplot(context: ChartContext) -> go.Figure:
                 "run_date",
             ]
         ]
-        .drop_duplicates()
         .sort_values(
             by=[
                 "model_name",
@@ -71,6 +69,7 @@ def build_checkpoint_delta_boxplot(context: ChartContext) -> go.Figure:
                 "run_date",
             ]
         )
+        .drop_duplicates(subset="display_name")
     )
     for display_name in sorted_unique_runs["display_name"]:
         run_data = deltas[deltas["display_name"] == display_name]

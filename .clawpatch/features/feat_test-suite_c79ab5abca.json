@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_test-suite_c79ab5abca",
+  "title": "Python test suite src/slop_code/dashboard/graphs",
+  "summary": "Python pytest files in src/slop_code/dashboard/graphs.",
+  "kind": "test-suite",
+  "source": "python-test-suite",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/dashboard/graphs",
+      "symbol": "src/slop_code/dashboard/graphs",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/dashboard/graphs/test_pass.py",
+      "reason": "pytest file"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "src/slop_code/dashboard/graphs/test_pass.py",
+      "reason": "nearby test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "src/slop_code/dashboard/graphs/test_pass.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "test"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-test-suite-c79ab5abca-5_2a4309cdc5",
+    "fnd_sig-feat-test-suite-c79ab5abca-2_f80d1fce6f"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "2 finding(s); prompt=17988 bytes; approxTokens=4497; includedFiles=2; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T11:01:04.414Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T20:33:59.832Z"
+}

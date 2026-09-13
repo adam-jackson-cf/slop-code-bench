@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import shlex
+import subprocess
 import typing as tp
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -12,10 +15,12 @@ import pytest
 
 from slop_code.agent_runner.agents.cursor_cli import CursorCliAgent
 from slop_code.agent_runner.agents.cursor_cli import CursorCliConfig
+from slop_code.agent_runner.agents.cursor_cli import CursorCliParser
 from slop_code.agent_runner.credentials import CredentialType
 from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
 from slop_code.agent_runner.models import AgentError
+from slop_code.agent_runner.trajectory_parsing import ParseError
 from slop_code.common.llms import APIPricing
 from slop_code.common.llms import ModelDefinition
 from slop_code.execution.runtime import RuntimeEvent
@@ -184,17 +189,110 @@ class TestCursorCliAgent:
             extra_args=["--foo", "bar"],
             env={},
         )
-        command = agent._build_command("fix bug")
-        command_text = " ".join(command)
 
-        assert "cursor-agent" in command_text
-        assert "--yolo" in command_text
-        assert "--print" in command_text
-        assert "--output-format=stream-json" in command_text
-        assert "--model=sonnet-4.5" in command_text
-        assert "--mode=plan" in command_text
-        assert "--foo" in command_text
-        assert "bar" in command_text
+        assert agent._build_command("fix bug") == [
+            "cursor-agent",
+            "--yolo",
+            "--print",
+            "--output-format=stream-json",
+            "--model=sonnet-4.5",
+            "--mode=plan",
+            "--foo",
+            "bar",
+            "--",
+            "fix bug",
+        ]
+
+    def test_shell_serialization_preserves_argument_boundaries(
+        self,
+        tmp_path: Path,
+        mock_cost_limits: AgentCostLimits,
+        mock_pricing: APIPricing,
+        mock_credential: ProviderCredential,
+    ) -> None:
+        captured_args = tmp_path / "captured.json"
+        side_effect = tmp_path / "must-not-exist"
+        binary = tmp_path / "cursor agent"
+        binary.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json\n"
+            "import pathlib\n"
+            "import sys\n"
+            f"pathlib.Path({str(captured_args)!r}).write_text("
+            "json.dumps(sys.argv[1:]))\n",
+            encoding="utf-8",
+        )
+        binary.chmod(0o755)
+
+        runtime = FakeRuntime()
+        runtime.events = [
+            RuntimeEvent(
+                kind="finished",
+                text=None,
+                result=RuntimeResult(
+                    exit_code=0,
+                    stdout="",
+                    stderr="",
+                    setup_stdout="",
+                    setup_stderr="",
+                    elapsed=0.01,
+                    timed_out=False,
+                ),
+            )
+        ]
+        session = FakeSession(
+            runtime=runtime,
+            working_dir=tmp_path,
+            spec=SimpleNamespace(type="docker"),
+        )
+        model = 'model "quoted" $value'
+        extra_args = [
+            "--label=two words",
+            """quote'"$;|&<>""",
+            f"$(touch {side_effect})",
+        ]
+        prompt = f'fix "quoted" $value; $(touch {side_effect})'
+        agent = CursorCliAgent(
+            problem_name="demo-problem",
+            verbose=False,
+            image="cursor-image",
+            cost_limits=mock_cost_limits,
+            pricing=mock_pricing,
+            credential=mock_credential,
+            binary=str(binary),
+            model=model,
+            mode="plan",
+            timeout=None,
+            extra_args=extra_args,
+            env={},
+        )
+        agent.setup(tp.cast("Session", session))
+
+        agent._run_invocation(prompt)
+
+        assert runtime.last_stream_args is not None
+        command = runtime.last_stream_args[0][0]
+        expected_args = [
+            str(binary),
+            "--yolo",
+            "--print",
+            "--output-format=stream-json",
+            f"--model={model}",
+            "--mode=plan",
+            *extra_args,
+            "--",
+            prompt,
+        ]
+        assert command == shlex.join(expected_args)
+        subprocess.run(  # noqa: S603 - exercises controlled shell serialization
+            ["/bin/sh", "-c", command],
+            check=True,
+        )
+        assert not side_effect.exists()
+        assert (
+            json.loads(captured_args.read_text(encoding="utf-8"))
+            == (expected_args[1:])
+        )
 
     def test_run_requires_cursor_api_key(
         self,
@@ -432,6 +530,74 @@ class TestCursorCliAgentParseLine:
         assert cost is None
         assert tokens is None
         assert payload is None
+
+    @pytest.mark.parametrize("usage", [None, [], "invalid"])
+    def test_parse_line_ignores_invalid_usage(
+        self, mock_pricing: APIPricing, usage: object
+    ) -> None:
+        line = json.dumps({"type": "result", "usage": usage})
+
+        cost, tokens, payload = CursorCliAgent.parse_line(
+            line, pricing=mock_pricing
+        )
+
+        assert cost is None
+        assert tokens is None
+        assert payload == {"type": "result", "usage": usage}
+
+
+class TestCursorCliParser:
+    @pytest.mark.parametrize("record", ["null", "[]", '"not an object"'])
+    def test_can_parse_skips_non_object_records(
+        self, tmp_path: Path, record: str
+    ) -> None:
+        (tmp_path / "stdout.jsonl").write_text(
+            f"{record}\n"
+            '{"type":"system","subtype":"init","apiKeySource":"env",'
+            '"permissionMode":"default"}\n',
+            encoding="utf-8",
+        )
+
+        assert CursorCliParser().can_parse(tmp_path) is True
+
+    @pytest.mark.parametrize("record", ["null", "[]", '"not an object"'])
+    def test_parse_rejects_non_object_records(
+        self, tmp_path: Path, record: str
+    ) -> None:
+        (tmp_path / "stdout.jsonl").write_text(f"{record}\n", encoding="utf-8")
+
+        with pytest.raises(
+            ParseError, match="Invalid record at line 1: expected object"
+        ):
+            CursorCliParser().parse(tmp_path)
+
+    @pytest.mark.parametrize(
+        ("record", "error"),
+        [
+            (
+                '{"type":"assistant","message":null}',
+                "Invalid assistant message at line 1: expected object",
+            ),
+            (
+                '{"type":"assistant","message":[]}',
+                "Invalid assistant message at line 1: expected object",
+            ),
+            (
+                '{"type":"assistant","message":{"content":null}}',
+                "Invalid assistant message content at line 1: expected array",
+            ),
+        ],
+    )
+    def test_parse_rejects_malformed_assistant_messages(
+        self,
+        tmp_path: Path,
+        record: str,
+        error: str,
+    ) -> None:
+        (tmp_path / "stdout.jsonl").write_text(f"{record}\n", encoding="utf-8")
+
+        with pytest.raises(ParseError, match=error):
+            CursorCliParser().parse(tmp_path)
 
 
 class TestCursorCliAgentRegistration:

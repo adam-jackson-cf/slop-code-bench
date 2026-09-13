@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-d62faeefcf-1913_5bf9f18c3d",
+  "featureId": "feat_library_d62faeefcf",
+  "title": "Missing optional lint data breaks both quality charts",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_quality.py",
+      "startLine": 183,
+      "endLine": 192,
+      "symbol": "update_quality",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_quality.py",
+      "startLine": 27,
+      "endLine": 32,
+      "symbol": "make_quality_scatter_checkpoint_level",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_evolution.py",
+      "startLine": 128,
+      "endLine": 131,
+      "symbol": "update_evolution",
+      "quote": null
+    }
+  ],
+  "reasoning": "The evolution page explicitly supports checkpoint data without lint_errors, but the quality page unconditionally selects that column. For the same supported dataset, this raises KeyError before either figure is returned, also preventing the available complexity comparison from rendering.",
+  "reproduction": "Supply checkpoints for both selected runs with problem, idx, cc_high_count and metadata, but no lint_errors column, then invoke update_quality.",
+  "recommendation": "Check metric availability before selecting columns and return an unavailable or empty figure for missing lint data while rendering the complexity comparison.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; the supplied evidence contains no coverage of optional metric availability across pages.",
+  "suggestedRegressionTest": "Exercise the quality callback with optional metrics present and absent, asserting that unavailable metrics do not prevent available comparisons from rendering.",
+  "minimumFixScope": "Metric availability handling in head_to_head_quality.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T204058-92e62c",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Original evidence paths and symbols still exist. Quality lines 26–27 now guard missing metrics before column selection; update_quality independently builds lint and complexity figures at lines 182–203. Evolution lines 128–133 likewise select available metrics independently. An existing test, test_missing_lint_does_not_hide_complexity_comparison, verifies empty lint output and preserved complexity values. This supports a repair, but targeted pytest validation failed before collection because the read-only environment provides no writable temporary directory, so fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/pages/head_to_head_quality.py | sed -n '18,40p;150,210p'",
+        "nl -ba src/slop_code/dashboard/pages/head_to_head_evolution.py | sed -n '120,140p'",
+        "rg -n 'quality|optional|lint_errors' tests/dashboard",
+        "sed -n '1,165p' tests/dashboard/pages_test.py",
+        "codegraph --version",
+        "codegraph status",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/pages_test.py"
+      ],
+      "createdAt": "2026-09-12T20:41:24.828Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified absent optional lint yields unavailable lint output without suppressing available complexity comparison; 5 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:42:40.321Z"
+    }
+  ],
+  "signature": "sig_feat-library-d62faeefcf_1913ae7de9",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:35.894Z",
+  "updatedAt": "2026-09-12T20:42:40.320Z"
+}

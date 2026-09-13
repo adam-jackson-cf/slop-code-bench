@@ -52,23 +52,32 @@ def test_metric_value_reads_strict_and_isolated_pass_rates() -> None:
     assert _metric_value(row, "isolated_pass_rate") == 0.8
 
 
-def test_render_problem_cv_summary_splits_tables() -> None:
-    console = Console(record=True, width=120)
+def test_render_problem_cv_summary_interleaves_first_final_values() -> None:
+    console = Console(record=True, width=200)
     problem_cv_summary = {
         "sample": {
             "Pass rate": [0.3],
             "Lint": [0.1],
             "LOC": [0.5],
+            "High CC count": [0.4],
         }
     }
     problem_first_cv_summary = {
         "sample": {
-            "Pass rate": [0.05],
-            "Lint": [0.01],
-            "LOC": [0.05],
+            "Pass rate": [0.11],
+            "Lint": [0.22],
+            "LOC": [0.33],
+            "High CC count": [0.77],
         }
     }
-    problem_final_cv_summary = problem_first_cv_summary
+    problem_final_cv_summary = {
+        "sample": {
+            "Pass rate": [0.44],
+            "Lint": [0.55],
+            "LOC": [0.66],
+            "High CC count": [0.88],
+        }
+    }
 
     _render_problem_cv_summary(
         console,
@@ -78,11 +87,37 @@ def test_render_problem_cv_summary_splits_tables() -> None:
     )
 
     output = console.export_text()
-    assert "overall CV" in output
-    assert "first vs final checkpoints" in output
-    assert "High CC count" in output
-    assert "Average CV by problem (overall across checkpoints)" in output
-    assert "Average CV by problem (first vs final checkpoints)" in output
+    headers = [
+        "Pass rate first CV",
+        "Pass rate final CV",
+        "Lint first CV",
+        "Lint final CV",
+        "LOC first CV",
+        "LOC final CV",
+        "High CC count first CV",
+        "High CC count final CV",
+    ]
+    assert [output.index(header) for header in headers] == sorted(
+        output.index(header) for header in headers
+    )
+    values_line = next(
+        line
+        for line in output.splitlines()
+        if "sample" in line and "0.11" in line
+    )
+    values = [
+        "0.11",
+        "0.44",
+        "0.22",
+        "0.55",
+        "0.33",
+        "0.66",
+        "0.77",
+        "0.88",
+    ]
+    assert [values_line.index(value) for value in values] == sorted(
+        values_line.index(value) for value in values
+    )
 
 
 def test_collect_ci_entries_filters_by_width() -> None:
@@ -90,8 +125,14 @@ def test_collect_ci_entries_filters_by_width() -> None:
         "problem": "prob",
         "run_count": 3,
         "final.delta.loc.mean": 1.0,
-        "final.delta.loc.ci95_low": 0.4,
-        "final.delta.loc.ci95_high": 1.6,
+        "final.delta.loc.ci95_low": 0.0,
+        "final.delta.loc.ci95_high": 0.4,
+        "final.delta.verbosity.mean": 1.0,
+        "final.delta.verbosity.ci95_low": 0.0,
+        "final.delta.verbosity.ci95_high": 0.5,
+        "final.delta.churn_ratio.mean": 1.0,
+        "final.delta.churn_ratio.ci95_low": 0.0,
+        "final.delta.churn_ratio.ci95_high": 0.6,
     }
     key = RunGroupKey(
         model="m",
@@ -103,8 +144,10 @@ def test_collect_ci_entries_filters_by_width() -> None:
 
     entries = _collect_ci_entries(record, key, min_width=0.5)
 
-    assert len(entries) == 1
-    assert entries[0].width == pytest.approx(1.2)
+    assert [(entry.metric, entry.width) for entry in entries] == [
+        ("Verbosity delta (final)", pytest.approx(0.5)),
+        ("Churn ratio (final)", pytest.approx(0.6)),
+    ]
 
 
 def test_collect_ci_entries_filters_to_allowed_delta_metrics() -> None:

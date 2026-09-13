@@ -189,9 +189,8 @@ def add_smart_annotations(
 
         placed.append((px_x, px_y, best_ax, best_ay, text_width_px))
 
-        x_display = math.log10(x) if log_x and x > 0 else x
         fig.add_annotation(
-            x=x_display,
+            x=x,
             y=y,
             xref=xref,
             yref=yref,
@@ -440,12 +439,12 @@ SCATTER_CHARTS: dict[str, ScatterChartConfig] = {
     ),
     "lint_vs_solve": ScatterChartConfig(
         aggregator=aggregate_lint_vs_solve,
-        x_axis=AxisConfig("Lint Errors", "log"),
+        x_axis=AxisConfig("Lint Errors"),
         y_axis=AxisConfig("% Checkpoints Solved"),
     ),
     "rubric_vs_solve": ScatterChartConfig(
         aggregator=aggregate_rubric_vs_solve,
-        x_axis=AxisConfig("Rubric Flags", "log"),
+        x_axis=AxisConfig("Rubric Flags"),
         y_axis=AxisConfig("% Checkpoints Solved"),
     ),
 }

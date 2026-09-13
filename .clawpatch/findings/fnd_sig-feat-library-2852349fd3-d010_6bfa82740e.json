@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-2852349fd3-d010_6bfa82740e",
+  "featureId": "feat_library_2852349fd3",
+  "title": "Non-unique symbol keys multiply mass during matching",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "scripts/mass_delta_analysis.py",
+      "startLine": 54,
+      "endLine": 61,
+      "symbol": "symbol_key",
+      "quote": null
+    },
+    {
+      "path": "scripts/mass_delta_analysis.py",
+      "startLine": 163,
+      "endLine": 168,
+      "symbol": "match_symbols",
+      "quote": null
+    },
+    {
+      "path": "scripts/mass_delta_analysis.py",
+      "startLine": 302,
+      "endLine": 320,
+      "symbol": "analyze_transition",
+      "quote": null
+    }
+  ],
+  "reasoning": "Keys contain only the file, parent class, and name, and uniqueness is never checked. Multiple function records sharing these fields produce a many-to-many merge. Two matching records on each side become four matched rows, inflating total mass and symbol counts. Repeated nested function names in different enclosing functions can collide because enclosing function identity is absent.",
+  "reproduction": "Pass two rows per checkpoint with identical file_path, parent_class, and name, each having complexity=2 and statements=1. Matching produces four rows and reports complexity mass 4 per checkpoint instead of 2.",
+  "recommendation": "Use a scope-aware identity and enforce one-to-one matching. Resolve ambiguous groups explicitly instead of allowing a Cartesian merge.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were supplied for duplicate identities or conservation of mass across matching.",
+  "suggestedRegressionTest": "Exercise repeated names in distinct scopes and ambiguous identities; assert each input symbol participates at most once and reported total mass equals direct calculation from each checkpoint.",
+  "minimumFixScope": "symbol_key, match_symbols, and matching invariant tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central behavioral verification passed for this implemented fix, with focused pytest plus changed-path Ruff and ty green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked until 2026-09-17; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:41:46.679Z"
+    }
+  ],
+  "signature": "sig_feat-library-2852349fd3_d010800a07",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:59.952Z",
+  "updatedAt": "2026-09-12T07:41:46.678Z"
+}

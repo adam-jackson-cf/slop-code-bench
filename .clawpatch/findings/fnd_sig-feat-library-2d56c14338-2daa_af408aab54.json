@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-2d56c14338-2daa_af408aab54",
+  "featureId": "feat_library_2d56c14338",
+  "title": "Blocking text reads can stall streaming and deadlock output draining",
+  "category": "concurrency",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/local_streaming.py",
+      "startLine": 130,
+      "endLine": 142,
+      "symbol": "LocalStreamingRuntime._start_process",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/local_streaming.py",
+      "startLine": 158,
+      "endLine": 176,
+      "symbol": "LocalStreamingRuntime._create_demuxed_stream",
+      "quote": null
+    }
+  ],
+  "reasoning": "Selector readiness guarantees that some bytes can be read, but TextIOWrapper.read(8192) on a blocking pipe can continue waiting for 8192 characters or EOF. A child that flushes a short stdout message and remains running will not reliably deliver that message promptly. If it subsequently fills stderr, the reader remains blocked on stdout while the child blocks writing stderr, causing a deadlock. bufsize=0 does not make the text wrapper nonblocking.",
+  "reproduction": "Run a child that flushes a short stdout marker, writes more than a pipe's capacity to stderr, and then exits. The demultiplexer can block waiting for additional stdout while stderr remains undrained.",
+  "recommendation": "Read available bytes from binary pipes using nonblocking reads or bounded raw reads, and decode each stream incrementally.",
+  "whyTestsDoNotAlreadyCoverThis": "Existing output tests use short-lived commands and small mixed output. They assert final content rather than delivery before process exit or progress when the other pipe fills.",
+  "suggestedRegressionTest": "Extend mixed-output coverage with a synchronized child that emits a short flushed marker followed by stderr exceeding pipe capacity. Assert prompt marker delivery and complete draining under an independent watchdog, including split multibyte characters.",
+  "minimumFixScope": "Streaming subprocess pipe configuration, _create_demuxed_stream, and streaming output tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165917-68d46e",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The original file and methods still exist, but the blocking text reads have been replaced: line 139 uses binary pipes; lines 165–180 configure nonblocking descriptors, use os.read, and decode each stream incrementally. Direct validation against the current runtime passed: a split UTF-8 marker arrived in 0.129 seconds while the child remained alive, followed by complete draining of 1,048,576 stderr bytes and exit code 0 without timeout, under an independent watchdog. No linked patch attempts were supplied. The initial heredoc invocation was blocked by sandbox temporary-file restrictions; the equivalent Python -c validation succeeded.",
+      "commands": [
+        "nl -ba src/slop_code/execution/local_streaming.py | sed -n '125,200p'",
+        "rg -n 'mixed_output|marker|blocking' tests/execution/local_streaming_test.py",
+        "ls .venv/bin/python*",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B - <<'PY' ... PY (blocked before execution by sandbox)",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c '<direct runtime validation: split UTF-8 marker, delivery before exit, 1 MiB stderr draining, independent 5-second watchdog>'"
+      ],
+      "createdAt": "2026-09-11T16:59:56.554Z"
+    }
+  ],
+  "signature": "sig_feat-library-2d56c14338_2daa66535c",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:02.444Z",
+  "updatedAt": "2026-09-11T16:59:56.554Z"
+}

@@ -10,6 +10,11 @@ import pytest
 from slop_code import problem_catalog
 
 
+@pytest.fixture(autouse=True)
+def _clear_problem_root_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SCBENCH_PROBLEMS_PATH", raising=False)
+
+
 @dataclass
 class _FakeResponse:
     payload: dict[str, object]
@@ -346,6 +351,46 @@ def test_sync_catalog_failure_leaves_existing_install_untouched(
 
     assert (current_root / "stable" / "config.yaml").exists()
     assert problem_catalog.load_manifest(home) == existing
+
+
+@pytest.mark.parametrize("failed_replace", [1, 2, 3, 4])
+def test_promotion_failure_preserves_existing_install(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failed_replace: int,
+) -> None:
+    home = tmp_path / "scbench"
+    catalog_root = problem_catalog.get_catalog_root(home)
+    original_catalog = catalog_root / "stable" / "config.yaml"
+    original_catalog.parent.mkdir(parents=True)
+    original_catalog.write_bytes(b"name: stable\nversion: old\n")
+    manifest_path = problem_catalog.get_manifest_path(home)
+    original_manifest = b'{"version":"v0.9.0","commit":"oldsha"}\n'
+    manifest_path.write_bytes(original_manifest)
+
+    staged_catalog = tmp_path / "staged-problems"
+    (staged_catalog / "alpha").mkdir(parents=True)
+    (staged_catalog / "alpha" / "config.yaml").write_bytes(b"name: alpha\n")
+    staged_manifest = tmp_path / "staged-manifest.json"
+    staged_manifest.write_bytes(b'{"version":"v1.0.0","commit":"newsha"}\n')
+
+    original_replace = Path.replace
+    replace_calls = 0
+
+    def fail_promotion_replace(path: Path, target: Path) -> Path:
+        nonlocal replace_calls
+        replace_calls += 1
+        if replace_calls == failed_replace:
+            raise OSError("promotion rename failed")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_promotion_replace)
+
+    with pytest.raises(problem_catalog.CatalogError):
+        problem_catalog._promote_install(home, staged_catalog, staged_manifest)
+
+    assert original_catalog.read_bytes() == b"name: stable\nversion: old\n"
+    assert manifest_path.read_bytes() == original_manifest
 
 
 def test_ensure_catalog_installed_bootstraps_and_recovers_partial_install(

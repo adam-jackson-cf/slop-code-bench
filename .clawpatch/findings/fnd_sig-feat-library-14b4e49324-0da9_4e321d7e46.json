@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-14b4e49324-0da9_4e321d7e46",
+  "featureId": "feat_library_14b4e49324",
+  "title": "Directory enumeration failures silently produce a valid partial inventory",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/scoring/inventory.py",
+      "startLine": 162,
+      "endLine": 168,
+      "symbol": "_iter_entries.walk",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/scoring/inventory.py",
+      "startLine": 324,
+      "endLine": 328,
+      "symbol": "build_inventory",
+      "quote": null
+    }
+  ],
+  "reasoning": "An OSError from os.scandir terminates traversal of that directory without recording an invalid code. Consequently, an unreadable source subtree disappears from the inventory while is_valid can remain true. Scoring can then use incomplete production evidence, including omitting unsupported-language files.",
+  "reproduction": "Inventory a readable root containing a readable Python file and a subdirectory whose enumeration raises PermissionError. The returned inventory contains only the readable file and reports no enumeration error.",
+  "recommendation": "Propagate enumeration failures or emit an explicit invalid-entry signal that build_inventory converts to score_evidence_invalid.",
+  "whyTestsDoNotAlreadyCoverThis": "The included test file exercises general metrics aggregation and language registration, not scoring inventory traversal or filesystem failures.",
+  "suggestedRegressionTest": "Exercise enumeration failures at both the root and a nested directory and assert that neither can yield a valid partial inventory.",
+  "minimumFixScope": "src/slop_code/metrics/scoring/inventory.py traversal error propagation and focused inventory tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T195848-aedf25",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the cited lines have changed. inventory.py:169–174 now raises InventoryEnumerationError on scandir failures; build_inventory at lines 222–229 catches it and returns no files with score_evidence_invalid. Read-only runtime validation injecting PermissionError at both root and nested directories passed, confirming is_valid=False and no partial inventory. Existing regression coverage checks both cases. No linked patch attempts were supplied. CodeGraph was unavailable; direct file inspection was used. An initial heredoc was blocked by filesystem restrictions; the same validation succeeded using python -c.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba src/slop_code/metrics/scoring/inventory.py | sed -n '155,240p'",
+        "rg -n 'enumerat|scandir|PermissionError' tests/metrics",
+        "sed -n '140,195p' tests/metrics/scoring_inventory_test.py",
+        "nl -ba src/slop_code/metrics/scoring/inventory.py | sed -n '320,370p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B -c '<inject PermissionError into os.scandir at root and nested directories; assert empty files, score_evidence_invalid, and is_valid=False>'"
+      ],
+      "createdAt": "2026-09-12T19:59:26.424Z"
+    }
+  ],
+  "signature": "sig_feat-library-14b4e49324_0da99a0608",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:05.163Z",
+  "updatedAt": "2026-09-12T19:59:26.424Z"
+}

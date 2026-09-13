@@ -36,7 +36,6 @@ def build_test_pass_rate_bars(context: ChartContext) -> go.Figure:
         context.color_map, context.base_color_map, variation_info
     )
 
-    # Sort runs according to the new logic
     sorted_unique_runs = (
         df[
             [
@@ -47,7 +46,6 @@ def build_test_pass_rate_bars(context: ChartContext) -> go.Figure:
                 "run_date",
             ]
         ]
-        .drop_duplicates()
         .sort_values(
             by=[
                 "model_name",
@@ -56,6 +54,7 @@ def build_test_pass_rate_bars(context: ChartContext) -> go.Figure:
                 "run_date",
             ]
         )
+        .drop_duplicates(subset="display_name")
     )
     for display_name in sorted_unique_runs["display_name"]:
         run_df = df[df["display_name"] == display_name]
@@ -76,12 +75,7 @@ def build_test_pass_rate_bars(context: ChartContext) -> go.Figure:
             if is_grouped:
                 # If grouped, run_df contains checkpoints from multiple runs.
                 # We want the mean of means per run.
-                run_means = run_df.groupby("run_path").apply(
-                    lambda g: (
-                        g[passed_col] / g[total_col].replace(0, 1)
-                    ).mean()
-                    * 100
-                )
+                run_means = rates.groupby(run_df["run_path"]).mean()
                 return run_means.mean(), run_means.std()
 
             return rates.mean(), 0
@@ -144,7 +138,7 @@ def build_test_pass_rate_bars(context: ChartContext) -> go.Figure:
             fig.update_yaxes(row=r, col=c, gridcolor="lightgray")
 
     fig.update_yaxes(
-        title_text="Total Errors", row=2, col=2, gridcolor="lightgray"
+        title_text="Avg Pass %", row=2, col=2, gridcolor="lightgray"
     )
 
     for r in [1, 2]:

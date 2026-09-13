@@ -68,17 +68,13 @@ class LineCountMetrics(BaseModel):
 
 
 class LintMetrics(BaseModel):
-    """Metrics for a lint report.
+    """Metrics from a lint report or an explicit unavailable result."""
 
-    Attributes:
-        errors: Number of flagged items by the linter.
-        fixable: Number of fixable errors.
-        counts: Counts of flagged items by the code.
-    """
-
-    errors: int
-    fixable: int
+    errors: int | None
+    fixable: int | None
     counts: dict[str, int]
+    available: bool = True
+    unavailable_reason: str | None = None
 
 
 def _compute_rating(complexity: int) -> Literal["A", "B", "C", "D", "E", "F"]:
@@ -282,11 +278,13 @@ class WasteMetrics(BaseModel):
 
 
 class TypeCheckMetrics(BaseModel):
-    """Per-file type checking results from ty."""
+    """Metrics from a type-checking report or an explicit unavailable result."""
 
-    errors: int
-    warnings: int
-    counts: dict[str, int]  # rule_id -> count
+    errors: int | None
+    warnings: int | None
+    counts: dict[str, int]
+    available: bool = True
+    unavailable_reason: str | None = None
 
 
 class FunctionStats(BaseModel):
@@ -421,19 +419,43 @@ class WasteAggregates(BaseModel):
 
 
 class TypeCheckAggregates(BaseModel):
-    """Aggregate type checking metrics."""
+    """Aggregate type checking metrics without turning failures into zeros."""
 
-    errors: int
-    warnings: int
+    errors: int | None
+    warnings: int | None
     counts: dict[str, int] = {}
+    available: bool = True
+    unavailable_reason: str | None = None
 
     def update(self, fm: FileMetrics) -> None:
         """Update aggregates from a FileMetrics instance."""
-        if fm.type_check:
-            self.errors += fm.type_check.errors
-            self.warnings += fm.type_check.warnings
-            for rule, count in fm.type_check.counts.items():
-                self.counts[rule] = self.counts.get(rule, 0) + count
+        if fm.type_check is None:
+            return
+        if not fm.type_check.available:
+            self.errors = None
+            self.warnings = None
+            self.counts = {}
+            self.available = False
+            self.unavailable_reason = "type_check_unavailable_in_snapshot"
+            return
+        if not self.available:
+            return
+        if (
+            self.errors is None
+            or self.warnings is None
+            or fm.type_check.errors is None
+            or fm.type_check.warnings is None
+        ):
+            self.errors = None
+            self.warnings = None
+            self.counts = {}
+            self.available = False
+            self.unavailable_reason = "type_check_unavailable_in_snapshot"
+            return
+        self.errors += fm.type_check.errors
+        self.warnings += fm.type_check.warnings
+        for rule, count in fm.type_check.counts.items():
+            self.counts[rule] = self.counts.get(rule, 0) + count
 
 
 class GraphMetrics(BaseModel):
@@ -494,8 +516,10 @@ class SnapshotQualityReport(BaseModel):
 
     files: int
     overall_lines: LineCountMetrics
-    lint_errors: int
-    lint_fixable: int
+    lint_errors: int | None
+    lint_fixable: int | None
+    lint_available: bool = True
+    lint_unavailable_reason: str | None = None
     cc_counts: dict[Literal["A", "B", "C", "D", "E", "F"], int]
     mi: dict[Literal["A", "B", "C"], int]
     graph: GraphMetrics | None = None
@@ -510,6 +534,8 @@ class SnapshotQualityReport(BaseModel):
             overall_lines=snapshot_metrics.lines,
             lint_errors=snapshot_metrics.lint.errors,
             lint_fixable=snapshot_metrics.lint.fixable,
+            lint_available=snapshot_metrics.lint.available,
+            lint_unavailable_reason=snapshot_metrics.lint.unavailable_reason,
             cc_counts=snapshot_metrics.complexity.cc_ratings,
             mi=snapshot_metrics.complexity.mi_ratings,
             graph=snapshot_metrics.graph,

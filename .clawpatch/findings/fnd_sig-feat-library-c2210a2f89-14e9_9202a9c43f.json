@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-c2210a2f89-14e9_9202a9c43f",
+  "featureId": "feat_library_c2210a2f89",
+  "title": "Tool calls are duplicated when execution starts",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/pi/parser.py",
+      "startLine": 124,
+      "endLine": 137,
+      "symbol": "PiParser._process_message_end",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/pi/parser.py",
+      "startLine": 173,
+      "endLine": 183,
+      "symbol": "PiParser._process_tool_start",
+      "quote": null
+    }
+  ],
+  "reasoning": "An assistant toolCall appends a ToolUseStep and registers it by call ID. A subsequent tool_execution_start for that same ID unconditionally appends another step and replaces the pending entry. Completion updates only the second step, leaving a duplicate unresolved tool call in the trajectory. This distorts tool counts and the recorded execution history.",
+  "reproduction": "Parse an assistant message_end containing toolCall ID 'a', followed by tool_execution_start and tool_execution_end with toolCallId 'a'. The trajectory contains two tool steps for one invocation, with the first result remaining null.",
+  "recommendation": "Reuse the pending step when tool_execution_start references an already recorded call ID. Create a new step only when no corresponding call exists.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included, so existing coverage could not be verified.",
+  "suggestedRegressionTest": "Cover complete tool lifecycles both with and without preceding assistant toolCall blocks, including multiple interleaved call IDs; assert one step per invocation with the correct arguments and final result.",
+  "minimumFixScope": "PiParser._process_tool_start and the relevant trajectory lifecycle tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193811-b73667",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and symbols still exist. Assistant toolCall registration is now at parser.py:131–144; _process_tool_start at lines 180–187 checks pending_tools and returns when the call already exists, supporting the intended repair. Tests cover complete and interleaved lifecycles. However, targeted pytest validation exited 1 before running tests because the read-only environment provides no usable temporary directory. No linked patch attempts were supplied. The code appears repaired, but failed validation prevents a fixed verdict.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/pi/parser.py | sed -n '120,205p'",
+        "rg -n 'tool_lifecycle|interleav|tool_execution_start|PiParser' tests/agent_runner --glob '*.py'",
+        "sed -n '950,1090p' tests/agent_runner/agents/pi_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/pi_agent_test.py::TestPiParser tests/agent_runner/parsers/test_new_parsers.py::TestPiParser"
+      ],
+      "createdAt": "2026-09-12T19:38:40.480Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified tool execution reuses pending call IDs and produces one step per invocation; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:20.807Z"
+    }
+  ],
+  "signature": "sig_feat-library-c2210a2f89_14e95d9ef7",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:10.543Z",
+  "updatedAt": "2026-09-12T19:39:20.805Z"
+}

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-2d56c14338-6ee1_9773306e2b",
+  "featureId": "feat_library_2d56c14338",
+  "title": "Streaming execution drops spawn-time environment variables",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/local_streaming.py",
+      "startLine": 86,
+      "endLine": 91,
+      "symbol": "LocalStreamingRuntime.__init__",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/local_streaming.py",
+      "startLine": 128,
+      "endLine": 142,
+      "symbol": "LocalStreamingRuntime._start_process",
+      "quote": null
+    },
+    {
+      "path": "tests/execution/local_exec_test.py",
+      "startLine": 491,
+      "endLine": 506,
+      "symbol": "test_env_var_merging",
+      "quote": null
+    }
+  ],
+  "reasoning": "The streaming runtime stores env_vars but passes only the per-command env to get_full_env. Variables supplied during spawn therefore reach setup commands but disappear from subsequent commands. The equivalent exec runtime explicitly merges both sources, and its integration test establishes the intended precedence and preservation behavior.",
+  "reproduction": "Spawn a streaming runtime with env_vars containing a unique variable, then stream a command that reads it with env={}. The configured value is absent.",
+  "recommendation": "Merge self._env_vars with the per-command env before calling get_full_env, allowing per-command values to override spawn-time values.",
+  "whyTestsDoNotAlreadyCoverThis": "Streaming tests only pass variables directly to stream(); the spawn/execute merging scenario exists only for LocalExecRuntime.",
+  "suggestedRegressionTest": "Extend streaming environment coverage to check preservation of spawn-only and command-only variables and command-level precedence for overlapping keys.",
+  "minimumFixScope": "LocalStreamingRuntime._start_process and streaming environment tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170032-90fd85",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "All evidence paths still exist, but line positions changed. Spawn variables are stored at local_streaming.py:96 and now merged with command variables at lines 132–135, with command values taking precedence. The exec comparison test moved to line 531; streaming coverage at lines 307–334 now checks preservation and precedence. No linked patch attempts were supplied. The code supports the repair, but targeted validation failed to start because the read-only sandbox blocked heredoc temporary-file creation, so fixed is not verified.",
+      "commands": [
+        "nl -ba src/slop_code/execution/local_streaming.py | sed -n '86,145p'",
+        "rg -n 'test_env_var_merging|test_stream_merges_spawn|def get_full_env' tests/execution/local_exec_test.py tests/execution/local_streaming_test.py src/slop_code/execution/models.py",
+        "sed -n '219,242p' src/slop_code/execution/models.py",
+        "sed -n '307,338p' tests/execution/local_streaming_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B - <<'PY' [targeted environment validation script; blocked before execution]"
+      ],
+      "createdAt": "2026-09-11T17:00:58.749Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:00:59.486Z"
+    }
+  ],
+  "signature": "sig_feat-library-2d56c14338_6ee1e0d52e",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:02.444Z",
+  "updatedAt": "2026-09-11T17:00:59.486Z"
+}

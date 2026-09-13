@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-b487360049-a404_3d2d4e3a67",
+  "featureId": "feat_library_b487360049",
+  "title": "Canary stripping deletes specification content through later HTML comments",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/common/render.py",
+      "startLine": 28,
+      "endLine": 44,
+      "symbol": "strip_canary_string",
+      "quote": null
+    },
+    {
+      "path": "tests/common/render_test.py",
+      "startLine": 139,
+      "endLine": 184,
+      "symbol": "TestStripCanaryString",
+      "quote": null
+    }
+  ],
+  "reasoning": "The greedy [\\s\\S]+ matches through the last matching comment terminator in the specification. When a leading canary is followed by specification text and another HTML comment, stripping removes the intervening requirements as well. render_prompt applies this transformation automatically, so the agent receives an incomplete specification.",
+  "reproduction": "strip_canary_string('<!-- CANARY -->\\nRequired behavior\\n<!-- note -->\\nRemaining text') returns 'Remaining text', losing 'Required behavior'.",
+  "recommendation": "Bound matching to the first closing comment delimiter, preserving all subsequent specification content.",
+  "whyTestsDoNotAlreadyCoverThis": "Tests cover a leading canary and a non-leading comment separately, but never combine them in one specification.",
+  "suggestedRegressionTest": "Expand canary stripping scenarios to include leading single-line and multiline canaries followed by requirements and additional HTML comments; assert the entire suffix is preserved.",
+  "minimumFixScope": "Update CANARY_HTML_COMMENT_PATTERN and extend TestStripCanaryString.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165717-1d8692",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. render.py:28 now uses non-greedy matching, and TestStripCanaryString moved to render_test.py:161 with suffix-preservation tests at lines 210–222. These changes support the intended repair, but targeted pytest validation failed before collection because the read-only environment has no writable temporary directory; the reproduction command was also blocked by temporary-file creation. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/common/render.py | head -50",
+        "nl -ba tests/common/render_test.py | sed -n '160,255p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/common/render_test.py -k 'canary'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python - <<'PY'\nfrom slop_code.common.render import strip_canary_string, render_prompt\nsuffix = 'Required behavior\\n<!-- note -->\\nRemaining text'\nfor prefix in ('<!-- CANARY -->\\n', '<!-- CANARY\\nTRACKING -->\\n'):\n    text = prefix + suffix\n    assert strip_canary_string(text) == suffix\n    assert render_prompt(text, {}, '{{ spec }}', 'main.py', 'python main.py') == suffix\nprint('Original reproduction and multiline variant preserve the complete suffix through stripping and prompt rendering.')\nPY"
+      ],
+      "createdAt": "2026-09-11T16:57:44.119Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:57:44.689Z"
+    }
+  ],
+  "signature": "sig_feat-library-b487360049_a4045b2c51",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:11.870Z",
+  "updatedAt": "2026-09-11T16:57:44.689Z"
+}

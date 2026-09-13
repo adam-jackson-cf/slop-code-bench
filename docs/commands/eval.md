@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2026-08-29
+last_updated: 2026-09-12
 ---
 
 # eval
@@ -37,23 +37,16 @@ slop-code eval [OPTIONS] RUN_DIR
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `--problem` | string | (all) | Name of specific problems to evaluate (repeatable) |
-| `--assessment-policy` | enum | `ALL_CASES` | Policy used to assess checkpoint success |
+| `--assessment-policy` | string | `all-cases` | Strict checkpoint assessment policy |
 | `-e, --env-config` | path | `<run>/environment.yaml` | Path to environment configuration |
 | `--live-progress/--no-live-progress` | flag | false | Enable live progress display |
 | `-proc, --num-workers` | int | 1 | Number of parallel evaluation workers |
 | `--overwrite` | flag | false | Re-evaluate problems with existing results |
 
-### Assessment Policy Values
+### Assessment Policy
 
-| Value | Description |
-|-------|-------------|
-| `any` | Pass if at least one case passes |
-| `any-case` | Same as `any` |
-| `all-cases` | Pass only if all test cases pass |
-| `all-non-error-cases` | Pass if all non-error cases pass |
-| `core-cases` | Pass if all core cases pass |
-| `any-core-cases` | Pass if any core case passes |
-| `all-core-cases` | Same as `core-cases` |
+Evaluation accepts only the strict `all-cases` policy. A checkpoint passes only
+when every evaluated test case passes.
 
 ## Behavior
 

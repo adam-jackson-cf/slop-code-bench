@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-2852349fd3-46ac_15429c4f95",
+  "featureId": "feat_library_2852349fd3",
+  "title": "Exact mass thresholds count one extra symbol",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "scripts/mass_delta_analysis.py",
+      "startLine": 207,
+      "endLine": 219,
+      "symbol": "compute_distribution",
+      "quote": null
+    }
+  ],
+  "reasoning": "Using searchsorted with side=\"right\" skips a cumulative sum equal to the target. The reported number of symbols needed to account for a percentage is therefore inflated whenever a prefix reaches that percentage exactly.",
+  "reproduction": "For masses [50, 25, 25], the function reports 2 symbols for 50% and 3 for 75%; the correct counts are 1 and 2.",
+  "recommendation": "Use the first cumulative sum greater than or equal to the threshold, with side=\"left\".",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; no supplied coverage establishes behavior at exact cumulative thresholds.",
+  "suggestedRegressionTest": "Cover exact and in-between thresholds, repeated masses, trailing zero masses, and empty inputs; assert the returned prefix reaches the target and no shorter prefix does.",
+  "minimumFixScope": "compute_distribution and its behavioral tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central behavioral verification passed for this implemented fix, with focused pytest plus changed-path Ruff and ty green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked until 2026-09-17; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:41:44.440Z"
+    }
+  ],
+  "signature": "sig_feat-library-2852349fd3_46ac9f3faa",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:59.952Z",
+  "updatedAt": "2026-09-12T07:41:44.439Z"
+}

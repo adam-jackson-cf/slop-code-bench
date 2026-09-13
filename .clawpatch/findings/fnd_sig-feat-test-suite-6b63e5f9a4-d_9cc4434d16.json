@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-6b63e5f9a4-d_9cc4434d16",
+  "featureId": "feat_test-suite_6b63e5f9a4",
+  "title": "Lazy-loading test preloads the catalog before exercising get",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/agent_runner/llms_test.py",
+      "startLine": 590,
+      "endLine": 613,
+      "symbol": "TestModelCatalogYAMLLoading.test_get_triggers_ensure_loaded",
+      "quote": null
+    }
+  ],
+  "reasoning": "The test explicitly calls ensure_loaded before get, so it passes even if get stops triggering initial catalog loading. This leaves first-use model lookup unprotected.",
+  "reproduction": "Remove the lazy-loading call from ModelCatalog.get; this test would still retrieve the model loaded at line 608.",
+  "recommendation": "Keep the catalog unloaded until get is called and route its default loading location to the temporary model directory.",
+  "whyTestsDoNotAlreadyCoverThis": "The other visible loading tests exercise explicit loading or idempotence; this scenario also explicitly loads before lookup.",
+  "suggestedRegressionTest": "Revise this scenario to assert the catalog starts unloaded, call get directly, and verify the temporary model is returned and loading occurred.",
+  "minimumFixScope": "tests/agent_runner/llms_test.py::TestModelCatalogYAMLLoading.test_get_triggers_ensure_loaded",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171520-76ce97",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original file and test still exist, but the test moved to lines 609–634 and now implements the recommended repair: it redirects the default directory to temporary models, asserts the catalog is unloaded, calls get directly, and verifies loading and retrieval. Current ModelCatalog.get calls ensure_loaded, whose default path matches the test patch. No linked patch attempts were supplied. Static evidence supports repair, but targeted validation could not run because sandbox permissions blocked uv cache access; therefore fixed cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba tests/agent_runner/llms_test.py | sed -n '580,635p'",
+        "rg -n 'def get\\(|def ensure_loaded|parents\\[' src/slop_code/common/llms.py",
+        "sed -n '360,398p' src/slop_code/common/llms.py",
+        "sed -n '450,480p' src/slop_code/common/llms.py",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/agent_runner/llms_test.py::TestModelCatalogYAMLLoading::test_get_triggers_ensure_loaded"
+      ],
+      "createdAt": "2026-09-11T17:15:41.490Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded after the Clawpatch sandbox-only validation failure: focused first-wave pytest passed all 1018 tests; changed-file Ruff and ty both passed. Clawpatch static inspection supports the implemented repair.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:35:14.058Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-6b63e5f9a4_da34614c12",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:27.631Z",
+  "updatedAt": "2026-09-12T07:35:14.057Z"
+}

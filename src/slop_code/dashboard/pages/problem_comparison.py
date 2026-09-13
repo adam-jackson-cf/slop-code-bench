@@ -2,6 +2,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input
 from dash import Output
+from dash import State
 from dash import callback
 from dash import dcc
 from dash import html
@@ -51,22 +52,40 @@ layout = dbc.Container(
 )
 
 
-@callback(
-    Output("problem-selector", "options"),
-    Input("selected-runs-store", "data"),
-)
-def update_problem_options(selected_paths):
-    context = build_context(selected_paths)
-    if context is None:
-        return []
-    if context.checkpoints.empty:
-        return []
+def _build_problem_context(selected_paths, filter_settings):
+    filter_settings = filter_settings or {}
+    return build_context(
+        selected_paths,
+        use_generic_colors=bool(filter_settings.get("disable_colors", [])),
+        group_runs=bool(filter_settings.get("group_runs", False)),
+        common_problems_only=bool(
+            filter_settings.get("common_problems_only", False)
+        ),
+    )
 
-    # Get unique problems
+
+@callback(
+    [
+        Output("problem-selector", "options"),
+        Output("problem-selector", "value"),
+    ],
+    [
+        Input("selected-runs-store", "data"),
+        Input("filter-settings-store", "data"),
+    ],
+    State("problem-selector", "value"),
+)
+def update_problem_options(selected_paths, filter_settings, selected_problem):
+    context = _build_problem_context(selected_paths, filter_settings)
+    if context is None or context.checkpoints.empty:
+        return [], None
     if "problem" not in context.checkpoints.columns:
-        return []
+        return [], None
+
     problems = sorted(context.checkpoints["problem"].dropna().unique())
-    return [{"label": p, "value": p} for p in problems]
+    options = [{"label": problem, "value": problem} for problem in problems]
+    value = selected_problem if selected_problem in problems else None
+    return options, value
 
 
 @callback(
@@ -81,22 +100,7 @@ def update_graph(selected_paths, selected_problem, filter_settings):
     if not selected_problem:
         return empty_figure()
 
-    disable_colors = False
-    group_runs = False
-    common_problems_only = False
-    if filter_settings:
-        disable_colors = bool(filter_settings.get("disable_colors", []))
-        group_runs = bool(filter_settings.get("group_runs", False))
-        common_problems_only = bool(
-            filter_settings.get("common_problems_only", False)
-        )
-
-    context = build_context(
-        selected_paths,
-        use_generic_colors=disable_colors,
-        group_runs=group_runs,
-        common_problems_only=common_problems_only,
-    )
+    context = _build_problem_context(selected_paths, filter_settings)
     if context is None:
         return empty_figure()
     return build_problem_comparison_chart(context, selected_problem)

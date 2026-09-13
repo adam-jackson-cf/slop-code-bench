@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-553e2630dd-e_2d09288998",
+  "featureId": "feat_test-suite_553e2630dd",
+  "title": "Binary decoding assertion accepts every possible return value",
+  "category": "test-gap",
+  "severity": "low",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/execution/snapshot_diff_test.py",
+      "startLine": 55,
+      "endLine": 64,
+      "symbol": "TestDecodeText.test_binary_returns_none",
+      "quote": null
+    }
+  ],
+  "reasoning": "The assertion result is not None or result is None is always true. The test therefore provides no check on decoding behavior, despite its stated expectation. Its comments also acknowledge a Latin-1 fallback, so the excerpt does not establish that returning decoded text is itself a production bug.",
+  "reproduction": "Return any arbitrary value for this input; the assertion still passes.",
+  "recommendation": "Replace the tautology with an explicit expectation derived from the intended decoding contract and align the test name with that contract.",
+  "whyTestsDoNotAlreadyCoverThis": "The other decoding tests cover ordinary UTF-8 and Latin-1 strings, while the binary snapshot test checks exclusion from text diffs rather than this helper's return behavior.",
+  "suggestedRegressionTest": "Expand the existing decoding scenarios to assert the defined outcome for non-UTF-8 input containing control bytes, including the exact decoded text if Latin-1 fallback is intended.",
+  "minimumFixScope": "TestDecodeText in tests/execution/snapshot_diff_test.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170927-4aee93",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file exists, but the original test and tautology are gone. Lines 58–60 now explicitly assert lossless Latin-1 decoding of non-UTF-8 control bytes, consistent with _decode_text at src/slop_code/execution/snapshot.py:813–842. No linked patch attempts were supplied. The repair appears supported by inspection, but targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory; therefore fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba tests/execution/snapshot_diff_test.py | sed -n '40,70p'",
+        "rg -n -A 25 'def _decode_text' src/slop_code/execution/snapshot.py",
+        "sed -n '835,846p' src/slop_code/execution/snapshot.py",
+        "rg -n 'test_binary_returns_none|result is not None or result is None' tests/execution",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/execution/snapshot_diff_test.py::TestDecodeText"
+      ],
+      "createdAt": "2026-09-11T17:09:51.999Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:09:52.577Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-553e2630dd_ed6684cde6",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:31.925Z",
+  "updatedAt": "2026-09-11T17:09:52.576Z"
+}

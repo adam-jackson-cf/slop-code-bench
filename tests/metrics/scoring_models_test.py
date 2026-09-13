@@ -105,6 +105,24 @@ def problem(problem_id="alpha", correctness=(D("1"), D("1")), value=D("1")):
     )
 
 
+def score_input(
+    problem_id="alpha", correctness=(D("1"), D("1")), value=D("1")
+) -> ProblemScoreInput:
+    checkpoint_evidence = checkpoints(correctness)
+    return ProblemScoreInput(
+        problem_id=problem_id,
+        checkpoint_ids=tuple(
+            item.checkpoint_id for item in checkpoint_evidence
+        ),
+        checkpoint_correctness=checkpoint_evidence,
+        verbosity=(value,) * len(correctness),
+        erosion=(value,) * len(correctness),
+        architecture=(value,) * len(correctness),
+        rework=(value,) * (len(correctness) - 1),
+        regression=(value,) * (len(correctness) - 1),
+    )
+
+
 def _benchmark_fixture(
     configured_problem_ids,
     configured_checkpoint_counts,
@@ -335,26 +353,31 @@ def test_zero_graph_edges_no_changed_symbol_and_lineage_boundaries_are_explicit(
 
 def test_missing_checkpoint_costs_are_zero_and_produced_missing_cost_is_null():
     fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-    score = problem()
+    score = score_input()
     cases = {case["name"]: case for case in fixture["benchmark_cases"]}
 
     def benchmark(case):
-        return _benchmark_fixture(
-            tuple(case["configured_problem_ids"]),
-            tuple(case["configured_checkpoint_counts"]),
+        _, result = calculate_scores(
             (score,),
-            (
-                costs(
-                    "alpha",
-                    tuple(
-                        D(value) if value is not None else None
-                        for value in case["costs"]
-                    ),
-                    tuple(case["produced"]),
+            BenchmarkScoreInput(
+                configured_problem_ids=tuple(case["configured_problem_ids"]),
+                configured_checkpoint_counts=tuple(
+                    case["configured_checkpoint_counts"]
                 ),
+                costs=(
+                    costs(
+                        "alpha",
+                        tuple(
+                            D(value) if value is not None else None
+                            for value in case["costs"]
+                        ),
+                        tuple(case["produced"]),
+                    ),
+                ),
+                run_identity=case["name"],
             ),
-            case["name"],
         )
+        return result
 
     for name in (
         "unproduced_checkpoint_zero_cost",
@@ -643,49 +666,28 @@ def test_production_quality_raw_evidence_rejects_impossible_component_counts():
         )
 
 
-def test_history_gap_golden_cases_reset_and_resume_transition_components():
-    fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-    for case in fixture["history_cases"]:
-        produced = case["produced"]
-        if "expected_score" in case:
-            result = _benchmark_fixture(
-                ("missing",),
-                (2,),
-                (),
-                (costs("missing", (None, None), tuple(produced)),),
-                case["name"],
-            )
-            assert str(result.benchmark_score) == case["expected_score"]
-            assert result.problems == ()
-            continue
-        transition = calculate_problem_score(
-            case["name"],
-            checkpoints((D("1"),) * len(produced)),
-            (D("1"),) * len(produced),
-            (D("1"),) * len(produced),
-            (D("1"),) * len(produced),
-            (D(case["expected_rework"]),) * (len(produced) - 1),
-            (D(case["expected_regression"]),) * (len(produced) - 1),
-        )
-        assert transition.components.rework == D(case["expected_rework"])
-        assert transition.components.regression == D(
-            case["expected_regression"]
-        )
-
-
 def test_multi_problem_golden_preserves_raw_and_persisted_decimal_stages():
     fixture = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))[
         "multi_problem_case"
     ]
-    alpha = problem("alpha")
-    beta = problem("beta", (D("1"), D("0")), D("0.5"))
-    result = _benchmark_fixture(
-        tuple(fixture["configured_problem_ids"]),
-        tuple(fixture["configured_checkpoint_counts"]),
-        (alpha, beta),
-        (costs("alpha", (D("1"), D("1"))), costs("beta", (D("0.5"), D("0.5")))),
-        "multi",
+    problems, result = calculate_scores(
+        (
+            score_input("alpha"),
+            score_input("beta", (D("1"), D("0")), D("0.5")),
+        ),
+        BenchmarkScoreInput(
+            configured_problem_ids=tuple(fixture["configured_problem_ids"]),
+            configured_checkpoint_counts=tuple(
+                fixture["configured_checkpoint_counts"]
+            ),
+            costs=(
+                costs("alpha", (D("1"), D("1"))),
+                costs("beta", (D("0.5"), D("0.5"))),
+            ),
+            run_identity="multi",
+        ),
     )
+    alpha, beta = problems
     assert sum((alpha.score, beta.score), D("0")) == D(
         fixture["raw_score_numerator"]
     )

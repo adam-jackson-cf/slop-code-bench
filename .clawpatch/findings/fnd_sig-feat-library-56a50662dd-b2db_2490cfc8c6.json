@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-56a50662dd-b2db_2490cfc8c6",
+  "featureId": "feat_library_56a50662dd",
+  "title": "Command sequence conversion loses argument boundaries",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/claude_code/agent.py",
+      "startLine": 588,
+      "endLine": 603,
+      "symbol": "ClaudeCodeAgent._run",
+      "quote": null
+    }
+  ],
+  "reasoning": "_run accepts a sequence of arguments but converts it to a command string with plain space joining. Arguments containing whitespace or quotes no longer retain their original boundaries. If the runtime interprets shell syntax, metacharacters also become executable syntax. This makes the sequence branch unsafe for ordinary unquoted argument values.",
+  "reproduction": "Pass ['claude', '--append-system-prompt', 'Use precise answers'] to _run and capture the command forwarded to stream_cli_command. It becomes 'claude --append-system-prompt Use precise answers', losing the single prompt argument.",
+  "recommendation": "Define sequence inputs as raw argv and use shlex.join when converting them to a shell command, or preserve argv through the runtime API. Check callers for prequoted arguments before changing conversion.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests or command-building callers were included, so coverage of whitespace and shell-sensitive arguments cannot be verified.",
+  "suggestedRegressionTest": "Verify that sequence arguments containing spaces, quotes, empty strings, and shell metacharacters reach execution unchanged as individual arguments.",
+  "minimumFixScope": "ClaudeCodeAgent._run sequence conversion and its callers' quoting contract.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193814-8daa60",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original path and lines 588–603 still exist. Line 594 now uses shlex.join(command). Callers construct raw argv: _build_cli_args appends unquoted values and _prepare_runtime_execution appends the raw task. The existing test_sequence_command_preserves_raw_argv covers spaces, quotes, empty strings, and shell metacharacters. These support the repair, but targeted pytest validation failed before collection because the read-only environment had no usable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba src/slop_code/agent_runner/agents/claude_code/agent.py | sed -n '580,630p;750,950p'",
+        "sed -n '1,170p' src/slop_code/agent_runner/agents/cli_utils.py",
+        "sed -n '1220,1310p' tests/agent_runner/agents/claude_code_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/claude_code_agent_test.py -k sequence_command_preserves_raw_argv"
+      ],
+      "createdAt": "2026-09-12T19:38:48.411Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified command sequences retain argument boundaries through one shell serialization; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:21.585Z"
+    }
+  ],
+  "signature": "sig_feat-library-56a50662dd_b2db45be6b",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:45.550Z",
+  "updatedAt": "2026-09-12T19:39:21.584Z"
+}

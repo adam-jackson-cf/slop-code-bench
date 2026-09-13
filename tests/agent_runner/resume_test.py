@@ -5,20 +5,28 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import yaml
 
+from slop_code.agent_runner import runner
 from slop_code.agent_runner.models import UsageTracker
 from slop_code.agent_runner.reporting import CheckpointState
 from slop_code.agent_runner.reporting import MetricsTracker
+from slop_code.agent_runner.resume import InvalidationReason
 from slop_code.agent_runner.resume import ResumeInfo
 from slop_code.agent_runner.resume import _aggregate_prior_usage
 from slop_code.agent_runner.resume import _detect_resume_from_artifacts
+from slop_code.agent_runner.resume import _generate_expected_prompt
 from slop_code.agent_runner.resume import detect_resume_point
 from slop_code.common import INFERENCE_RESULT_FILENAME
 from slop_code.common import RUN_INFO_FILENAME
 from slop_code.common import SNAPSHOT_DIR_NAME
 from slop_code.common.llms import TokenUsage
+from slop_code.evaluation import CheckpointConfig
+from slop_code.evaluation import ProblemConfig
+from slop_code.execution import EnvironmentSpec
 from slop_code.execution.models import SetupConfig
 
 
@@ -60,7 +68,12 @@ class TestResumeInfo:
             resume_from_checkpoint="checkpoint_2",
             completed_checkpoints=["checkpoint_1"],
             last_snapshot_dir=snapshot_dir,
-            prior_usage=UsageTracker(cost=1.5, steps=10),
+            prior_usage=UsageTracker(
+                cost=1.5,
+                steps=10,
+                net_tokens=TokenUsage(),
+                current_tokens=TokenUsage(),
+            ),
         )
 
         assert info.resume_from_checkpoint == "checkpoint_2"
@@ -573,7 +586,12 @@ class TestMetricsTrackerOnResume:
         now = datetime.now()
         tracker = MetricsTracker(
             current_checkpoint="checkpoint_1",
-            usage=UsageTracker(cost=0.0, steps=0),
+            usage=UsageTracker(
+                cost=0.0,
+                steps=0,
+                net_tokens=TokenUsage(),
+                current_tokens=TokenUsage(),
+            ),
             started=now,
             checkpoint_started=now,
         )
@@ -583,6 +601,7 @@ class TestMetricsTrackerOnResume:
             cost=1.5,
             steps=10,
             net_tokens=TokenUsage(input=100, output=50),
+            current_tokens=TokenUsage(),
         )
         tracker.finish_checkpoint(checkpoint_1_usage)
 
@@ -600,7 +619,12 @@ class TestMetricsTrackerOnResume:
         now = datetime.now()
         tracker = MetricsTracker(
             current_checkpoint="resuming",
-            usage=UsageTracker(cost=0.0, steps=0),
+            usage=UsageTracker(
+                cost=0.0,
+                steps=0,
+                net_tokens=TokenUsage(),
+                current_tokens=TokenUsage(),
+            ),
             started=now,
             checkpoint_started=now,
         )
@@ -611,6 +635,7 @@ class TestMetricsTrackerOnResume:
                 cost=1.0,
                 steps=5,
                 net_tokens=TokenUsage(input=100, output=50),
+                current_tokens=TokenUsage(),
             )
         )
         tracker.finish_checkpoint(
@@ -618,6 +643,7 @@ class TestMetricsTrackerOnResume:
                 cost=2.0,
                 steps=15,
                 net_tokens=TokenUsage(input=200, output=100),
+                current_tokens=TokenUsage(),
             )
         )
 
@@ -640,6 +666,7 @@ class TestMetricsTrackerOnResume:
                 cost=5.0,
                 steps=50,
                 net_tokens=TokenUsage(input=500, output=250),
+                current_tokens=TokenUsage(),
             ),
             started=now,
             checkpoint_started=now,
@@ -651,6 +678,7 @@ class TestMetricsTrackerOnResume:
                 cost=1.0,
                 steps=10,
                 net_tokens=TokenUsage(input=100, output=50),
+                current_tokens=TokenUsage(),
             )
         )
 
@@ -658,3 +686,104 @@ class TestMetricsTrackerOnResume:
         assert tracker.usage.steps == 60
         assert tracker.usage.net_tokens.input == 600
         assert tracker.usage.net_tokens.output == 300
+
+
+class PromptProblem:
+    def get_checkpoint_spec(self, checkpoint_name: str) -> str:
+        return f"Spec for {checkpoint_name}"
+
+
+class PromptEnvironment:
+    def format_entry_file(self, entry_file: str) -> str:
+        return f"src/{entry_file}"
+
+    def get_command(self, entry_file: str, *, is_agent_run: bool) -> str:
+        assert is_agent_run
+        return f"python {entry_file}"
+
+
+def test_resume_prompt_context_matches_execution_and_invalidates_dependents(
+    tmp_path: Path,
+) -> None:
+    problem = cast(ProblemConfig, PromptProblem())
+    environment = cast(EnvironmentSpec, PromptEnvironment())
+    checkpoints = cast(
+        list[CheckpointConfig],
+        [
+            SimpleNamespace(name="checkpoint_1"),
+            SimpleNamespace(name="checkpoint_2"),
+        ],
+    )
+    template = (
+        "{{ 'continue' if is_continuation else 'start' }} "
+        "{{ agent_type }} {{ agent_version }} {{ model_name }} :: {{ spec }}"
+    )
+    for index, checkpoint in enumerate(checkpoints):
+        checkpoint_dir = tmp_path / checkpoint.name
+        checkpoint_dir.mkdir()
+        (checkpoint_dir / SNAPSHOT_DIR_NAME).mkdir()
+        (checkpoint_dir / INFERENCE_RESULT_FILENAME).write_text(
+            json.dumps({"had_error": False, "usage": {}})
+        )
+        execution_prompt = runner.get_task_for_checkpoint(
+            checkpoint_name=checkpoint.name,
+            spec_text=problem.get_checkpoint_spec(checkpoint.name),
+            template=template,
+            entry_file="main.py",
+            environment=environment,
+            is_first_checkpoint=index == 0,
+            output_path=checkpoint_dir,
+            agent_type="codex",
+            agent_version="1.0",
+            model_name="gpt-test",
+        )
+        resume_prompt = _generate_expected_prompt(
+            problem,
+            checkpoint,
+            template,
+            environment,
+            "main.py",
+            is_first_checkpoint=index == 0,
+            agent_type="codex",
+            agent_version="1.0",
+            model_name="gpt-test",
+        )
+        assert resume_prompt == execution_prompt
+
+    unchanged = _detect_resume_from_artifacts(
+        tmp_path,
+        ["checkpoint_1", "checkpoint_2"],
+        problem_config=problem,
+        prompt_template=template,
+        environment=environment,
+        entry_file="main.py",
+        checkpoints=checkpoints,
+        agent_type="codex",
+        agent_version="1.0",
+        model_name="gpt-test",
+    )
+    changed_model = _detect_resume_from_artifacts(
+        tmp_path,
+        ["checkpoint_1", "checkpoint_2"],
+        problem_config=problem,
+        prompt_template=template,
+        environment=environment,
+        entry_file="main.py",
+        checkpoints=checkpoints,
+        agent_type="codex",
+        agent_version="1.0",
+        model_name="gpt-changed",
+    )
+
+    assert unchanged is not None
+    assert unchanged.completed_checkpoints == ["checkpoint_1", "checkpoint_2"]
+    assert changed_model is not None
+    assert changed_model.resume_from_checkpoint == "checkpoint_1"
+    assert (
+        changed_model.checkpoint_statuses[0].reason
+        is InvalidationReason.SPEC_CHANGED
+    )
+    assert (
+        changed_model.checkpoint_statuses[1].reason
+        is InvalidationReason.DEPENDS_ON_INVALID
+    )

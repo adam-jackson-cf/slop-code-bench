@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-2852349fd3-6886_40c9fc0cc8",
+  "featureId": "feat_library_2852349fd3",
+  "title": "Unknown command exit codes are classified as failures",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "scripts/analyze_trajectory.py",
+      "startLine": 202,
+      "endLine": 207,
+      "symbol": "ToolEvent",
+      "quote": null
+    },
+    {
+      "path": "scripts/analyze_trajectory.py",
+      "startLine": 280,
+      "endLine": 335,
+      "symbol": "detect_bug_fix_cycles",
+      "quote": null
+    }
+  ],
+  "reasoning": "ToolEvent explicitly permits an unknown exit code through None, but every failure predicate uses exit_code != 0. Since None != 0 is true, commands without a recorded result count as failed tests and can create false fix cycles and edits-after-failure metrics even when there is no error output.",
+  "reproduction": "Call detect_bug_fix_cycles with a Bash test event whose exit_code is None and has_error_output is false. failed_test_runs becomes 1. Append an Edit and another test event to also produce a false test_fix_retest cycle.",
+  "recommendation": "Centralize failure detection and require a known nonzero exit code or positive error evidence. Preserve unknown outcomes separately.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were supplied for unknown outcomes or incomplete trajectories.",
+  "suggestedRegressionTest": "Cover zero, nonzero, and unknown exit codes with and without error evidence across run counts, fix cycles, and subsequent-edit metrics.",
+  "minimumFixScope": "Failure predicates in detect_bug_fix_cycles and behavioral coverage for unknown outcomes.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central behavioral verification passed for this implemented fix, with focused pytest plus changed-path Ruff and ty green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked until 2026-09-17; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:41:45.270Z"
+    }
+  ],
+  "signature": "sig_feat-library-2852349fd3_6886561bc0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:59.952Z",
+  "updatedAt": "2026-09-12T07:41:45.269Z"
+}

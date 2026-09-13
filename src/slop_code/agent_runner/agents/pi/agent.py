@@ -411,6 +411,9 @@ class PiAgent(Agent):
         except json.JSONDecodeError:
             return None, None, None
 
+        if not isinstance(payload, dict):
+            return None, None, None
+
         if payload.get("type") != "message_end":
             return None, None, payload
 
@@ -600,7 +603,7 @@ class PiAgent(Agent):
         if self._session is None:
             raise AgentError("PiAgent has not been set up with a session")
 
-        command_text = " ".join(shlex.quote(part) for part in command)
+        command_text = shlex.join(command)
         parser = tp.cast(
             "tp.Callable[[str], tuple[float | None, TokenUsage | None, dict]]",
             functools.partial(self.parse_line, pricing=self.pricing),

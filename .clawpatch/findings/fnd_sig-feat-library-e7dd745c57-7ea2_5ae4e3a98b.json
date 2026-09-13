@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-e7dd745c57-7ea2_5ae4e3a98b",
+  "featureId": "feat_library_e7dd745c57",
+  "title": "Zero-context insertions mishandle the unchanged line preceding the insertion",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/rubric/carry_forward.py",
+      "startLine": 178,
+      "endLine": 194,
+      "symbol": "compute_line_offset",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/rubric/carry_forward.py",
+      "startLine": 218,
+      "endLine": 229,
+      "symbol": "is_span_unchanged",
+      "quote": null
+    }
+  ],
+  "reasoning": "For a unified insertion hunk such as @@ -5,0 +6,2 @@, old_start identifies the line before the insertion. The offset function applies the insertion delta to old line 5 even though that line stays at 5. The span containment check also treats the empty old range as overlapping a single-line grade at line 5, dropping that unchanged grade.",
+  "reproduction": "Parse @@ -5,0 +6,2 @@ followed by two added lines. compute_line_offset(hunks, 5) returns (7, false), and is_span_unchanged(hunks, 5, null) reports changed; the line should remain unchanged at 5.",
+  "recommendation": "Handle zero-length old ranges as insertion boundaries after old_start, and distinguish insertions inside a span from insertions immediately outside its endpoints.",
+  "whyTestsDoNotAlreadyCoverThis": "All included offset and span scenarios use positive old_count values; none exercise pure insertion boundaries.",
+  "suggestedRegressionTest": "Extend offset and span scenarios with zero-context insertions before, inside, and after spans, including start-of-file and end-of-file insertions.",
+  "minimumFixScope": "compute_line_offset, is_span_unchanged, and their existing behavioral test classes.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201350-c8250a",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths and symbols still exist. Current carry_forward.py:179-185 preserves the line preceding a zero-context insertion; lines 234-243 reject spans only when the insertion falls between their endpoints. Existing tests now cover boundary-line offsets, insertions before/inside/after spans, and file boundaries. These changes support the repair, but targeted pytest validation exited 1 before running tests because the read-only environment provides no usable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/rubric/carry_forward.py | sed -n '155,265p'",
+        "rg -n 'zero_context|class Test' tests/metrics/rubric/carry_forward_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/rubric/carry_forward_test.py::TestParseDiffHunks tests/metrics/rubric/carry_forward_test.py::TestComputeLineOffset tests/metrics/rubric/carry_forward_test.py::TestIsSpanUnchanged tests/metrics/rubric/carry_forward_test.py::TestCarryForwardGrades"
+      ],
+      "createdAt": "2026-09-12T20:14:14.064Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified zero-context insertions before/inside/after spans including file boundaries use correct offsets and unchanged semantics; 59 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:14:52.639Z"
+    }
+  ],
+  "signature": "sig_feat-library-e7dd745c57_7ea26e8f1b",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:52.707Z",
+  "updatedAt": "2026-09-12T20:14:52.638Z"
+}

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-9b348010a5-4dba_f27d4f2ad2",
+  "featureId": "feat_library_9b348010a5",
+  "title": "SQLite replacement deletes the original before the new database succeeds",
+  "category": "data-loss",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/file_ops/structured_files.py",
+      "startLine": 167,
+      "endLine": 183,
+      "symbol": "SQLiteHandler.write",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/file_ops/structured_files.py",
+      "startLine": 244,
+      "endLine": 263,
+      "symbol": "SQLiteHandler._normalize_columns",
+      "quote": null
+    }
+  ],
+  "reasoning": "The writer unlinks an existing database before SQLite validates and writes the replacement. Normalization does not guarantee creation will succeed: columns named 'id' and 'ID' pass the case-sensitive deduplication but SQLite rejects them as duplicates. Such failures permanently remove the original database and leave a failed replacement.",
+  "reproduction": "Write a replacement with columns ['id', 'ID'] over an existing database. Normalization succeeds, the original is deleted, and CREATE TABLE fails.",
+  "recommendation": "Build and close the replacement in a sibling temporary file, replacing the destination atomically only after successful completion; clean up failed temporary files.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests do not exercise database replacement or preservation after write failures.",
+  "suggestedRegressionTest": "Verify that schema errors and insertion failures preserve an existing destination byte-for-byte, while successful replacements contain the complete requested database.",
+  "minimumFixScope": "SQLiteHandler.write replacement lifecycle.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170528-de4d6e",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The evidence file exists, but the cited line ranges have shifted. SQLiteHandler.write at lines 207–229 now builds and commits a sibling temporary database, replaces the destination only after success, and cleans up the temporary file on failure. Case-sensitive normalization remains at lines 305–324, so ['id', 'ID'] still fails, but cannot delete the original database. Current tests cover preservation and cleanup after schema and insertion errors, plus successful replacement. No linked patch attempts or validation results were supplied. This conclusion is based on current code inspection; filesystem-writing tests were not run in the read-only environment. The connection context commits but does not explicitly close the connection, a remaining lifecycle limitation that does not restore the reported delete-before-success behavior.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/execution/file_ops/structured_files.py | sed -n '205,242p;318,343p'",
+        "rg -n 'sqlite|SQLite|replacement' tests/execution -g '*test*.py'",
+        "sed -n '424,520p' tests/execution/file_ops_test.py",
+        "nl -ba src/slop_code/execution/file_ops/structured_files.py | sed -n '160,185p;244,264p;302,325p'"
+      ],
+      "createdAt": "2026-09-11T17:05:50.945Z"
+    }
+  ],
+  "signature": "sig_feat-library-9b348010a5_4dba460995",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:13.990Z",
+  "updatedAt": "2026-09-11T17:05:50.945Z"
+}

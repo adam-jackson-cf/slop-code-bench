@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-2d56c14338-e1d2_9e3deaa28a",
+  "featureId": "feat_library_2d56c14338",
+  "title": "Timeout and cleanup kill only the direct child, leaving descendants alive",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/local_exec.py",
+      "startLine": 119,
+      "endLine": 137,
+      "symbol": "LocalExecRuntime.execute",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/local_exec.py",
+      "startLine": 188,
+      "endLine": 194,
+      "symbol": "LocalExecRuntime.kill",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/local_streaming.py",
+      "startLine": 130,
+      "endLine": 142,
+      "symbol": "LocalStreamingRuntime._start_process",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/local_streaming.py",
+      "startLine": 246,
+      "endLine": 258,
+      "symbol": "LocalStreamingRuntime.kill",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both runtimes launch without a dedicated process group and kill only the immediate Popen process. Commands that launch workers or shell children leave those descendants running after timeout or cleanup. In LocalExecRuntime, descendants retaining stdout or stderr also keep the subsequent communicate() waiting without a timeout, so the execution deadline can be exceeded indefinitely.",
+  "reproduction": "Execute \"sh -c 'sleep 5 & wait'\" with timeout=0.1. Killing the shell leaves sleep holding the output pipes, so the second communicate() can wait approximately five seconds.",
+  "recommendation": "Launch commands in an owned process group/session and terminate the group on timeout and cleanup, with bounded output draining and direct-child reaping.",
+  "whyTestsDoNotAlreadyCoverThis": "Exec timeout tests run sleep directly, and the streaming lifecycle tests do not verify descendant termination. No included test exercises inherited output pipes after the parent is killed.",
+  "suggestedRegressionTest": "Expand timeout and cleanup scenarios across both runtimes to include a parent with a long-running descendant that inherits output pipes. Assert bounded completion and that both processes terminate, using independent cleanup for failed assertions.",
+  "minimumFixScope": "Process creation and termination paths in both local runtimes, plus their timeout and cleanup tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165957-318f37",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "Both evidence files still exist, but termination logic moved and was partially repaired: both launches now use start_new_session=True and exec output draining has a five-second timeout. However, local_exec.py:194-196 and local_streaming.py:267-269 call killpg only while the direct child is alive. If the parent exits first, descendants survive timeout or cleanup. Targeted execution of each current termination helper with an exited shell and a live descendant confirmed this; independent process-group cleanup followed. Existing descendant tests keep the parent waiting and miss this case. No linked patch attempts were supplied. Full pytest validation was not run.",
+      "commands": [
+        "Read Clawpatch SKILL.md and references/revalidation-runbook.md",
+        "nl -ba src/slop_code/execution/local_exec.py | sed -n '119,220p'",
+        "nl -ba src/slop_code/execution/local_streaming.py | sed -n '260,300p'",
+        "nl -ba src/slop_code/execution/local_streaming.py | sed -n '130,145p'",
+        "rg -n 'def test_.*(timeout|kill|cleanup)|descendant|poll\\(' tests/execution/local_exec_test.py tests/execution/local_streaming_test.py",
+        "python3 -B heredoc reproduction: blocked by read-only temporary-file restriction",
+        "python3 -B -c reproduction: extracted and executed both current _terminate_process_group methods against an exited parent with a live descendant; both descendants survived; independently killed each process group afterward"
+      ],
+      "createdAt": "2026-09-11T17:00:32.237Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central behavioral verification passed for this implemented fix, with focused pytest plus changed-path Ruff and ty green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked until 2026-09-17; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:41:36.267Z"
+    }
+  ],
+  "signature": "sig_feat-library-2d56c14338_e1d293bf28",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:02.444Z",
+  "updatedAt": "2026-09-12T07:41:36.266Z"
+}

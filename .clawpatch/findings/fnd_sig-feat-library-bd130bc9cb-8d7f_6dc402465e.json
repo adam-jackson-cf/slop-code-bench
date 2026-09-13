@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-bd130bc9cb-8d7f_6dc402465e",
+  "featureId": "feat_library_bd130bc9cb",
+  "title": "File collection can read outside the workspace",
+  "category": "security",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/workspace.py",
+      "startLine": 130,
+      "endLine": 164,
+      "symbol": "Workspace.get_file_contents",
+      "quote": null
+    },
+    {
+      "path": "tests/execution/workspace_test.py",
+      "startLine": 352,
+      "endLine": 368,
+      "symbol": "TestWorkspace.test_get_file_contents_directory_skips_symlinks",
+      "quote": null
+    }
+  ],
+  "reasoning": "Direct and glob-matched files pass is_file(), which follows symlinks, without the symlink exclusion used for recursive directory collection. relative_to() is lexical and does not establish containment. A generated output symlink can consequently expose a host-readable file outside the workspace. Internal parent traversal such as subdir/../../outside.txt is also not rejected.",
+  "reproduction": "Create a harmless file outside the workspace and a workspace output.txt symlink pointing to it. get_file_contents(['output.txt']) or get_file_contents(['*.txt']) returns the external contents.",
+  "recommendation": "Apply a consistent containment and symlink policy to every collection branch. Reject parent traversal and prevent reads through paths resolving outside the workspace.",
+  "whyTestsDoNotAlreadyCoverThis": "The symlink test covers only symlinks encountered during recursive directory collection, not literal paths, glob matches, symlinked parent directories, or traversal.",
+  "suggestedRegressionTest": "Expand file collection scenarios across literal, glob, and directory requests with external symlink targets and parent traversal; assert no external contents are returned.",
+  "minimumFixScope": "Workspace.get_file_contents path validation and candidate selection.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170722-e61c16",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files still exist. Workspace.get_file_contents now rejects absolute paths and any '..' component (lines 133–140), checks resolved containment (142–147, 162, 176), and excludes symlinks in file and directory branches (165–175). The original symlink test moved to line 361; a confinement test at line 448 covers external file symlinks and globbing through external directory symlinks. These changes support repair of the reported issue, but targeted validation exited 2 because the sandbox denied uv cache access, so fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md; nl -ba src/slop_code/execution/workspace.py | sed -n '110,195p'; nl -ba tests/execution/workspace_test.py | sed -n '350,505p'",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/execution/workspace_test.py -k get_file_contents"
+      ],
+      "createdAt": "2026-09-11T17:07:47.477Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded after the Clawpatch sandbox-only validation failure: focused first-wave pytest passed all 1018 tests; changed-file Ruff and ty both passed. Clawpatch static inspection supports the implemented repair.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:35:12.692Z"
+    }
+  ],
+  "signature": "sig_feat-library-bd130bc9cb_8d7ffd89c5",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:36.106Z",
+  "updatedAt": "2026-09-12T07:35:12.691Z"
+}

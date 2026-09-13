@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -1198,6 +1199,99 @@ class TestBedrockMode:
         args = agent._build_cli_args(resume=True)
 
         assert "--continue" in args
+        assert "--max-turns" not in args
+
+    def test_configured_max_turns_reaches_cli_args(
+        self,
+        mock_cost_limits,
+        openrouter_credential,
+    ):
+        """Configured turn limits override unrelated cost step limits."""
+        config = ClaudeCodeConfig(
+            type="claude_code",
+            version="2.0.51",
+            cost_limits=mock_cost_limits,
+            max_turns=7,
+        )
+        model = ModelCatalog.get("glm-4.7")
+        assert model is not None
+
+        agent = ClaudeCodeAgent._from_config(
+            config=config,
+            model=model,
+            credential=openrouter_credential,
+            problem_name="test-problem",
+            verbose=False,
+            image="test-image",
+        )
+
+        assert isinstance(agent, ClaudeCodeAgent)
+        assert agent.max_turns == 7
+        args = agent._build_cli_args()
+        assert args[args.index("--max-turns") + 1] == "7"
+
+    def test_sequence_command_preserves_raw_argv(
+        self,
+        monkeypatch,
+        mock_cost_limits,
+        mock_pricing,
+        mock_credential,
+    ):
+        """Serialize raw argv only at the runtime shell boundary."""
+        agent = ClaudeCodeAgent(
+            problem_name="test-problem",
+            image="test-image",
+            verbose=False,
+            cost_limits=mock_cost_limits,
+            pricing=mock_pricing,
+            credential=mock_credential,
+            binary="claude",
+            model="claude-test",
+            timeout=None,
+            settings={},
+            env={},
+            extra_args=[
+                "--custom",
+                "value with spaces",
+                'embedded "quotes"',
+                "",
+                "$HOME; echo nope",
+            ],
+            append_system_prompt=None,
+            allowed_tools=[],
+            disallowed_tools=[],
+            permission_mode=None,
+            base_url=None,
+            thinking=None,
+            max_thinking_tokens=None,
+            max_output_tokens=None,
+        )
+        task = 'fix "quotes" and $metacharacters;'
+        command, env = agent._prepare_runtime_execution(task)
+        captured_commands: list[str] = []
+
+        def fake_stream_cli_command(**kwargs: object):
+            captured_commands.append(cast("str", kwargs["command"]))
+            yield RuntimeResult(
+                exit_code=0,
+                stdout="",
+                stderr="",
+                setup_stdout="",
+                setup_stderr="",
+                elapsed=0.0,
+                timed_out=False,
+            )
+
+        agent._runtime = cast("StreamingRuntime", FakeRuntime())  # noqa: SLF001
+        monkeypatch.setattr(
+            "slop_code.agent_runner.agents.claude_code.agent.stream_cli_command",
+            fake_stream_cli_command,
+        )
+
+        agent._run(command, env)  # noqa: SLF001
+
+        assert command[-1] == task
+        assert shlex.split(captured_commands[0]) == command
 
     def test_bedrock_env_vars_set_in_prepare_runtime(
         self,

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-d62faeefcf-eb08_7acc2861e8",
+  "featureId": "feat_library_d62faeefcf",
+  "title": "Averaging checkpoint states within bins loses cumulative totals",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_efficiency.py",
+      "startLine": 169,
+      "endLine": 174,
+      "symbol": "update_efficiency",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_efficiency.py",
+      "startLine": 203,
+      "endLine": 220,
+      "symbol": "update_efficiency.process_for_trend",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/head_to_head_evolution.py",
+      "startLine": 144,
+      "endLine": 160,
+      "symbol": "update_evolution.process_for_trend",
+      "quote": null
+    }
+  ],
+  "reasoning": "Multiple checkpoints can round into the same 5% bin. Both pages average their state values and then forward-fill that average as the continuing state. For cumulative cost this discards already incurred spending: checkpoints 98–100 of a 100-checkpoint problem, each costing $1, produce a final bin value of $99 instead of $100 even before smoothing. LOC and other code-state metrics similarly propagate a synthetic average instead of the latest snapshot.",
+  "reproduction": "Use one problem with checkpoint indices 1–100 and cost 1 at every checkpoint. The cumulative values 98, 99 and 100 map to the 100% bin and are averaged to 99.",
+  "recommendation": "Sort checkpoints chronologically and retain the last state within each problem/bin before forward filling and averaging across problems. Aggregate rate metrics separately, and preserve actual terminal totals when smoothing cumulative curves.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were supplied. Sparse examples with at most one checkpoint per bin would not expose this loss of state.",
+  "suggestedRegressionTest": "Cover multiple checkpoints per bin, shuffled input ordering and different problem lengths; assert that binned states follow the latest checkpoint and terminal cumulative values equal the sum of incurred costs.",
+  "minimumFixScope": "State aggregation in the efficiency and evolution trend builders, including cumulative endpoint handling.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T204058-1572d7",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths and cited regions still exist, but now contain the proposed repair: efficiency sorts before cumulative summation (169–173), both trend builders retain the last chronological state per bin before forward filling, and only rate metrics receive rolling smoothing. Existing tests cover shuffled checkpoints, latest state and terminal cost. However, targeted pytest validation exited 1 before running tests because the read-only environment provided no usable temporary directory. Therefore the repair is supported by inspection but cannot be marked fixed. No linked patch attempts or validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/pages/head_to_head_efficiency.py | sed -n '160,305p'",
+        "nl -ba src/slop_code/dashboard/pages/head_to_head_evolution.py | sed -n '140,240p'",
+        "rg -n 'cumulative|bin|shuffl|evolution' tests/dashboard",
+        "sed -n '125,205p' tests/dashboard/pages_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/pages_test.py"
+      ],
+      "createdAt": "2026-09-12T20:41:23.423Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified chronological last-state binning, separate rate aggregation, and terminal cumulative totals equal incurred costs; 5 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:42:40.501Z"
+    }
+  ],
+  "signature": "sig_feat-library-d62faeefcf_eb08a0fbf6",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:35.894Z",
+  "updatedAt": "2026-09-12T20:42:40.500Z"
+}

@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-f8183a2b15-8444_b75a50cc71",
+  "featureId": "feat_library_f8183a2b15",
+  "title": "Extensionless entrypoints leave every file marked as the wrong language",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/driver.py",
+      "startLine": 414,
+      "endLine": 429,
+      "symbol": "measure_snapshot_quality",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/driver.py",
+      "startLine": 446,
+      "endLine": 452,
+      "symbol": "measure_snapshot_quality",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/driver.py",
+      "startLine": 103,
+      "endLine": 110,
+      "symbol": "measure_files",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/quality_io.py",
+      "startLine": 71,
+      "endLine": 75,
+      "symbol": "save_quality_metrics",
+      "quote": null
+    }
+  ],
+  "reasoning": "The function explicitly resolves an extensionless entry such as 'main' to 'main.py', but computes entry_extensions before that resolution. It consequently passes None to measure_files, marking all files is_entry_language=False. Updating target_entry_path later enables Python tracing and graph construction but never corrects the language flags, which are then persisted incorrectly.",
+  "reproduction": "Measure a snapshot containing main.py and helper.py with entry_file='main'. The entry resolves to main.py, but both returned FileMetrics objects have is_entry_language=False, unlike the equivalent call with entry_file='main.py'.",
+  "recommendation": "Resolve the actual entry file before determining its language and measuring files, then use its language extensions consistently.",
+  "whyTestsDoNotAlreadyCoverThis": "The included snapshot tests assert language flags only for entry_file values that already include '.py'; none cover the extensionless resolution branch.",
+  "suggestedRegressionTest": "Extend snapshot measurement scenarios to compare explicit and extensionless entrypoints in a mixed-language snapshot, asserting identical language flags in returned metrics and saved rows.",
+  "minimumFixScope": "Entry resolution in src/slop_code/metrics/driver.py and existing snapshot measurement tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200117-1a5308",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files still exist, but the relevant driver logic moved and now supports the repair: driver.py:81-102 resolves extensionless entrypoints before language selection and measurement at lines 439-445. Language flags are assigned at lines 127-133 and persisted by quality_io.py:75. A regression scenario at tests/metrics/driver_test.py:625 compares explicit and extensionless entrypoints in mixed-language metrics and saved rows. However, targeted pytest validation exited 1 before collection because the read-only environment had no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/driver.py | sed -n '80,145p;435,465p'",
+        "nl -ba src/slop_code/metrics/quality_io.py | sed -n '68,80p'",
+        "rg -n 'extensionless|entry_language|entrypoint' tests/metrics/driver_test.py",
+        "sed -n '615,695p' tests/metrics/driver_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/driver_test.py -k extensionless_entry_matches_explicit_entry_language"
+      ],
+      "createdAt": "2026-09-12T20:01:59.311Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified extensionless and explicit entrypoints yield identical mixed-language flags; 123 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:59.592Z"
+    }
+  ],
+  "signature": "sig_feat-library-f8183a2b15_8444268ba2",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:40.733Z",
+  "updatedAt": "2026-09-12T20:03:59.592Z"
+}

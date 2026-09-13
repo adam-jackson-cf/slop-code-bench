@@ -15,6 +15,8 @@ Sessions provide a convenient interface for managing complete execution
 environments with proper resource cleanup and state management.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
@@ -183,27 +185,55 @@ class Session:
         self.workspace.materialize_assets()
 
     def cleanup(self) -> None:
-        """Clean up all session resources."""
+        """Clean up every session resource and report all failures."""
         logger.debug(
             "Cleaning up session",
             num_streaming_runtimes=len(self._streaming_runtimes),
             num_exec_runtimes=len(self._exec_runtimes),
             verbose=True,
         )
-        for runtime in self._streaming_runtimes:
-            runtime.cleanup()
-        for runtime in self._exec_runtimes:
-            runtime.cleanup()
-        self.workspace.cleanup()
+        failures: list[Exception] = []
+        resources = [
+            *self._exec_runtimes,
+            *self._streaming_runtimes,
+            self.workspace,
+        ]
+        for resource in resources:
+            try:
+                resource.cleanup()
+            except Exception as error:
+                logger.exception(
+                    "Session resource cleanup failed",
+                    resource_type=type(resource).__name__,
+                )
+                error.add_note(f"Cleanup failed for {type(resource).__name__}")
+                failures.append(error)
 
-    def __enter__(self) -> "Session":
+        if failures:
+            raise ExceptionGroup("Session cleanup failed", failures)
+
+    def __enter__(self) -> Session:
         """Context manager entry."""
         self.prepare()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        """Context manager exit."""
-        self.cleanup()
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any,
+    ) -> None:
+        """Context manager exit that preserves an active exception."""
+        try:
+            self.cleanup()
+        except ExceptionGroup as cleanup_error:
+            if exc_value is None:
+                raise
+            exc_value.add_note(f"Additionally, {cleanup_error}")
+            logger.error(
+                "Session cleanup failed while handling an exception",
+                cleanup_error=str(cleanup_error),
+            )
 
     @property
     def working_dir(self) -> Path:
@@ -344,7 +374,7 @@ class Session:
         image_name: str | None = None,
         *,
         is_agent_infer: bool = False,
-    ) -> "Session":
+    ) -> Session:
         """Create a session from an environment specification.
 
         Args:

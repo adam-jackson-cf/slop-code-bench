@@ -14,8 +14,10 @@ This script COPIES files (does not delete originals).
 """
 
 import argparse
+import filecmp
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -27,6 +29,65 @@ def find_checkpoints(problem_dir: Path) -> list[Path]:
         if child.is_dir() and pattern.match(child.name):
             checkpoints.append(child)
     return sorted(checkpoints, key=lambda p: int(p.name.split("_")[1]))
+
+
+def directories_match(source: Path, destination: Path) -> bool:
+    """Return whether two solution trees have identical paths and bytes."""
+    if not destination.is_dir():
+        return False
+    source_entries = {path.relative_to(source) for path in source.rglob("*")}
+    destination_entries = {
+        path.relative_to(destination) for path in destination.rglob("*")
+    }
+    if source_entries != destination_entries:
+        return False
+    for relative_path in source_entries:
+        source_path = source / relative_path
+        destination_path = destination / relative_path
+        if source_path.is_dir() != destination_path.is_dir():
+            return False
+        if source_path.is_file() and not filecmp.cmp(
+            source_path, destination_path, shallow=False
+        ):
+            return False
+    return True
+
+
+def publish_solution(source: Path, destination: Path) -> bool:
+    """Copy a solution tree and replace a mismatched prior publication."""
+    destination.parent.mkdir(exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}.", dir=destination.parent)
+    )
+    temporary.rmdir()
+    try:
+        shutil.copytree(source, temporary)
+        if not directories_match(source, temporary):
+            raise OSError(f"temporary solution copy does not match {source}")
+        if destination.exists():
+            backup = Path(
+                tempfile.mkdtemp(
+                    prefix=f".{destination.name}.backup.",
+                    dir=destination.parent,
+                )
+            )
+            backup.rmdir()
+            destination.replace(backup)
+            try:
+                temporary.replace(destination)
+            except BaseException:
+                backup.replace(destination)
+                raise
+            if backup.is_dir():
+                shutil.rmtree(backup)
+            else:
+                backup.unlink()
+        else:
+            temporary.replace(destination)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+    return True
 
 
 def migrate_problem(
@@ -58,12 +119,13 @@ def migrate_problem(
         solutions_dir = problem_dir / "solutions"
         solution_dst = solutions_dir / checkpoint_name
         if solution_src.exists() and solution_src.is_dir():
-            if solution_dst.exists():
+            if solution_dst.exists() and directories_match(
+                solution_src, solution_dst
+            ):
                 results["skipped"].append(f"{solution_dst} already exists")
             else:
                 if not dry_run:
-                    solutions_dir.mkdir(exist_ok=True)
-                    shutil.copytree(solution_src, solution_dst)
+                    publish_solution(solution_src, solution_dst)
                 results["solutions"].append(f"{solution_src} -> {solution_dst}")
 
     return results

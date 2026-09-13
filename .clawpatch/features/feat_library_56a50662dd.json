@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_56a50662dd",
+  "title": "Python source src/slop_code/agent_runner/agents/claude_code",
+  "summary": "Python source group src/slop_code/agent_runner/agents/claude_code with 3 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/agent_runner/agents/claude_code",
+      "symbol": "src/slop_code/agent_runner/agents/claude_code",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/agent_runner/agents/claude_code/__init__.py",
+      "reason": "source group src/slop_code/agent_runner/agents/claude_code"
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/claude_code/agent.py",
+      "reason": "source group src/slop_code/agent_runner/agents/claude_code"
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/claude_code/parser.py",
+      "reason": "source group src/slop_code/agent_runner/agents/claude_code"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    }
+  ],
+  "tests": [],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-56a50662dd-99ad_6114817cb1",
+    "fnd_sig-feat-library-56a50662dd-b2db_2490cfc8c6"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "2 finding(s); prompt=48355 bytes; approxTokens=12089; includedFiles=4; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:56:45.551Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T19:39:21.608Z"
+}

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-4a81fc4e56-2172_86c2b36520",
+  "featureId": "feat_library_4a81fc4e56",
+  "title": "Nonzero process exits are accepted after any completed step",
+  "category": "bug",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/opencode/agent.py",
+      "startLine": 384,
+      "endLine": 397,
+      "symbol": "OpenCodeAgent.run",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/opencode/agent.py",
+      "startLine": 433,
+      "endLine": 452,
+      "symbol": "OpenCodeAgent.run",
+      "quote": null
+    }
+  ],
+  "reasoning": "The finished event's exit code is logged but never checked. Once any step_finish message has appeared, a subsequent process crash or other nonzero exit without a structured error message makes run() return normally. A completed intermediate step does not establish successful completion of the invocation, so failed executions can be treated as successful benchmark attempts.",
+  "reproduction": "Supply a runtime stream containing a valid intermediate step_finish message followed by a finished event whose result has exit_code=1 and stderr describing a process failure. run() returns without raising AgentError.",
+  "recommendation": "Validate the finished result's exit code before returning normally. Explicitly distinguish intentional termination caused by enforced limits from unexpected process failure.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included, so existing coverage cannot be verified. The supplied implementation checks only that a finished result and at least one step_finish exist.",
+  "suggestedRegressionTest": "Exercise successful completion, nonzero exits before and after intermediate steps, structured error events, and intentional limit-triggered termination. Assert that unexpected process failures always raise AgentError regardless of prior progress.",
+  "minimumFixScope": "OpenCodeAgent.run and focused runtime-stream tests; track intentional limit termination if needed.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193813-519302",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original evidence path and line ranges still exist, but the code has changed. agent.py:448-461 now raises AgentError for nonzero exits regardless of prior step_finish messages, except requested limit termination with SIGKILL exit codes. Focused tests cover failures before/after steps, structured errors, and limit termination. No linked patch attempts were supplied. Targeted pytest validation failed before collection because the read-only environment has no usable temporary directory; therefore the apparent repair cannot be reported as fixed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba src/slop_code/agent_runner/agents/opencode/agent.py | sed -n '375,490p'",
+        "rg -n 'exit_code|limit_termination|nonzero|structured_error' tests/agent_runner -g '*opencode*'",
+        "sed -n '800,1010p' tests/agent_runner/agents/opencode_test.py",
+        "ls .venv/bin/python",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/opencode_test.py"
+      ],
+      "createdAt": "2026-09-12T19:38:39.156Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified unexpected nonzero exits raise regardless of prior progress while intentional limits remain distinct; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:20.030Z"
+    }
+  ],
+  "signature": "sig_feat-library-4a81fc4e56_2172bd225a",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:19.053Z",
+  "updatedAt": "2026-09-12T19:39:20.029Z"
+}

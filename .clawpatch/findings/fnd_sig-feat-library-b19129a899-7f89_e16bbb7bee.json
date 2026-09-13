@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-b19129a899-7f89_e16bbb7bee",
+  "featureId": "feat_library_b19129a899",
+  "title": "Problem selector ignores the common-problems filter",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "medium",
+  "triage": "risk",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/pages/problem_comparison.py",
+      "startLine": 54,
+      "endLine": 69,
+      "symbol": "update_problem_options",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/problem_comparison.py",
+      "startLine": 87,
+      "endLine": 102,
+      "symbol": "update_graph",
+      "quote": null
+    }
+  ],
+  "reasoning": "The selector builds its options without filter settings and only updates when selected runs change. The chart applies common_problems_only to its context. Consequently, enabling that filter leaves problems available for selection that the chart's context excludes. The exact empty-chart behavior depends on the unseen chart builder, but the mismatch between selectable problems and chart data is visible here.",
+  "reproduction": "Select two runs with overlapping but different problem sets, enable common_problems_only, and select a problem present in only one run. The selector still offers that problem while the chart receives the filtered context.",
+  "recommendation": "Make the options callback depend on filter-settings-store and apply the same problem filtering as the chart. Clear or reconcile the selected value when it is excluded.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests cover scatter aggregation with missing time and scatter catalog naming; neither exercises problem selector callbacks or filter changes.",
+  "suggestedRegressionTest": "Exercise selector and chart callbacks across changes to selected runs and common_problems_only, asserting that selectable problems match the filtered context and that excluded selections are reconciled.",
+  "minimumFixScope": "src/slop_code/dashboard/pages/problem_comparison.py and behavioral coverage for its selector/filter interaction",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T204057-a4de68",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the callbacks changed. Lines 55–88 now share chart filter settings, depend on filter-settings-store, and clear excluded selections; update_graph uses the same context helper at line 103. tests/dashboard/pages_test.py includes targeted coverage for filter propagation and selection clearing. No linked patch attempts were supplied. The code supports the repair, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory, so fixed cannot be confirmed.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba src/slop_code/dashboard/pages/problem_comparison.py",
+        "rg -n 'problem_options|common_problems|problem_comparison' tests/dashboard src/slop_code/dashboard/page_context.py",
+        "cat tests/dashboard/pages_test.py src/slop_code/dashboard/page_context.py",
+        "rg -n -A 35 -B 8 'if common_problems_only' src/slop_code/dashboard/data.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/pages_test.py"
+      ],
+      "createdAt": "2026-09-12T20:41:22.129Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified selector and chart apply identical common-problems filtering and reconcile excluded selections; 5 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:42:40.130Z"
+    }
+  ],
+  "signature": "sig_feat-library-b19129a899_7f89e30fb2",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:40.733Z",
+  "updatedAt": "2026-09-12T20:42:40.129Z"
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import bz2
 import gzip
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 
@@ -17,6 +18,7 @@ from slop_code.execution import InputFile
 from slop_code.execution import detect_file_signature
 from slop_code.execution.file_ops import InputFileReadError
 from slop_code.execution.file_ops import InputFileWriteError
+from slop_code.execution.file_ops import materialize_input_files
 from slop_code.execution.file_ops.entrypoint import _REGISTRY
 
 
@@ -81,7 +83,7 @@ class TestFileSignature:
         """Test that FileSignature is immutable."""
         sig = FileSignature(FileType.JSON)
         with pytest.raises(AttributeError):
-            sig.file_type = FileType.TEXT
+            setattr(sig, "file_type", FileType.TEXT)
 
 
 # Tests for detect_file_signature
@@ -362,12 +364,29 @@ class TestFileHandlerRoundTrips:
         mapping_result = handler.read(mapping_file)
 
         assert dictionary_result == mapping_result
-        assert set(mapping_result["tables"]) == {"logs", "users"}
-        assert (
-            mapping_result["tables"]["users"]
-            == sample_sqlite_data["tables"]["users"]
-        )
-        assert mapping_result["tables"]["logs"] == []
+        assert isinstance(mapping_result, Mapping)
+        top_level: dict[str, object] = {}
+        for key, value in mapping_result.items():
+            assert isinstance(key, str)
+            top_level[key] = value
+        table_payload = top_level["tables"]
+        assert isinstance(table_payload, Mapping)
+        tables: dict[str, object] = {}
+        for name, table in table_payload.items():
+            assert isinstance(name, str)
+            tables[name] = table
+        assert set(tables) == {"logs", "users"}
+        assert tables["users"] == {
+            "columns": ["id", "name", "active"],
+            "rows": [
+                {"id": 1, "name": "Alice", "active": 1},
+                {"id": 2, "name": "Bob", "active": 0},
+            ],
+        }
+        assert tables["logs"] == {
+            "columns": ["id", "message"],
+            "rows": [],
+        }
 
         with pytest.raises(InputFileWriteError):
             handler.write(tmp_path / "invalid.sqlite", "not a mapping")
@@ -381,6 +400,102 @@ class TestFileHandlerRoundTrips:
         result = handler.read(test_file)
 
         assert result == sample_text_data
+
+    @pytest.mark.parametrize(
+        "compression,extension",
+        [
+            (Compression.NONE, ".txt"),
+            (Compression.GZIP, ".txt.gz"),
+            (Compression.BZIP2, ".txt.bz2"),
+        ],
+    )
+    @pytest.mark.parametrize("content", ["snowman: \u2603", ""])
+    def test_text_handler_compression_roundtrip(
+        self, tmp_path, compression, extension, content
+    ):
+        """Text handlers preserve Unicode and empty content for every codec."""
+        handler = _REGISTRY.get_handler(FileType.TEXT, compression)
+        path = tmp_path / f"content{extension}"
+
+        handler.write(path, content)
+
+        assert handler.read(path) == content
+
+    def test_sqlite_roundtrip_preserves_empty_table_columns(self, tmp_path):
+        """SQLite payloads retain the schema of populated and empty tables."""
+        handler = _REGISTRY.get_handler(FileType.SQLITE)
+        path = tmp_path / "tables.sqlite"
+        content = {
+            "tables": {
+                "empty": {"columns": ["id", "note"], "rows": []},
+                "populated": {
+                    "columns": ["id", "label"],
+                    "rows": [{"id": 1, "label": "one"}],
+                },
+            }
+        }
+        path.write_bytes(b"old database")
+        handler.write(path, content)
+
+        assert handler.read(path) == content
+
+    @pytest.mark.parametrize(
+        ("constructor", "content", "expected_type"),
+        [
+            ("from_path", "valid UTF-8 \u2603".encode(), FileType.TEXT),
+            ("from_absolute", "valid UTF-8 \u2603".encode(), FileType.TEXT),
+            ("from_path", b"\xff\x00binary", FileType.BINARY),
+            ("from_absolute", b"\xff\x00binary", FileType.BINARY),
+        ],
+    )
+    def test_unknown_extension_materialization_preserves_bytes(
+        self, tmp_path, constructor, content, expected_type
+    ):
+        """Fallback reads retain the handler needed to reproduce source bytes."""
+        source = tmp_path / "source" / "input.unknown"
+        source.parent.mkdir()
+        source.write_bytes(content)
+        if constructor == "from_path":
+            input_file = InputFile.from_path(source, relative_to=tmp_path)
+        else:
+            input_file = InputFile.from_absolute(
+                source, save_path=Path("saved/input.unknown")
+            )
+
+        materialization_root = tmp_path / "materialized"
+        materialize_input_files([input_file], materialization_root)
+
+        assert input_file.file_type == expected_type
+        assert (materialization_root / input_file.path).read_bytes() == content
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            {"tables": {"sqlite_master": {"columns": ["value"], "rows": []}}},
+            {
+                "tables": {
+                    "broken": {
+                        "columns": ["value"],
+                        "rows": [{"value": object()}],
+                    }
+                }
+            },
+        ],
+    )
+    def test_sqlite_failed_replacement_preserves_destination(
+        self, tmp_path, content
+    ):
+        """Failed database replacements do not alter the existing database."""
+        handler = _REGISTRY.get_handler(FileType.SQLITE)
+        path = tmp_path / "existing.sqlite"
+        original = b"existing database bytes"
+        path.write_bytes(original)
+
+        with pytest.raises(InputFileWriteError):
+            handler.write(path, content)
+
+        assert path.read_bytes() == original
+        assert not list(tmp_path.glob(f".{path.name}.*.tmp"))
 
     def test_yaml_handler_roundtrip(self, tmp_path, sample_json_data):
         """Test YAML handler round-trip."""
@@ -465,6 +580,58 @@ class TestInputFile:
         )
 
         assert input_file.path == Path("subdir/data.json")
+
+
+class TestMaterializeInputFiles:
+    """Tests for materializing files within the requested working directory."""
+
+    def test_rejects_escaping_destinations_without_touching_outside(
+        self, tmp_path
+    ):
+        """Only contained, non-symlinked destinations may be materialized."""
+        working_directory = tmp_path / "working"
+        outside_directory = tmp_path / "outside"
+        working_directory.mkdir()
+        outside_directory.mkdir()
+        protected_file = outside_directory / "protected.txt"
+        protected_file.write_text("unchanged")
+        (working_directory / "escape").symlink_to(
+            outside_directory, target_is_directory=True
+        )
+
+        materialize_input_files(
+            [
+                InputFile(
+                    path=Path("nested/allowed.txt"),
+                    content="allowed",
+                    file_type=FileType.TEXT,
+                )
+            ],
+            working_directory,
+        )
+
+        assert (
+            working_directory / "nested/allowed.txt"
+        ).read_text() == "allowed"
+
+        for destination in (
+            protected_file,
+            Path("../outside/protected.txt"),
+            Path("escape/protected.txt"),
+        ):
+            with pytest.raises(InputFileWriteError):
+                materialize_input_files(
+                    [
+                        InputFile(
+                            path=destination,
+                            content="changed",
+                            file_type=FileType.TEXT,
+                        )
+                    ],
+                    working_directory,
+                )
+
+            assert protected_file.read_text() == "unchanged"
 
 
 # Tests for error conditions

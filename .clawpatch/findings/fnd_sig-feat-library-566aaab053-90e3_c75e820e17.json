@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-566aaab053-90e3_c75e820e17",
+  "featureId": "feat_library_566aaab053",
+  "title": "Dotted imports skip executed parent package initializers",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/languages/python/imports.py",
+      "startLine": 197,
+      "endLine": 215,
+      "symbol": "_try_resolve_module",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/languages/python/imports.py",
+      "startLine": 281,
+      "endLine": 299,
+      "symbol": "_resolve_absolute_import",
+      "quote": null
+    }
+  ],
+  "reasoning": "Resolving `import pkg.child` returns only pkg/child.py. Python also executes pkg/__init__.py, but the tracer never adds that initializer or follows its imports. The documented complete import graph therefore excludes executable source and dependencies.",
+  "reproduction": "Let main.py import pkg.child, and let pkg/__init__.py import helper. Tracing main.py includes pkg/child.py but omits pkg/__init__.py and helper.py.",
+  "recommendation": "Include existing package initializers along each resolved module path and trace their imports, while allowing namespace-package directories without initializers.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied test does not exercise package import semantics.",
+  "suggestedRegressionTest": "Cover nested regular packages, namespace packages, and dependencies imported exclusively by parent initializers.",
+  "minimumFixScope": "Module resolution and dependency collection in imports.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171053-a83044",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and both resolver symbols still exist, but current imports.py:298-333 adds existing parent package initializers to resolved imports; trace_source_files:396-400 recursively follows their dependencies. Tests at tests/metrics/language/py_imports_test.py:404-437 cover nested initializers, initializer-only dependencies, and namespace packages. This supports an apparent repair, but targeted pytest validation exited 1 before running tests because the read-only environment had no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/languages/python/imports.py | sed -n '175,440p'",
+        "rg -n 'initializer|namespace|trace_source' tests/metrics",
+        "sed -n '400,440p' tests/metrics/language/py_imports_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/language/py_imports_test.py"
+      ],
+      "createdAt": "2026-09-11T17:11:17.772Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:11:18.336Z"
+    }
+  ],
+  "signature": "sig_feat-library-566aaab053_90e37f4377",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:01.548Z",
+  "updatedAt": "2026-09-11T17:11:18.335Z"
+}

@@ -1,10 +1,13 @@
 """Tests for snapshot diff functionality."""
 
+import io
+import tarfile
 import tempfile
 from pathlib import Path
 
 import pytest
 
+from slop_code.execution.models import ExecutionError
 from slop_code.execution.snapshot import FileChangeType
 from slop_code.execution.snapshot import FileDiff
 from slop_code.execution.snapshot import Snapshot
@@ -52,16 +55,9 @@ class TestDecodeText:
         text = "Héllo, wörld!"
         assert _decode_text(text.encode("latin-1")) == text
 
-    def test_binary_returns_none(self):
-        """Binary data with null bytes cannot decode."""
-        # This will actually decode with latin-1, so let's use truly invalid UTF-8
-        # that also isn't valid in other encodings - but latin-1 accepts all bytes
-        # So we need to accept that _decode_text might return something
-        result = _decode_text(b"\xff\xfe\x00\x00")
-        # This should decode with latin-1 even though it's not valid UTF-8
-        assert (
-            result is not None or result is None
-        )  # Always true, but documents behavior
+    def test_non_utf8_bytes_decode_as_latin1(self):
+        """Non-UTF-8 bytes use the Latin-1 fallback without data loss."""
+        assert _decode_text(b"\x80\x9f\xff") == "\x80\x9fÿ"
 
 
 class TestCreateTextFileDiff:
@@ -159,6 +155,70 @@ class TestSnapshot:
             assert Path("file2.txt") in contents
             assert Path("subdir/file3.txt") in contents
             assert contents[Path("file1.txt")] == "line1\nline2\n"
+
+    def test_archive_snapshot_restores_modes_and_links(self, temp_workspace):
+        """Snapshots preserve executable files and safe symbolic and hard links."""
+        executable = temp_workspace / "run.sh"
+        executable.write_text("#!/bin/sh\nexit 0\n")
+        executable.chmod(0o755)
+        (temp_workspace / "run-link").symlink_to("run.sh")
+        (temp_workspace / "run-hard-link").hardlink_to(executable)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot = Snapshot.from_directory(
+                cwd=temp_workspace,
+                env={},
+                save_path=Path(tmpdir),
+            )
+            restored = Path(tmpdir) / "restored"
+            restored.mkdir()
+            snapshot.extract_to_path(restored)
+
+            assert (restored / "run.sh").stat().st_mode & 0o111
+            assert (restored / "run-link").is_symlink()
+            assert (restored / "run-link").readlink() == Path("run.sh")
+            assert (restored / "run-hard-link").stat().st_ino == (
+                restored / "run.sh"
+            ).stat().st_ino
+
+    @pytest.mark.parametrize(
+        ("member_type", "link_target"),
+        [
+            (tarfile.SYMTYPE, "/outside"),
+            (tarfile.SYMTYPE, "../../outside"),
+            (tarfile.FIFOTYPE, ""),
+        ],
+    )
+    def test_archive_snapshot_rejects_unsafe_members_before_mutation(
+        self, tmp_path: Path, member_type: bytes, link_target: str
+    ):
+        """Unsafe archive entries leave an existing destination untouched."""
+        archive = tmp_path / "unsafe.tar.gz"
+        with tarfile.open(archive, "w:gz") as tf:
+            safe = tarfile.TarInfo("safe.txt")
+            safe_data = b"safe"
+            safe.size = len(safe_data)
+            tf.addfile(safe, io.BytesIO(safe_data))
+            unsafe = tarfile.TarInfo("unsafe")
+            unsafe.type = member_type
+            unsafe.linkname = link_target
+            tf.addfile(unsafe)
+
+        snapshot = Snapshot(
+            path=tmp_path,
+            archive=archive,
+            checksum="unused",
+        )
+        target = tmp_path / "target"
+        target.mkdir()
+        sentinel = target / "sentinel.txt"
+        sentinel.write_text("unchanged")
+
+        with pytest.raises(ExecutionError, match="Unsafe|Unsupported"):
+            snapshot.extract_to_path(target)
+
+        assert sentinel.read_text() == "unchanged"
+        assert not (target / "safe.txt").exists()
 
     def test_archive_snapshot_diff_no_changes(self, temp_workspace):
         """Test diff with no changes."""

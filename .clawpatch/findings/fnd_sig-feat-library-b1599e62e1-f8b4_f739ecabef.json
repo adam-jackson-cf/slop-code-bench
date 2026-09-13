@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-b1599e62e1-f8b4_f739ecabef",
+  "featureId": "feat_library_b1599e62e1",
+  "title": "Archive extraction can write outside the temporary directory",
+  "category": "security",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/trajectory_parsing.py",
+      "startLine": 75,
+      "endLine": 87,
+      "symbol": "parse_trajectory",
+      "quote": null
+    },
+    {
+      "path": "pyproject.toml",
+      "startLine": 6,
+      "endLine": 6,
+      "symbol": null,
+      "quote": null
+    }
+  ],
+  "reasoning": "The project supports Python 3.12 and 3.13, where tar extraction without an explicit filter permits traversal paths and escaping links. Parsing a supplied artifact archive can therefore overwrite files accessible to the host process outside temp_dir. Removing temp_dir afterward does not undo those writes.",
+  "reproduction": "On Python 3.12 or 3.13, pass an archive containing a member with a ../ path targeting a harmless sentinel outside the extraction directory. Extraction writes the sentinel before parser detection completes.",
+  "recommendation": "Pass filter=\"data\" explicitly to extractall and translate rejected or invalid archives into ParseError.",
+  "whyTestsDoNotAlreadyCoverThis": "The supplied tests do not exercise compressed trajectory parsing or malicious archive members.",
+  "suggestedRegressionTest": "Test traversal, absolute paths, and escaping links on the minimum supported Python version; assert extraction fails without creating files outside the temporary directory.",
+  "minimumFixScope": "parse_trajectory archive extraction and focused archive safety coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T191944-3e7e4a",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths still exist. trajectory_parsing.py:85 now explicitly uses filter=\"data\", lines 86–90 translate extraction errors into ParseError, and cleanup remains in finally. pyproject.toml:6 still supports Python >=3.12. A traversal regression test exists at tests/agent_runner/parsers/test_new_parsers.py:333. However, targeted validation on Python 3.12 exited 1 before running tests because the read-only environment provides no usable temporary directory. No linked patch attempts or successful validation results were supplied. The code supports the proposed repair, but failed validation prevents confirming fixed.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/trajectory_parsing.py | sed -n '70,105p'",
+        "rg -n 'requires-python' pyproject.toml",
+        "rg -n 'extractall|traversal|safely extract|malicious|tar.gz' tests/agent_runner --glob '*.py' --glob '!resources/**'",
+        "sed -n '300,365p' tests/agent_runner/parsers/test_new_parsers.py",
+        ".venv/bin/python -B -m pytest -p no:cacheprovider tests/agent_runner/parsers/test_new_parsers.py -k traversal -q"
+      ],
+      "createdAt": "2026-09-12T19:20:15.586Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified safe tar filtering and ParseError translation with focused archive tests; A01 suite passed 523 tests, changed-file Ruff and ty passed.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:21:13.188Z"
+    }
+  ],
+  "signature": "sig_feat-library-b1599e62e1_f8b4ab7ae4",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:56.856Z",
+  "updatedAt": "2026-09-12T19:21:13.186Z"
+}

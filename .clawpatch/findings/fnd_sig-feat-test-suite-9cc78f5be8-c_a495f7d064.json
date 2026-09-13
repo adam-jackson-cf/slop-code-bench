@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-9cc78f5be8-c_a495f7d064",
+  "featureId": "feat_test-suite_9cc78f5be8",
+  "title": "Package-config resolution tests silently pass when resources are missing",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/entrypoints/config/test_loader.py",
+      "startLine": 117,
+      "endLine": 133,
+      "symbol": "TestResolveConfigPath",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both bare-name resolution tests guard the resolver call and assertion with expected.exists(). If a required resource disappears or get_package_config_dir returns an incorrect directory, these tests complete successfully without exercising resolution. This hides failures in the exact resource-discovery behavior they are intended to protect.",
+  "reproduction": "Run these two tests with their expected package resources absent. Both return without calling resolve_config_path or asserting any result.",
+  "recommendation": "Remove the conditional guards and require the expected resources to exist before asserting bare-name resolution. If these are intended as isolated unit tests, provide a temporary package-config directory containing representative YAML and Jinja resources.",
+  "whyTestsDoNotAlreadyCoverThis": "The assertions are conditional on successful resource discovery. The included missing-file tests verify errors for deliberately nonexistent names, not availability and resolution of bundled names.",
+  "suggestedRegressionTest": "Expand the existing bare-name scenarios to assert resource availability and successful resolution unconditionally for both configuration and prompt resources.",
+  "minimumFixScope": "tests/entrypoints/config/test_loader.py: TestResolveConfigPath bare-name tests",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central behavioral verification passed for this implemented fix, with focused pytest plus changed-path Ruff and ty green. Clawpatch revalidation was invoked with --include-dirty but its configured Codex provider is quota-blocked until 2026-09-17; disposition recorded through the Clawpatch CLI from current repository evidence.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T07:41:43.550Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-9cc78f5be8_cc1deac0c8",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:41.877Z",
+  "updatedAt": "2026-09-12T07:41:43.550Z"
+}

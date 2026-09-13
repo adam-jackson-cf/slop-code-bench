@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-cli-command-f2682fcc7e-_94fbda7f70",
+  "featureId": "feat_cli-command_f2682fcc7e",
+  "title": "Trajectory detection crashes on valid JSON values that are not objects",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/cursor_cli/parser.py",
+      "startLine": 35,
+      "endLine": 48,
+      "symbol": "CursorCliParser.can_parse",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/cursor_cli/parser.py",
+      "startLine": 65,
+      "endLine": 70,
+      "symbol": "CursorCliParser.parse",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/cursor_cli/parser.py",
+      "startLine": 87,
+      "endLine": 89,
+      "symbol": "CursorCliParser.parse",
+      "quote": null
+    }
+  ],
+  "reasoning": "json.loads can return lists, strings, numbers, or None. Both detection and parsing immediately call .get without validating the result. Thus a JSONL file containing null or [] raises AttributeError during format detection instead of returning False or continuing to a valid initialization event. Parsing has the same issue, including assistant events whose message is null, and leaks AttributeError instead of a contextual ParseError.",
+  "reproduction": "Pass a JSONL file containing null to can_parse or parse. Both raise AttributeError. An assistant event with message set to null also crashes parse.",
+  "recommendation": "Validate decoded event and nested message types before accessing fields. During detection, skip incompatible records; during parsing, report invalid event shapes with line-numbered ParseError exceptions.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were supplied or linked. The excerpts show handling for invalid JSON syntax but no corresponding validation for valid JSON with incompatible shapes.",
+  "suggestedRegressionTest": "Cover scalar, null, and array records, plus invalid nested assistant message shapes. Assert detection remains boolean and parsing either accepts supported shapes or raises a line-numbered ParseError.",
+  "minimumFixScope": "CursorCliParser.can_parse and parse event-shape validation.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193624-2433ca",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "The evidence file still exists, but the unsafe accesses are now guarded: detection skips non-object records at lines 39–40; parsing raises line-numbered ParseError at lines 72–75; assistant message/content validation appears at lines 94–113. Current regression tests cover these shapes. All 32 targeted checks against the actual parser passed using in-memory file IO, including scalar/null/array detection, subsequent initialization detection, malformed assistant messages, and valid text parsing. The initial heredoc launch was blocked by read-only restrictions; the equivalent inline command succeeded. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/cursor_cli/parser.py",
+        "rg -n 'non_object|invalid.*message|CursorCliParser|scalar' tests/agent_runner --glob '*.py'",
+        "sed -n '549,610p' tests/agent_runner/agents/cursor_cli_agent_test.py",
+        "Attempted .venv/bin/python -B heredoc validation; shell blocked temporary-file creation.",
+        "Executed .venv/bin/python -B -c with 32 targeted assertions against CursorCliParser, mocking only file lookup/open for read-only validation; passed."
+      ],
+      "createdAt": "2026-09-12T19:37:12.635Z"
+    }
+  ],
+  "signature": "sig_feat-cli-command-f2682fcc7e_3a30690e78",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105427-40c416",
+  "createdAt": "2026-09-11T10:55:02.764Z",
+  "updatedAt": "2026-09-12T19:37:12.635Z"
+}

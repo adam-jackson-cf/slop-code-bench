@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-55341e0286-8fdd_5daa6af408",
+  "featureId": "feat_library_55341e0286",
+  "title": "Trajectory metadata reports the first accumulated usage instead of the final totals",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/openhands/parser.py",
+      "startLine": 129,
+      "endLine": 141,
+      "symbol": "OpenHandsParser._parse_trajectory_json",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/openhands/agent.py",
+      "startLine": 322,
+      "endLine": 349,
+      "symbol": "OpenHandsAgent._extract_trajectory_usage",
+      "quote": null
+    }
+  ],
+  "reasoning": "The parser iterates forward and records metrics only until accumulated_cost exists in metadata. Consequently, a trajectory containing successive cumulative metrics reports its earliest cost and token counts. The agent explicitly reads the last metrics entry, so parsing the saved artifact produces totals inconsistent with the execution accounting.",
+  "reproduction": "Parse a trajectory containing two entries with increasing accumulated_cost and accumulated_token_usage. Metadata retains the first entry's values.",
+  "recommendation": "Extract metadata from the last applicable metrics entry, consistently with the agent's usage extraction.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; coverage for trajectories containing multiple cumulative metrics entries cannot be verified.",
+  "suggestedRegressionTest": "Cover trajectories with increasing cumulative metrics and intervening entries without metrics; assert that parsed totals match the final metrics.",
+  "minimumFixScope": "OpenHandsParser._parse_trajectory_json metadata extraction.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193625-d99b05",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths and symbols still exist. parser.py:141-155 now overwrites metadata for each dictionary-valued llm_metrics record, retaining final cumulative totals across entries without metrics. This agrees with agent.py:322-351, which selects the last metrics record. A regression test exists at tests/agent_runner/agents/openhands_agent_test.py:253. However, targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so the apparent repair cannot be classified as fixed.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/openhands/parser.py | sed -n '120,163p'",
+        "nl -ba src/slop_code/agent_runner/agents/openhands/agent.py | sed -n '322,375p'",
+        "rg -n 'accumulated|final.*metrics|last.*metrics' tests/agent_runner -g '*test*.py'",
+        "sed -n '245,290p' tests/agent_runner/agents/openhands_agent_test.py",
+        "sed -n '340,405p' tests/agent_runner/agents/openhands_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/openhands_agent_test.py -k 'cumulative or extract_trajectory_usage'"
+      ],
+      "createdAt": "2026-09-12T19:36:56.908Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified final cumulative usage populates trajectory metadata; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:37:37.774Z"
+    }
+  ],
+  "signature": "sig_feat-library-55341e0286_8fdd6c5f30",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:56:33.029Z",
+  "updatedAt": "2026-09-12T19:37:37.773Z"
+}

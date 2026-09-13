@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a1c6cc683e-5451_70b45a0485",
+  "featureId": "feat_library_a1c6cc683e",
+  "title": "Promotion rollback can delete the existing catalog and manifest",
+  "category": "data-loss",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/problem_catalog.py",
+      "startLine": 432,
+      "endLine": 448,
+      "symbol": "_promote_install",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/problem_catalog.py",
+      "startLine": 468,
+      "endLine": 480,
+      "symbol": "_rollback_promotion",
+      "quote": null
+    },
+    {
+      "path": "tests/problem_catalog_test.py",
+      "startLine": 309,
+      "endLine": 348,
+      "symbol": "test_sync_catalog_failure_leaves_existing_install_untouched",
+      "quote": null
+    }
+  ],
+  "reasoning": "Rollback deletes existing destinations based on whether they existed before promotion, rather than whether they were successfully backed up or replaced. If the first catalog rename fails, rollback can delete the original catalog without a backup. If installing the staged catalog fails after the catalog backup succeeds, rollback restores the catalog but deletes the untouched original manifest because its backup has not yet been created.",
+  "reproduction": "Start with an installed catalog and manifest. Inject an OSError into staged_catalog.replace(catalog_root). After rollback, the old catalog is restored but its manifest is deleted.",
+  "recommendation": "Track completed promotion operations explicitly and undo only those operations. Never delete an original destination whose backup was not successfully created.",
+  "whyTestsDoNotAlreadyCoverThis": "The existing preservation test rejects an invalid archive before promotion begins; it does not exercise failures during any rename.",
+  "suggestedRegressionTest": "Extend installation-preservation coverage with failures at each promotion rename and assert the original catalog and manifest remain byte-for-byte intact.",
+  "minimumFixScope": "_promote_install, _rollback_promotion, and catalog failure-preservation tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165522-d55a62",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files still exist. Current problem_catalog.py:432-458 tracks successful backups and promotions; rollback at 470-489 only undoes completed operations, addressing the reported deletion scenarios. The original preservation test remains at tests/problem_catalog_test.py:314-353, and new coverage at 356-393 injects failures at all four promotion renames and checks original bytes. No linked patch attempts were supplied. Targeted validation exited 1 before running tests because the read-only environment had no usable temporary directory. The repair is supported by inspection, but cannot be confirmed fixed with failed validation.",
+      "commands": [
+        "nl -ba src/slop_code/problem_catalog.py | sed -n '416,508p'",
+        "nl -ba tests/problem_catalog_test.py | sed -n '309,398p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/problem_catalog_test.py -k 'promotion_failure_preserves_existing_install or sync_catalog_failure_leaves_existing_install_untouched'"
+      ],
+      "createdAt": "2026-09-11T16:55:44.074Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:55:44.670Z"
+    }
+  ],
+  "signature": "sig_feat-library-a1c6cc683e_54518aaa93",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:19.528Z",
+  "updatedAt": "2026-09-11T16:55:44.669Z"
+}

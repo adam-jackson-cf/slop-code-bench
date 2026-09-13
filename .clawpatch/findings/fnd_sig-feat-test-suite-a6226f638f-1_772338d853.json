@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-a6226f638f-1_772338d853",
+  "featureId": "feat_test-suite_a6226f638f",
+  "title": "Logger level changes leak between tests",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "tests/logging_test.py",
+      "startLine": 17,
+      "endLine": 25,
+      "symbol": "reset_logging_state",
+      "quote": null
+    },
+    {
+      "path": "tests/logging_test.py",
+      "startLine": 183,
+      "endLine": 197,
+      "symbol": "TestStdlibLoggerAdapter.test_adapter_logger_methods",
+      "quote": null
+    },
+    {
+      "path": "tests/logging_test.py",
+      "startLine": 31,
+      "endLine": 47,
+      "symbol": "TestStdlibLoggerAdapter.test_basic_logging_without_kwargs",
+      "quote": null
+    }
+  ],
+  "reasoning": "The proxy-method test sets the shared stdlib logger named 'test' to WARNING without restoring its level. The autouse fixture resets only structlog. If the basic logging test runs afterward, caplog.at_level(DEBUG) changes the root logger's level, but the named logger still rejects DEBUG and INFO records. This makes results depend on test order.",
+  "reproduction": "Run test_adapter_logger_methods followed by test_basic_logging_without_kwargs in the same pytest process using their fully qualified node IDs.",
+  "recommendation": "Snapshot and restore the levels of named loggers modified by these tests, and establish the required level explicitly for each capture scenario.",
+  "whyTestsDoNotAlreadyCoverThis": "The default declaration order runs basic logging before the test that leaves WARNING set; subsequent scenarios often manually set DEBUG, masking the leak.",
+  "suggestedRegressionTest": "Verify that logging tests preserve preexisting named-logger levels and that capture scenarios pass independently of preceding logger configuration.",
+  "minimumFixScope": "tests/logging_test.py fixtures and logger-level setup",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T165657-bc88cf",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Current tests/logging_test.py supports the intended repair: reset_logging_state at lines 18–31 snapshots and restores test/test1/test2 logger levels; basic logging at lines 37–53 explicitly captures the named logger at DEBUG. The proxy-method test still sets WARNING at lines 242–256, but now has fixture cleanup. A capture-independence scenario also exists. No linked patch attempts were supplied. Targeted validation exited 1 before test collection because the read-only environment has no usable temporary directory, so the repair cannot be marked fixed.",
+      "commands": [
+        "nl -ba tests/logging_test.py | sed -n '15,55p;235,280p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q tests/logging_test.py::TestStdlibLoggerAdapter::test_adapter_logger_methods tests/logging_test.py::TestStdlibLoggerAdapter::test_basic_logging_without_kwargs tests/logging_test.py::TestStdlibLoggerAdapter::test_capture_sets_named_logger_level_independently"
+      ],
+      "createdAt": "2026-09-11T16:57:16.470Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T16:57:17.056Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-a6226f638f_1bd5618281",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:54.449Z",
+  "updatedAt": "2026-09-11T16:57:17.056Z"
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import queue
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
 import pytest
@@ -17,6 +18,17 @@ from slop_code.common import AGENT_DIR_NAME
 from slop_code.common import PROMPT_FILENAME
 from slop_code.evaluation import GroupType
 from slop_code.evaluation import PassPolicy
+
+if TYPE_CHECKING:
+    from slop_code.agent_runner.agent import CheckpointInferenceResult
+    from slop_code.agent_runner.credentials import ProviderCredential
+    from slop_code.common.llms import ModelDefinition
+    from slop_code.common.llms import ThinkingPreset
+    from slop_code.evaluation import CheckpointConfig
+    from slop_code.evaluation import ProblemConfig
+    from slop_code.execution import EnvironmentSpec
+    from slop_code.execution import Session
+    from slop_code.execution import SnapshotDiff
 
 
 class FakeDiff:
@@ -40,10 +52,10 @@ class FakeSession:
     def materialize_assets(self) -> None:
         pass
 
-    def finish_checkpoint(self, snapshot_dir: Path) -> FakeDiff:
+    def finish_checkpoint(self, snapshot_dir: Path) -> SnapshotDiff:
         snapshot_dir.mkdir(parents=True, exist_ok=True)
         self.finished_snapshots.append(snapshot_dir)
-        return FakeDiff()
+        return cast("SnapshotDiff", FakeDiff())
 
 
 @dataclass
@@ -80,7 +92,7 @@ class FailingAgent(Agent):
         self._failures = 0
         self.saved_paths: list[Path] = []
 
-    def setup(self, session: FakeSession) -> None:
+    def setup(self, session: Session) -> None:
         self.session = session
 
     def run(self, task: str) -> None:
@@ -107,15 +119,29 @@ class FailingAgent(Agent):
     def _from_config(
         cls,
         config: AgentConfigBase,
+        model: ModelDefinition,
+        credential: ProviderCredential,
         problem_name: str,
+        *,
         verbose: bool,  # noqa: FBT001
         image: str | None,
+        thinking_preset: ThinkingPreset | None = None,
+        thinking_max_tokens: int | None = None,
     ) -> Agent:
         raise NotImplementedError("FailingAgent is for testing only")
 
 
+class SuccessfulAgent(FailingAgent):
+    def run(self, task: str) -> None:
+        del task
+        self.usage.steps += 1
+        self.usage.cost += 1.0
+        self.usage.current_tokens.input += 10
+        self.usage.net_tokens.input += 10
+
+
 class ExplodingCheckpointAgent(FailingAgent):
-    def run_checkpoint(self, task: str):
+    def run_checkpoint(self, task: str) -> CheckpointInferenceResult:
         del task
         self.usage.steps += 1
         self.usage.cost += 1.0
@@ -139,7 +165,6 @@ def fake_quality_metrics():
 
     return SnapshotQualityReport(
         files=0,
-        source_files=0,
         overall_lines=LineCountMetrics(
             total_lines=0,
             loc=0,
@@ -209,8 +234,8 @@ def _make_run_spec(
     return AgentRunSpec.model_construct(
         seed=123,
         template="{{ spec }}",
-        problem=problem,
-        environment=environment,
+        problem=cast("ProblemConfig", problem),
+        environment=cast("EnvironmentSpec", environment),
         assessment_policy=PassPolicy.ANY,
         skip_evaluation=False,
         verbose=False,
@@ -265,7 +290,7 @@ def test_agent_runner_stops_after_failed_checkpoint(tmp_path: Path) -> None:
     with (
         patch(
             "slop_code.agent_runner.runner.create_agent_session",
-            return_value=fake_session,
+            return_value=cast("Session", fake_session),
         ),
         patch(
             "slop_code.agent_runner.runner.reporting.setup_run_output_directory",
@@ -371,7 +396,7 @@ def test_agent_runner_saves_artifacts_when_checkpoint_raises(
     with (
         patch(
             "slop_code.agent_runner.runner.create_agent_session",
-            return_value=fake_session,
+            return_value=cast("Session", fake_session),
         ),
         patch(
             "slop_code.agent_runner.runner.reporting.setup_run_output_directory",
@@ -433,12 +458,14 @@ def test_agent_runner_saves_artifacts_when_checkpoint_is_interrupted(
         output_path=output_path,
         progress_queue=queue.Queue(),
     )
-    runner_instance._session = FakeSession(tmp_path / "workspace")
+    runner_instance._session = cast(
+        "Session", FakeSession(tmp_path / "workspace")
+    )
 
     checkpoint = StubCheckpoint(name="first", spec_text="Spec for first")
     with pytest.raises(KeyboardInterrupt):
         runner_instance._run_checkpoint(
-            checkpoint,
+            cast("CheckpointConfig", checkpoint),
             checkpoint_dir,
             is_first_checkpoint=True,
         )
@@ -469,15 +496,17 @@ def test_agent_runner_saves_artifacts_when_checkpoint_returns_no_result(
         output_path=output_path,
         progress_queue=queue.Queue(),
     )
-    runner_instance._session = FakeSession(tmp_path / "workspace")
+    runner_instance._session = cast(
+        "Session", FakeSession(tmp_path / "workspace")
+    )
 
     checkpoint = StubCheckpoint(name="first", spec_text="Spec for first")
     with patch(
         "slop_code.agent_runner.runner.run_checkpoint",
-        return_value=(snapshot_dir, None, FakeDiff()),
+        return_value=(snapshot_dir, None, cast("SnapshotDiff", FakeDiff())),
     ):
         summary = runner_instance._run_checkpoint(
-            checkpoint,
+            cast("CheckpointConfig", checkpoint),
             checkpoint_dir,
             is_first_checkpoint=True,
         )
@@ -488,3 +517,77 @@ def test_agent_runner_saves_artifacts_when_checkpoint_returns_no_result(
     assert (artifacts_dir / "artifact.txt").read_text(encoding="utf-8") == (
         "artifact"
     )
+
+
+@pytest.mark.parametrize(
+    ("continue_after_test_failure", "expected_checkpoints", "expected_state"),
+    [
+        (False, ["first"], AgentStateEnum.FAILED),
+        (True, ["first", "second"], AgentStateEnum.COMPLETED),
+    ],
+)
+def test_agent_runner_evaluation_failure_respects_continuation_policy(
+    tmp_path: Path,
+    continue_after_test_failure: bool,  # noqa: FBT001
+    expected_checkpoints: list[str],
+    expected_state: AgentStateEnum,
+) -> None:
+    problem = StubProblem(["first", "second"])
+    environment = StubEnvironment()
+    run_spec = _make_run_spec(problem, environment)
+    run_spec.assessment_policy = PassPolicy.ALL_CASES
+    run_spec.continue_after_test_failure = continue_after_test_failure
+    agent = SuccessfulAgent()
+    output_path = tmp_path / "experiments"
+    output_path.mkdir()
+    fake_session = FakeSession(tmp_path / "workspace")
+    checkpoint_dirs = [
+        (
+            StubCheckpoint(name=name, spec_text=f"Spec for {name}"),
+            output_path / name,
+        )
+        for name in problem.checkpoints
+    ]
+    for _, checkpoint_dir in checkpoint_dirs:
+        checkpoint_dir.mkdir()
+
+    with (
+        patch(
+            "slop_code.agent_runner.runner.create_agent_session",
+            return_value=cast("Session", fake_session),
+        ),
+        patch(
+            "slop_code.agent_runner.runner.reporting.setup_run_output_directory",
+            return_value=None,
+        ),
+        patch(
+            "slop_code.agent_runner.runner.get_checkpoints",
+            return_value=iter(checkpoint_dirs),
+        ),
+        patch(
+            "slop_code.agent_runner.runner.evaluate_agent_snapshot",
+            side_effect=[
+                (FakeReport(passed=False), fake_quality_metrics()),
+                (FakeReport(passed=True), fake_quality_metrics()),
+            ],
+        ) as evaluate,
+        patch(
+            "slop_code.agent_runner.runner.reporting.save_results",
+            return_value={"summary": {"passed_policy": False}},
+        ),
+    ):
+        runner_instance = runner.AgentRunner(
+            run_spec=run_spec,
+            agent=agent,
+            output_path=output_path,
+            progress_queue=queue.Queue(),
+        )
+        runner_instance.run()
+
+    assert [summary.checkpoint_name for summary in runner_instance.results] == (
+        expected_checkpoints
+    )
+    assert evaluate.call_count == len(expected_checkpoints)
+    assert runner_instance.metrics_tracker.state is expected_state
+    assert all(not summary.had_error for summary in runner_instance.results)
+    assert fake_session.closed is True

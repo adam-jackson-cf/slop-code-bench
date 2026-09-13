@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-1cc90d9a69-cc34_b6ddbcbd26",
+  "featureId": "feat_library_1cc90d9a69",
+  "title": "Checkpoint directory names can inject HTML into the diff component",
+  "category": "security",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/visualization/diff_viewer.py",
+      "startLine": 46,
+      "endLine": 57,
+      "symbol": "get_checkpoints",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/visualization/diff_viewer.py",
+      "startLine": 325,
+      "endLine": 330,
+      "symbol": "generate_modern_diff",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/visualization/diff_viewer.py",
+      "startLine": 483,
+      "endLine": 490,
+      "symbol": null,
+      "quote": null
+    }
+  ],
+  "reasoning": "Checkpoint discovery accepts arbitrary suffixes after the numeric component. Those directory names flow into name_a/name_b and are interpolated unescaped into HTML rendered by components.html. A crafted experiment directory can therefore inject markup and script event handlers into the diff iframe. This does not require a syntax-highlighting failure.",
+  "reproduction": "Use a checkpoint directory named 'checkpoint_1_<img src=x onerror=alert(1)>' containing a snapshot that differs from another checkpoint. Select it for comparison; the generated header contains an executable image element instead of literal directory-name text.",
+  "recommendation": "HTML-escape both header labels before interpolation. Also escape raw source text in the syntax-highlighting exception path so every plain-text insertion remains safe.",
+  "whyTestsDoNotAlreadyCoverThis": "No diff-viewer tests were included; escaping coverage for filesystem-derived labels cannot be verified.",
+  "suggestedRegressionTest": "Exercise diff generation with HTML metacharacters and event-handler payloads in both labels, and with a highlighting failure; assert that untrusted text is escaped while intended highlighting markup remains intact.",
+  "minimumFixScope": "Text escaping in generate_modern_diff and get_highlighted_line.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T171339-24b85d",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence path still exists. Checkpoint discovery still accepts arbitrary suffixes at lines 47–58, and names still reach components.html at lines 482–489. However, both header labels are now escaped with html.escape at lines 328–329, and highlighting failures escape source text at lines 89–90. These changes support the repair, and focused regression tests exist. Targeted pytest validation exited 1 before executing tests because the read-only environment provided no usable temporary directory. No linked patch attempts were supplied. Therefore the repair cannot be confirmed as fixed.",
+      "commands": [
+        "nl -ba src/slop_code/visualization/diff_viewer.py | sed -n '45,95p;320,340p;480,500p'",
+        "rg -n 'diff_viewer|generate_modern_diff|get_highlighted_line' tests",
+        "cat tests/visualization/diff_viewer_test.py",
+        ".venv/bin/python -B -m pytest -q -p no:cacheprovider tests/visualization/diff_viewer_test.py"
+      ],
+      "createdAt": "2026-09-11T17:13:59.215Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification succeeded: focused first-wave pytest 1018 passed, changed-file Ruff passed, and changed-file ty passed. Clawpatch revalidation code inspection supports the repair; its internal pytest could not start solely because the read-only validator had no usable temporary directory.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-11T17:13:59.733Z"
+    }
+  ],
+  "signature": "sig_feat-library-1cc90d9a69_cc34961ab2",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:55:57.932Z",
+  "updatedAt": "2026-09-11T17:13:59.732Z"
+}

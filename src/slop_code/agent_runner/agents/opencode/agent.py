@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import shlex
+import signal
 import tempfile
 from pathlib import Path
 from typing import Any, Literal
@@ -37,6 +38,9 @@ THINKING_TO_VARIANT: dict[ThinkingPreset, str] = {
     "high": "high",
     "xhigh": "max",
 }
+_LIMIT_TERMINATION_EXIT_CODES = frozenset(
+    {-signal.SIGKILL, 128 + signal.SIGKILL}
+)
 
 
 class OpenCodeAgentConfig(AgentConfigBase):
@@ -109,6 +113,7 @@ class OpenCodeAgent(Agent):
         self.use_catalog_pricing = use_catalog_pricing
         self.image = image
         self._retry_next_run = False
+        self._limit_termination_requested = False
 
     @classmethod
     def _from_config(
@@ -371,6 +376,8 @@ class OpenCodeAgent(Agent):
         )
 
         self.continue_on_run = True
+        self._limit_termination_requested = False
+
         buffer = ""
         result = None
         saw_step_finish = False
@@ -438,6 +445,21 @@ class OpenCodeAgent(Agent):
                 stderr=self._stderr,
             )
             raise AgentError(message)
+        expected_limit_termination = (
+            self._limit_termination_requested
+            and result.exit_code in _LIMIT_TERMINATION_EXIT_CODES
+        )
+        if result.exit_code != 0 and not expected_limit_termination:
+            message = (
+                f"OpenCode process failed with exit code {result.exit_code}"
+            )
+            self.log.error(
+                "agent.opencode.exit",
+                error_message=message,
+                exit_code=result.exit_code,
+            )
+            raise AgentError(message)
+
         if not saw_step_finish:
             message = (
                 "OpenCode runtime did not provide any step_finish messages"
@@ -590,6 +612,7 @@ class OpenCodeAgent(Agent):
             return False
 
         self.continue_on_run = False
+        self._limit_termination_requested = True
         if self._runtime is not None:
             with contextlib.suppress(Exception):
                 self._runtime.kill()

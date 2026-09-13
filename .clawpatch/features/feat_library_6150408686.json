@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_library_6150408686",
+  "title": "Python source src/slop_code/evaluation",
+  "summary": "Python source group src/slop_code/evaluation with 8 files.",
+  "kind": "library",
+  "source": "python-source-group",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "src/slop_code/evaluation",
+      "symbol": "src/slop_code/evaluation",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "src/slop_code/evaluation/__init__.py",
+      "reason": "source group src/slop_code/evaluation"
+    },
+    {
+      "path": "src/slop_code/evaluation/collection.py",
+      "reason": "source group src/slop_code/evaluation"
+    },
+    {
+      "path": "src/slop_code/evaluation/config.py",
+      "reason": "source group src/slop_code/evaluation"
+    },
+    {
+      "path": "src/slop_code/evaluation/coverage_plugin.py",
+      "reason": "source group src/slop_code/evaluation"
+    },
+    {
+      "path": "src/slop_code/evaluation/locked_environment.py",
+      "reason": "source group src/slop_code/evaluation"
+    },
+    {
+      "path": "src/slop_code/evaluation/pytest_runner.py",
+      "reason": "source group src/slop_code/evaluation"
+    },
+    {
+      "path": "src/slop_code/evaluation/report.py",
+      "reason": "source group src/slop_code/evaluation"
+    },
+    {
+      "path": "src/slop_code/evaluation/utils.py",
+      "reason": "source group src/slop_code/evaluation"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/evaluation/collection_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/evaluation/config_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/evaluation/coverage_plugin_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/evaluation/locked_environment_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/evaluation/pytest_runner_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/evaluation/report_test.py",
+      "reason": "associated test"
+    },
+    {
+      "path": "tests/evaluation/utils_test.py",
+      "reason": "associated test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/evaluation/collection_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/evaluation/config_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/evaluation/coverage_plugin_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/evaluation/locked_environment_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/evaluation/pytest_runner_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/evaluation/report_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/evaluation/utils_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "source-group"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-library-6150408686-8789_4fb4b29fad",
+    "fnd_sig-feat-library-6150408686-91b9_4b671e2183",
+    "fnd_sig-feat-library-6150408686-53ac_5a207b6383"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "3 finding(s); prompt=244790 bytes; approxTokens=61195; includedFiles=16; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T10:57:21.385Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T19:44:21.989Z"
+}

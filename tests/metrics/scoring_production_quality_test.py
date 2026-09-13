@@ -13,8 +13,13 @@ import pytest
 
 from slop_code.metrics.scoring import production_quality
 from slop_code.metrics.scoring.models import FileRole
+from slop_code.metrics.scoring.production_quality import (
+    DEFAULT_MEASUREMENT_DEADLINE_SECONDS,
+)
 from slop_code.metrics.scoring.production_quality import RUFF_RULES
+from slop_code.metrics.scoring.production_quality import DockerProcessExecutor
 from slop_code.metrics.scoring.production_quality import ProductionQualityError
+from slop_code.metrics.scoring.production_quality import _execute
 from slop_code.metrics.scoring.production_quality import _ruff
 from slop_code.metrics.scoring.production_quality import (
     produce_production_quality,
@@ -87,8 +92,19 @@ def test_docker_executor_isolates_measurement_in_saved_run(
     )
     captured = {}
 
-    def execute(argv, *, cwd=None, stdin=None):
-        captured.update(argv=tuple(argv), cwd=cwd, stdin=stdin)
+    def execute(
+        argv,
+        *,
+        cwd=None,
+        stdin=None,
+        deadline_seconds=DEFAULT_MEASUREMENT_DEADLINE_SECONDS,
+    ):
+        captured.update(
+            argv=tuple(argv),
+            cwd=cwd,
+            stdin=stdin,
+            deadline_seconds=deadline_seconds,
+        )
         return SimpleNamespace(returncode=0, stdout="{}", stderr="")
 
     monkeypatch.setattr(production_quality, "_execute", execute)
@@ -103,18 +119,22 @@ def test_docker_executor_isolates_measurement_in_saved_run(
         cwd=snapshot,
         stdin="input",
     )
+    assert captured["deadline_seconds"] == DEFAULT_MEASUREMENT_DEADLINE_SECONDS
 
     assert captured["cwd"] is None
     assert captured["stdin"] == "input"
-    assert captured["argv"][:8] == (
+    assert captured["argv"][:4] == (
         "docker-bin",
         "run",
         "--rm",
+        "--name",
+    )
+    assert captured["argv"][4].startswith("slop-code-measurement-")
+    assert captured["argv"][5:9] == (
         "--interactive",
         "--pull=never",
         "--network=none",
         "--read-only",
-        "--tmpfs",
     )
     assert (
         f"type=bind,source={run_dir},target={run_dir},readonly"
@@ -127,6 +147,32 @@ def test_docker_executor_isolates_measurement_in_saved_run(
         "-c",
         "pass",
     )
+
+
+def test_docker_executor_removes_named_workload_after_timeout(
+    tmp_path, monkeypatch
+):
+    executable = tmp_path.resolve() / "environment" / "python"
+    workloads: set[str] = set()
+
+    def execute(argv, **_kwargs):
+        if argv[1] == "run":
+            name = argv[argv.index("--name") + 1]
+            workloads.add(name)
+            raise ProductionQualityError(
+                "measurement_environment_mismatch: measurement timed out"
+            )
+        assert tuple(argv[:3]) == ("docker", "rm", "--force")
+        workloads.remove(argv[3])
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(production_quality, "_execute", execute)
+    executor = DockerProcessExecutor("locked-image", tmp_path)
+
+    with pytest.raises(ProductionQualityError, match="measurement timed out"):
+        executor((str(executable), "-c", "pass"))
+
+    assert workloads == set()
 
 
 def test_docker_executor_rejects_runtime_launch_failures(tmp_path, monkeypatch):
@@ -389,15 +435,14 @@ def test_clone_boundaries_nested_maximal_overlap_literals_and_renames(tmp_path):
         ("".join(f"x{i} = (\n    0\n)\n" for i in range(6)) + "\n") * 2,
     )
     assert len(twelve.evidence.clones) == 1
-    eleven = produce(
-        tmp_path / "eleven",
-        (
-            "".join(f"x{i} = 0\n" for i in range(5))
-            + "x5 = (\n    0 +\n    0 +\n    0 +\n    0\n)\n"
-        )
-        * 2,
+    compact = produce(
+        tmp_path / "compact",
+        ("".join(f"x{i} = 0\n" for i in range(6)) + "\n") * 2,
     )
-    assert eleven.evidence.clones == ()
+    assert len(compact.evidence.clones) == 1
+    assert [group.vector for group in compact.evidence.clones] == [
+        group.vector for group in twelve.evidence.clones
+    ]
 
 
 def test_diagnostic_clone_overlap_counts_once_and_cross_root_process_is_stable(
@@ -658,4 +703,34 @@ def test_missing_and_duplicate_file_joins_and_zero_production_loc_are_rejected(
             rows("src/a.py"),
             (),
             PYTHON,
+        )
+
+
+@pytest.mark.parametrize("deadline", (0, 3601, 0.01, True, "300"))
+def test_production_deadline_accepts_only_public_integer_seconds(
+    tmp_path: Path, deadline: object
+) -> None:
+    with pytest.raises(ValueError, match="measurement_deadline_seconds"):
+        produce_production_quality(
+            "checkpoint",
+            tmp_path,
+            (),
+            (),
+            (),
+            PYTHON,
+            measurement_deadline_seconds=deadline,  # type: ignore[arg-type]
+        )
+
+
+def test_bounded_worker_deadline_allows_internal_millisecond_injection(
+    tmp_path: Path,
+) -> None:
+    assert (
+        DockerProcessExecutor("image", tmp_path).deadline_seconds
+        == DEFAULT_MEASUREMENT_DEADLINE_SECONDS
+    )
+    with pytest.raises(ProductionQualityError, match="measurement timed out"):
+        _execute(
+            [str(PYTHON), "-c", "import time; time.sleep(1)"],
+            deadline_seconds=0.01,
         )

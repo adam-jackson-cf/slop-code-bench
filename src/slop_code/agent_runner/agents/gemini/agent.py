@@ -593,9 +593,10 @@ class GeminiAgent(Agent):
         else:
             cost = int(cost_micros) / 1_000_000
 
-        # Sync token usage directly (steps already tracked incrementally)
-        self.usage.cost = cost
-        self.usage.net_tokens = tokens
+        # Accumulate consumption over all invocations in this checkpoint while
+        # retaining the most recent invocation totals for final-token metrics.
+        self.usage.cost += cost
+        self.usage.net_tokens += tokens
         self.usage.current_tokens = tokens
 
         if self.cost_limits.is_above_limits(
@@ -611,12 +612,26 @@ class GeminiAgent(Agent):
         resume: bool = False,
     ) -> tuple[str, dict[str, str]]:
         """Prepare command and environment overrides for runtime execution."""
-        env_overrides = {key: str(value) for key, value in self.env.items()}
+        env_overrides = {
+            env_key: env_value
+            for env_key in _GOOGLE_AUTH_ENV_VARS
+            if (env_value := os.environ.get(env_key))
+        }
 
-        for env_key in _GOOGLE_AUTH_ENV_VARS:
-            env_value = os.environ.get(env_key)
-            if env_value:
-                env_overrides[env_key] = env_value
+        # Provider credentials override inherited host defaults, but explicit
+        # invocation overrides below remain authoritative.
+        if (
+            self.credential is not None
+            and self.credential.credential_type == CredentialType.ENV_VAR
+        ):
+            destination_key = self.credential.destination_key
+            if self.use_vertex and destination_key == _GEMINI_API_KEY_ENV_VAR:
+                destination_key = _GOOGLE_API_KEY_ENV_VAR
+            env_overrides[destination_key] = self.credential.value
+
+        env_overrides.update(
+            {key: str(value) for key, value in self.env.items()}
+        )
 
         if self.use_vertex:
             missing_env_vars = [
@@ -631,32 +646,20 @@ class GeminiAgent(Agent):
                 )
             env_overrides[_VERTEX_USE_ENV_VAR] = "true"
             for env_key in _VERTEX_ENV_VARS:
-                env_overrides[env_key] = os.environ[env_key]
+                env_overrides.setdefault(env_key, os.environ[env_key])
 
-        # Handle env_var type credentials
-        if (
-            self.credential is not None
-            and self.credential.credential_type == CredentialType.ENV_VAR
-        ):
-            destination_key = self.credential.destination_key
-            if self.use_vertex and destination_key == _GEMINI_API_KEY_ENV_VAR:
-                destination_key = _GOOGLE_API_KEY_ENV_VAR
-            env_overrides[destination_key] = self.credential.value
-
-        if self.use_vertex:
             gemini_api_key = env_overrides.pop(_GEMINI_API_KEY_ENV_VAR, None)
             if gemini_api_key and _GOOGLE_API_KEY_ENV_VAR not in env_overrides:
                 env_overrides[_GOOGLE_API_KEY_ENV_VAR] = gemini_api_key
 
         command = self._build_command(task, resume=resume)
-        return " ".join(command), env_overrides
+        return shlex.join(command), env_overrides
 
     def _build_command(self, prompt: str, *, resume: bool = False) -> list[str]:
         """Build CLI command arguments for Gemini."""
-        prompt_arg = shlex.quote(prompt)
         command = [
             self.binary,
-            f"--prompt={prompt_arg}",
+            f"--prompt={prompt}",
             "--yolo",  # Auto-approve tool calls
             "--output-format",
             "stream-json",

@@ -53,11 +53,8 @@ _CLAUDE_WORKSPACE_PROJECT = Path("projects") / "-workspace"
 def _format_command_for_logging(
     command: collections.abc.Sequence[str] | str,
 ) -> str:
-    """Convert a command into a readable shell string for logs."""
-    if isinstance(command, str):
-        out = command
-    else:
-        out = " ".join(shlex.quote(part) for part in command)
+    """Convert a command into a readable log representation."""
+    out = command if isinstance(command, str) else repr(list(command))
     if len(out) > 200:
         return f"{out[:200]}[{len(out) - 200:,} more]"
     return out
@@ -175,6 +172,7 @@ class ClaudeCodeAgent(Agent):
         max_thinking_tokens: int | None,
         max_output_tokens: int | None,
         *,
+        max_turns: int | None = None,
         bedrock: bool = False,
         foundry: bool = False,
     ) -> None:
@@ -202,6 +200,7 @@ class ClaudeCodeAgent(Agent):
         self.thinking = thinking
         self.max_thinking_tokens = max_thinking_tokens
         self.max_output_tokens = max_output_tokens
+        self.max_turns = max_turns
         self._bedrock = bedrock
         self._foundry = foundry
         self._session: Session | None = None
@@ -307,6 +306,7 @@ class ClaudeCodeAgent(Agent):
             thinking=thinking,
             max_thinking_tokens=max_thinking_tokens,
             max_output_tokens=config.max_output_tokens,
+            max_turns=config.max_turns,
             bedrock=credential.provider == "bedrock",
             foundry=credential.provider == "foundry",
         )
@@ -591,8 +591,7 @@ class ClaudeCodeAgent(Agent):
         env_overrides: dict[str, str],
     ) -> RuntimeResult | None:
         if not isinstance(command, str):
-            # I dont trust shlex join tbh
-            command = " ".join(command)
+            command = shlex.join(command)
 
         gen = stream_cli_command(
             runtime=self.runtime,
@@ -831,7 +830,7 @@ class ClaudeCodeAgent(Agent):
         task: str,
         *,
         resume: bool = False,
-    ) -> tuple[collections.abc.Sequence[str] | str, dict[str, str]]:
+    ) -> tuple[list[str], dict[str, str]]:
         env_overrides = {key: str(value) for key, value in self.env.items()}
         env_overrides.update(self._build_runtime_auth_env())
         if self.max_output_tokens is not None:
@@ -863,9 +862,8 @@ class ClaudeCodeAgent(Agent):
             env_overrides["CLAUDE_CODE_EFFORT_LEVEL"] = self.thinking
 
         cli_args = self._build_cli_args(resume=resume)
-        cli_args.append(shlex.quote(task))
-        command_str = " ".join(cli_args)
-        return command_str, env_overrides
+        cli_args.append(task)
+        return cli_args, env_overrides
 
     def _build_cli_args(
         self,
@@ -888,9 +886,7 @@ class ClaudeCodeAgent(Agent):
             "--append-system-prompt": self.append_system_prompt,
             "--model": self.model,
             "--max-turns": (
-                str(self.cost_limits.step_limit)
-                if self.cost_limits.step_limit > 0
-                else None
+                str(self.max_turns) if self.max_turns is not None else None
             ),
             "--allowedTools": allowed_tools_value,
             "--disallowedTools": disallowed_tools_value,

@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "featureId": "feat_test-suite_11ced79257",
+  "title": "Python test suite tests/metrics/:scoring",
+  "summary": "Python pytest files in tests/metrics/:scoring.",
+  "kind": "test-suite",
+  "source": "python-test-suite",
+  "confidence": "medium",
+  "entrypoints": [
+    {
+      "path": "tests/metrics/:scoring",
+      "symbol": "tests/metrics/:scoring",
+      "route": null,
+      "command": null
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "tests/metrics/scoring_finalization_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_generation_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_inventory_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_lineage_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_models_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_oracle_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_production_graph_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_production_integration_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_production_quality_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_regression_test.py",
+      "reason": "pytest file"
+    },
+    {
+      "path": "tests/metrics/scoring_sensitivity_test.py",
+      "reason": "pytest file"
+    }
+  ],
+  "contextFiles": [
+    {
+      "path": "pyproject.toml",
+      "reason": "python target runtime metadata"
+    },
+    {
+      "path": "tests/metrics/scoring_finalization_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_generation_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_inventory_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_lineage_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_models_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_oracle_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_production_graph_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_production_integration_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_production_quality_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_regression_test.py",
+      "reason": "nearby test"
+    },
+    {
+      "path": "tests/metrics/scoring_sensitivity_test.py",
+      "reason": "nearby test"
+    }
+  ],
+  "tests": [
+    {
+      "path": "tests/metrics/scoring_finalization_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_generation_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_inventory_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_lineage_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_models_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_oracle_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_production_graph_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_production_integration_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_production_quality_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_regression_test.py",
+      "command": "uv run pytest"
+    },
+    {
+      "path": "tests/metrics/scoring_sensitivity_test.py",
+      "command": "uv run pytest"
+    }
+  ],
+  "tags": [
+    "python",
+    "test"
+  ],
+  "trustBoundaries": [],
+  "status": "fixed",
+  "lock": null,
+  "findingIds": [
+    "fnd_sig-feat-test-suite-11ced79257-3_256ecef6e2",
+    "fnd_sig-feat-test-suite-11ced79257-5_049d695872",
+    "fnd_sig-feat-test-suite-11ced79257-6_c606653a88"
+  ],
+  "patchAttemptIds": [],
+  "analysisHistory": [
+    {
+      "runId": "20260911T105524-37b7cd",
+      "kind": "review",
+      "summary": "3 finding(s); prompt=200670 bytes; approxTokens=50168; includedFiles=12; omittedFiles=0",
+      "provider": "codex",
+      "model": null,
+      "reasoningEffort": null,
+      "createdAt": "2026-09-11T11:00:10.909Z"
+    }
+  ],
+  "createdAt": "2026-09-11T10:54:19.573Z",
+  "updatedAt": "2026-09-12T21:29:01.712Z"
+}

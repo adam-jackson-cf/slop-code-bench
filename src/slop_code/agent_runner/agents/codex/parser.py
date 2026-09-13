@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import re
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -31,8 +31,10 @@ class CodexParser(TrajectoryParser):
                 if not first_line:
                     return False
                 data = json.loads(first_line)
-                # Codex starts with thread.started or turn.started
-                return data.get("type") in ("thread.started", "turn.started")
+                return isinstance(data, dict) and data.get("type") in (
+                    "thread.started",
+                    "turn.started",
+                )
         except (json.JSONDecodeError, OSError):
             return False
 
@@ -45,27 +47,43 @@ class CodexParser(TrajectoryParser):
         steps: list[TrajectoryStep] = []
         metadata: dict[str, Any] = {}
 
-        with jsonl_file.open() as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                if not line:
-                    continue
+        try:
+            with jsonl_file.open(encoding="utf-8") as file:
+                for line_num, line in enumerate(file, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
 
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError as e:
-                    raise ParseError(f"Invalid JSON at line {line_num}: {e}")
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError as error:
+                        raise ParseError(
+                            f"Invalid JSON in {jsonl_file} at line {line_num}: "
+                            f"{error}"
+                        ) from error
+                    if not isinstance(event, dict):
+                        raise ParseError(
+                            f"Invalid Codex event in {jsonl_file} at line "
+                            f"{line_num}: expected a JSON object"
+                        )
+                    event_type = event.get("type")
 
-                event_type = event.get("type")
-
-                if event_type == "thread.started":
-                    # Extract metadata
-                    metadata["thread_id"] = event.get("thread_id")
-                    if "model" in event:
-                        metadata["model"] = event["model"]
-
-                elif event_type == "item.completed":
-                    self._process_item(event, steps)
+                    if event_type == "thread.started":
+                        # Extract metadata
+                        metadata["thread_id"] = event.get("thread_id")
+                        if "model" in event:
+                            metadata["model"] = event["model"]
+                    elif event_type == "item.completed":
+                        if not isinstance(event.get("item"), dict):
+                            raise ParseError(
+                                f"Invalid Codex item in {jsonl_file} at line "
+                                f"{line_num}: expected a JSON object"
+                            )
+                        self._process_item(event, steps)
+        except OSError as error:
+            raise ParseError(
+                f"Unable to read Codex trajectory {jsonl_file}: {error}"
+            ) from error
 
         return Trajectory(
             agent_type="codex",
@@ -115,12 +133,17 @@ class CodexParser(TrajectoryParser):
                 steps.append(AgentStep(content=text))
 
     def _unwrap_bash_command(self, command: str) -> str:
-        """Unwrap /bin/bash -lc wrapper from command."""
-        if command.startswith("/bin/bash"):
-            match = re.search(r"-[lc]+\s+['\"](.+)", command, re.DOTALL)
-            if match:
-                return match.group(1).rstrip("'\"")
-            return re.sub(r"^/bin/bash\s+-[lc]+\s+", "", command)
+        """Return the exact script passed to a Bash login shell."""
+        try:
+            argv = shlex.split(command)
+        except ValueError:
+            return command
+        if (
+            len(argv) == 3
+            and argv[0] == "/bin/bash"
+            and argv[1] in {"-lc", "-cl"}
+        ):
+            return argv[2]
         return command
 
     def _find_jsonl_file(self, artifact_dir: Path) -> Path | None:

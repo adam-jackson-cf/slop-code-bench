@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import re
+import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable
@@ -33,6 +34,7 @@ from slop_code.metrics.driver import annotate_grades_with_category
 from slop_code.metrics.driver import batch_files_by_size
 from slop_code.metrics.driver import build_category_map
 from slop_code.metrics.driver import build_type_map
+from slop_code.metrics.driver import load_rubric
 from slop_code.metrics.driver import measure_snapshot_quality
 from slop_code.metrics.driver import save_rubric_results
 from slop_code.metrics.languages import get_language_for_extension
@@ -58,20 +60,31 @@ DEFAULT_MAX_BATCH_FILES = 5
 
 
 def _run_async(coro):
-    """Run async coroutine from sync context.
+    """Run an async coroutine from synchronous code.
 
-    Handles the case where we may or may not already be in an event loop.
+    An already-running loop cannot be nested, so that case is delegated to a
+    worker thread, whose independent loop preserves the synchronous API.
     """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    else:
-        loop = asyncio.new_event_loop()
+
+    result: list[Any] = []
+    error: list[Exception] = []
+
+    def run_in_worker() -> None:
         try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
+            result.append(asyncio.run(coro))
+        except Exception as exc:  # noqa: BLE001 - propagate worker failures
+            error.append(exc)
+
+    worker = threading.Thread(target=run_in_worker)
+    worker.start()
+    worker.join()
+    if error:
+        raise error[0]
+    return result[0]
 
 
 def _build_spec_and_files(
@@ -480,12 +493,17 @@ def _carry_forward_batch(
             rubric_path = chkpt_dir / "rubric.jsonl"
             diff_path = chkpt_dir / "diff.json"
 
-            # Load current grades
-            current_grades, _ = results[prob_name][chkpt_name]
+            # Recompute from fresh API grades so repeated runs remove stale
+            # carried grades before calculating the next checkpoint.
+            current_grades, raw = results[prob_name][chkpt_name]
+            current_non_carried = [
+                grade for grade in current_grades if "carried_over" not in grade
+            ]
 
             if prev_grades is None or prev_checkpoint_name is None:
                 # First checkpoint - nothing to carry forward
-                prev_grades = current_grades
+                results[prob_name][chkpt_name] = (current_non_carried, raw)
+                prev_grades = current_non_carried
                 prev_checkpoint_name = chkpt_name
                 continue
 
@@ -495,18 +513,21 @@ def _carry_forward_batch(
             # Carry forward grades
             carried = carry_forward_all_files(
                 prev_grades=prev_grades,
-                new_grades=current_grades,
+                new_grades=current_non_carried,
                 file_diffs=file_diffs,
                 prev_checkpoint_name=prev_checkpoint_name,
             )
+            merged = current_non_carried + carried
 
-            if carried:
-                # Merge and save
-                merged = current_grades + carried
+            # The initial grading pass may have written stale carried grades.
+            # Persist the complete recomputed set even when none now qualify.
+            if load_rubric(rubric_path) != merged:
                 with rubric_path.open("w") as f:
-                    for g in merged:
-                        f.write(json.dumps(g) + "\n")
+                    for grade in merged:
+                        f.write(json.dumps(grade) + "\n")
 
+            results[prob_name][chkpt_name] = (merged, raw)
+            if carried:
                 logger.info(
                     "Carried forward grades",
                     problem=prob_name,
@@ -516,7 +537,7 @@ def _carry_forward_batch(
                 total_carried += len(carried)
 
             # Update for next iteration
-            prev_grades = current_grades + carried
+            prev_grades = merged
             prev_checkpoint_name = chkpt_name
 
     return total_carried

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-c2210a2f89-73c7_c47ca0fee9",
+  "featureId": "feat_library_c2210a2f89",
+  "title": "Non-object JSON records escape parser error handling",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/agent_runner/agents/pi/agent.py",
+      "startLine": 409,
+      "endLine": 415,
+      "symbol": "PiAgent.parse_line",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/pi/parser.py",
+      "startLine": 33,
+      "endLine": 43,
+      "symbol": "PiParser.can_parse",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/agent_runner/agents/pi/parser.py",
+      "startLine": 61,
+      "endLine": 66,
+      "symbol": "PiParser.parse",
+      "quote": null
+    }
+  ],
+  "reasoning": "JSON decoding can successfully return a list, scalar, or null, but all three entry points immediately call .get without validating that the result is a dictionary. Such records raise AttributeError outside the existing JSON error handling. In particular, artifact detection can crash instead of returning false, and trajectory parsing exposes an incidental exception instead of its contextual ParseError.",
+  "reproduction": "Supply a JSONL record containing null or [] to parse_line, can_parse, or parse. Each attempts .get on a non-dictionary value.",
+  "recommendation": "Validate decoded records as objects before accessing event fields. Have detection reject unsupported records, streaming parsing handle them consistently with invalid input, and trajectory parsing raise ParseError with the line number.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; coverage for syntactically valid JSON with an invalid event shape could not be checked.",
+  "suggestedRegressionTest": "Exercise object, array, string, number, boolean, and null records across the parser entry points, asserting their intended rejection behavior and contextual errors.",
+  "minimumFixScope": "The JSON decoding boundaries in PiAgent.parse_line, PiParser.can_parse, and PiParser.parse.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T193810-7e4e51",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence paths and methods still exist. Current code appears repaired: agent.py:414–415 rejects non-object records; parser.py:41–42 returns false during detection; parser.py:68–71 raises ParseError with the line number. Existing tests cover arrays, strings, numbers, booleans, and null across all three entry points. However, targeted pytest validation exited 1 before running tests because the read-only environment provided no writable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/agent_runner/agents/pi/parser.py | head -95",
+        "nl -ba src/slop_code/agent_runner/agents/pi/agent.py | sed -n '403,435p'",
+        "rg -n 'non_object|non.object|expected object|invalid.*record' tests/agent_runner",
+        "sed -n '890,980p' tests/agent_runner/agents/pi_agent_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/agent_runner/agents/pi_agent_test.py"
+      ],
+      "createdAt": "2026-09-12T19:38:39.498Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified non-object JSON detection remains boolean and parsing raises contextual ParseError; 284 adapter tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T19:39:21.254Z"
+    }
+  ],
+  "signature": "sig_feat-library-c2210a2f89_73c7024eba",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:10.543Z",
+  "updatedAt": "2026-09-12T19:39:21.252Z"
+}

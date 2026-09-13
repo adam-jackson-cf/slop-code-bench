@@ -13,12 +13,14 @@ from pydantic import Field
 from slop_code.agent_runner.agent import Agent
 from slop_code.agent_runner.agent import AgentConfigBase
 from slop_code.agent_runner.agents.cli_utils import AgentCommandResult
+from slop_code.agent_runner.agents.kimi_cli.parser import JsonRpcMessageFramer
 from slop_code.agent_runner.agents.kimi_cli.parser import _WireStep
 from slop_code.agent_runner.agents.kimi_cli.parser import (
     group_events_into_steps,
 )
 from slop_code.agent_runner.agents.kimi_cli.parser import has_final_result
 from slop_code.agent_runner.agents.kimi_cli.parser import parse_wire_events
+from slop_code.agent_runner.agents.kimi_cli.parser import wire_event_params
 from slop_code.agent_runner.agents.utils import HOME_PATH
 from slop_code.agent_runner.credentials import CredentialType
 from slop_code.agent_runner.credentials import ProviderCredential
@@ -385,7 +387,7 @@ class KimiCliAgent(Agent):
         runtime_result = None
         stdout_text = ""
         stderr_text = ""
-        stdout_buffer = ""
+        stdout_framer = JsonRpcMessageFramer()
         live_step_count = 0
 
         for event in self.runtime.stream(
@@ -396,13 +398,9 @@ class KimiCliAgent(Agent):
             if event.kind == "stdout":
                 chunk = event.text or ""
                 stdout_text += chunk
-                stdout_buffer += chunk
-                while "\n" in stdout_buffer:
-                    line, stdout_buffer = stdout_buffer.split("\n", 1)
-                    params = self._parse_streamed_wire_event(line.strip())
-                    if params is None:
-                        continue
-                    if params.get("type") == "StepBegin":
+                for message in stdout_framer.feed(chunk):
+                    params = wire_event_params(message)
+                    if params is not None and params.get("type") == "StepBegin":
                         live_step_count += 1
                         self.usage.steps += 1
                 continue
@@ -429,21 +427,6 @@ class KimiCliAgent(Agent):
             stdout=stdout_text,
             stderr=stderr_text,
         )
-
-    @staticmethod
-    def _parse_streamed_wire_event(line: str) -> dict[str, tp.Any] | None:
-        if not line or not line.lstrip().startswith('{"jsonrpc"'):
-            return None
-        try:
-            payload = json.loads(line, strict=False)
-        except json.JSONDecodeError:
-            return None
-        if payload.get("method") != "event":
-            return None
-        params = payload.get("params")
-        if not isinstance(params, dict):
-            return None
-        return params
 
     @staticmethod
     def _truncate_text(text: str, max_chars: int) -> str:

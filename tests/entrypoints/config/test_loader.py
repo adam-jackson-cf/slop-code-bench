@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from slop_code.entrypoints.config.loader import get_package_config_dir
 from slop_code.entrypoints.config.loader import load_run_config
@@ -115,22 +116,18 @@ class TestResolveConfigPath:
         assert result == config_file
 
     def test_bare_name_finds_package_config(self):
-        # This should find the built-in claude_code config
         package_config_dir = get_package_config_dir()
         expected = package_config_dir / "agents" / "claude_code.yaml"
 
-        # Only run if the package config exists
-        if expected.exists():
-            result = resolve_config_path("claude_code", "agents")
-            assert result == expected
+        assert expected.is_file()
+        assert resolve_config_path("claude_code", "agents") == expected
 
     def test_bare_name_prompt_uses_jinja_extension(self):
         package_config_dir = get_package_config_dir()
         expected = package_config_dir / "prompts" / "just-solve.jinja"
 
-        if expected.exists():
-            result = resolve_config_path("just-solve", "prompts")
-            assert result == expected
+        assert expected.is_file()
+        assert resolve_config_path("just-solve", "prompts") == expected
 
     def test_file_not_found_raises(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -266,6 +263,55 @@ agent:
         config = load_run_config(cli_overrides=["thinking=high"])
 
         assert config.thinking == "high"
+
+    @pytest.mark.parametrize(
+        ("thinking", "expected_preset", "expected_tokens"),
+        [
+            ("high", "high", None),
+            ({"max_tokens": 8000}, None, 8000),
+            ({}, None, None),
+        ],
+    )
+    def test_valid_thinking_configurations(
+        self,
+        tmp_path,
+        thinking,
+        expected_preset,
+        expected_tokens,
+    ):
+        config_file = tmp_path / "run.yaml"
+        config_file.write_text(yaml.safe_dump({"thinking": thinking}))
+
+        config = load_run_config(config_path=config_file)
+
+        assert config.thinking == expected_preset
+        assert config.thinking_max_tokens == expected_tokens
+
+    @pytest.mark.parametrize(
+        "thinking",
+        [
+            "thinking: [invalid]\n",
+            "thinking:\n  preset: medium\n  max_tokens: 8000\n",
+            "thinking:\n  preset: unsupported\n",
+        ],
+    )
+    def test_invalid_thinking_configurations_raise(self, tmp_path, thinking):
+        config_file = tmp_path / "run.yaml"
+        config_file.write_text(thinking)
+
+        with pytest.raises(ValueError, match="Invalid run configuration"):
+            load_run_config(config_path=config_file)
+
+    def test_unknown_top_level_yaml_key_raises(self, tmp_path):
+        config_file = tmp_path / "run.yaml"
+        config_file.write_text("unexpected: value\n")
+
+        with pytest.raises(ValueError, match="Invalid run configuration"):
+            load_run_config(config_path=config_file)
+
+    def test_unknown_top_level_override_key_raises(self):
+        with pytest.raises(ValueError, match="Invalid run configuration"):
+            load_run_config(cli_overrides=["unexpected=value"])
 
     def test_assessment_and_continuation_override(self):
         """Assessment and continuation can be overridden independently."""
@@ -412,6 +458,47 @@ agent:
         assert "-None" not in config.output_path
         assert "None_" not in config.output_path
         assert "__" not in config.output_path
+
+    def test_custom_template_preserves_literals_without_version(self, tmp_path):
+        config_file = tmp_path / "run.yaml"
+        config_file.write_text(
+            """
+agent:
+  type: miniswe
+  binary: miniswe
+save_dir: ""
+save_template: docker${agent.version}-uv/${agent.type}-${agent.version}_${prompt}_${env.name}
+"""
+        )
+
+        config = load_run_config(config_path=config_file)
+
+        assert config.output_path == "docker-uv/miniswe_just-solve_python3.12"
+
+    def test_custom_template_preserves_distinct_versioned_destination(
+        self,
+        tmp_path,
+    ):
+        config_file = tmp_path / "run.yaml"
+        config_file.write_text(
+            """
+agent:
+  type: miniswe
+  binary: miniswe
+save_dir: ""
+save_template: docker${agent.version}-uv/${agent.type}-${agent.version}_${prompt}_${env.name}
+"""
+        )
+
+        config = load_run_config(
+            config_path=config_file,
+            cli_overrides=["version=1.2.3"],
+        )
+
+        assert (
+            config.output_path
+            == "docker1.2.3-uv/miniswe-1.2.3_just-solve_python3.12"
+        )
 
     def test_custom_save_dir(self, tmp_path):
         """Test overriding save_dir via config."""

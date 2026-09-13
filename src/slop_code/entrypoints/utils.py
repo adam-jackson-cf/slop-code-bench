@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import re
 from collections.abc import Mapping
@@ -274,19 +275,26 @@ def _verified_score_projection(
     run_dir: Path, checkpoint_keys: set[tuple[str, str]]
 ) -> dict[str, object] | None:
     """Return the verified canonical score projection for saved checkpoints."""
+    pointer_path = run_dir / MEASUREMENT_ANALYSIS_DIR / CURRENT_POINTER_FILENAME
     try:
-        manifest, evidence = load_verified_current_generation_state(run_dir)
+        for _ in range(2):
+            before_generation_id = json.loads(pointer_path.read_bytes())[
+                "generation_id"
+            ]
+            generation_id, manifest, evidence = (
+                load_verified_current_generation_state(run_dir)
+            )
+            after_generation_id = json.loads(pointer_path.read_bytes())[
+                "generation_id"
+            ]
+            if before_generation_id == generation_id == after_generation_id:
+                break
+        else:
+            return None
+
         benchmark = manifest.benchmark
         if not manifest.eligibility.eligible or benchmark is None:
             raise ScoreEvidenceError(set(manifest.eligibility.reasons))
-        pointer = json.loads(
-            (
-                run_dir
-                / MEASUREMENT_ANALYSIS_DIR
-                / CURRENT_POINTER_FILENAME
-            ).read_bytes()
-        )
-        generation_id = pointer["generation_id"]
         evaluator_identities = {
             json.dumps(
                 json.loads(payload)["interpreter"],
@@ -365,8 +373,12 @@ def _completion_projection(
     checkpoint_data: list[dict[str, Any]],
     scoring: dict[str, object] | None,
 ) -> dict[str, object]:
-    passed_tests = sum(int(row.get("passed_tests") or 0) for row in checkpoint_data)
-    total_tests = sum(int(row.get("total_tests") or 0) for row in checkpoint_data)
+    passed_tests = sum(
+        int(row.get("passed_tests") or 0) for row in checkpoint_data
+    )
+    total_tests = sum(
+        int(row.get("total_tests") or 0) for row in checkpoint_data
+    )
     return {
         "model": summary.model,
         "assessment_policy": str(config.get("assessment_policy", "unknown")),
@@ -391,10 +403,10 @@ def _identity_text(identity: object) -> str:
     identity_fields = cast("Mapping[str, object]", identity)
     implementation = identity_fields.get("implementation", "unknown")
     cache_tag = identity_fields.get("cache_tag", "unknown")
-    executable_sha256 = identity_fields.get(
-        "executable_sha256", "unknown"
+    executable_sha256 = identity_fields.get("executable_sha256", "unknown")
+    return (
+        f"{implementation} {cache_tag}; executable SHA-256 {executable_sha256}"
     )
-    return f"{implementation} {cache_tag}; executable SHA-256 {executable_sha256}"
 
 
 def render_summary_tables(
@@ -506,6 +518,7 @@ def _save_experiment_summary(
     scoring: dict[str, object] | None,
 ) -> Path:
     recording = Console(
+        file=io.StringIO(),
         record=True,
         width=180,
         force_terminal=False,
@@ -513,7 +526,9 @@ def _save_experiment_summary(
     )
     render_summary_tables(completion, recording, scoring)
     output_path = run_dir / EXPERIMENT_SUMMARY_FILENAME
-    output_path.write_text(recording.export_text(styles=False), encoding="utf-8")
+    output_path.write_text(
+        recording.export_text(styles=False), encoding="utf-8"
+    )
     logger.info("Saved human-facing experiment summary", path=str(output_path))
     return output_path
 

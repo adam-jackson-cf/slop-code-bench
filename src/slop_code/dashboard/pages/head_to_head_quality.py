@@ -23,13 +23,15 @@ def make_quality_scatter_checkpoint_level(
     Each point represents a (problem, checkpoint) pair.
     """
     idx_col = "idx" if "idx" in df_chk.columns else "checkpoint"
+    if col not in df_chk.columns:
+        return empty_figure()
 
     df_a = df_chk[df_chk["run_path"] == run_a_path][
         ["problem", idx_col, col]
-    ].copy()
+    ].dropna(subset=[col])
     df_b = df_chk[df_chk["run_path"] == run_b_path][
         ["problem", idx_col, col]
-    ].copy()
+    ].dropna(subset=[col])
 
     # Merge on problem and checkpoint index to get common checkpoints
     merged_df = pd.merge(
@@ -177,9 +179,6 @@ def update_quality(run_a_path, run_b_path):
     name_a = get_display_annotation(row_a).split(" - ")[0]
     name_b = get_display_annotation(row_b).split(" - ")[0]
 
-    # Calculate complexity column on the full df_chk for accurate lookup
-    df_chk["_complex"] = df_chk["cc_high_count"]
-
     lint_fig = make_quality_scatter_checkpoint_level(
         df_chk,
         "lint_errors",
@@ -192,7 +191,7 @@ def update_quality(run_a_path, run_b_path):
     )
     comp_fig = make_quality_scatter_checkpoint_level(
         df_chk,
-        "_complex",
+        "cc_high_count",
         "Complexity per Checkpoint",
         "Rating",
         name_a,

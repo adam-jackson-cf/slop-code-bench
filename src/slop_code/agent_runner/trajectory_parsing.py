@@ -80,8 +80,14 @@ def parse_trajectory(artifact_dir: Path) -> Trajectory:
 
         temp_dir = Path(tempfile.mkdtemp())
         try:
-            with tarfile.open(artifact_dir, "r:gz") as tar:
-                tar.extractall(temp_dir)  # noqa: S202
+            try:
+                with tarfile.open(artifact_dir, "r:gz") as tar:
+                    tar.extractall(temp_dir, filter="data")
+            except (OSError, tarfile.TarError) as exc:
+                raise ParseError(
+                    f"Unable to safely extract artifact archive "
+                    f"'{artifact_dir}': {exc}"
+                ) from exc
             return parse_trajectory(temp_dir)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)

@@ -6,7 +6,10 @@ buffered output, suitable for evaluation and testing.
 
 from __future__ import annotations
 
+import contextlib
+import os
 import shlex
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -75,6 +78,7 @@ class LocalExecRuntime(ExecRuntime):
         self.cwd = working_dir
         self._proc: subprocess.Popen | None = None
         self._exit_code: int | None = None
+        self._process_group_id: int | None = None
 
     def _prepare_stdin(self, stdin: str | list[str] | None) -> bytes | None:
         """Prepare stdin data for subprocess."""
@@ -124,7 +128,9 @@ class LocalExecRuntime(ExecRuntime):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 shell=False,
+                start_new_session=True,
             )
+            self._process_group_id = proc.pid
             self._proc = proc
 
             try:
@@ -133,8 +139,8 @@ class LocalExecRuntime(ExecRuntime):
                 )
             except subprocess.TimeoutExpired:
                 timed_out = True
-                proc.kill()
-                stdout_bytes, stderr_bytes = proc.communicate()
+                self._terminate_process_group(proc)
+                stdout_bytes, stderr_bytes = proc.communicate(timeout=5)
 
             exit_code = proc.returncode
         except (OSError, ValueError) as exc:
@@ -185,13 +191,33 @@ class LocalExecRuntime(ExecRuntime):
             return exit_code
         return self._exit_code
 
+    def _terminate_process_group(
+        self, proc: subprocess.Popen[bytes] | None
+    ) -> None:
+        """Terminate the owned process group and reap its direct parent."""
+        process_group_id = self._process_group_id
+        self._process_group_id = None
+        if process_group_id is not None:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(process_group_id, signal.SIGKILL)
+        if proc is None:
+            return
+        if proc.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            logger.warning("Process group did not terminate", pid=proc.pid)
+
     def kill(self) -> None:
-        """Kill the running process."""
-        if self._proc is not None:
-            logger.debug("Killing subprocess", verbose=True)
-            self._proc.kill()
-            self._proc.wait(timeout=5)
-            self._proc = None
+        """Kill the running process and all of its descendants."""
+        proc = self._proc
+        if proc is None and self._process_group_id is None:
+            return
+        logger.debug("Killing subprocess", verbose=True)
+        self._terminate_process_group(proc)
+        self._proc = None
 
     def cleanup(self) -> None:
         """Clean up the process."""

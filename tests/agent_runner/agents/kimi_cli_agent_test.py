@@ -7,18 +7,22 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 import yaml
 
 from slop_code.agent_runner.agents.kimi_cli import KimiCliAgent
 from slop_code.agent_runner.agents.kimi_cli import KimiCliConfig
+from slop_code.agent_runner.agents.kimi_cli.parser import JsonRpcMessageFramer
 from slop_code.agent_runner.agents.kimi_cli.parser import _PendingToolCall
 from slop_code.agent_runner.agents.kimi_cli.parser import _WireStep
 from slop_code.agent_runner.agents.kimi_cli.parser import (
     group_events_into_steps,
 )
+from slop_code.agent_runner.agents.kimi_cli.parser import has_final_result
 from slop_code.agent_runner.agents.kimi_cli.parser import parse_wire_events
+from slop_code.agent_runner.agents.kimi_cli.parser import wire_event_params
 from slop_code.agent_runner.credentials import CredentialType
 from slop_code.agent_runner.credentials import ProviderCredential
 from slop_code.agent_runner.models import AgentCostLimits
@@ -27,6 +31,7 @@ from slop_code.agent_runner.registry import build_agent_config
 from slop_code.agent_runner.registry import get_agent_cls
 from slop_code.common.llms import APIPricing
 from slop_code.common.llms import ModelDefinition
+from slop_code.execution import Session
 from slop_code.execution.runtime import RuntimeEvent
 from slop_code.execution.runtime import RuntimeResult
 
@@ -35,7 +40,7 @@ class FakeRuntime:
     """Minimal runtime stub for testing."""
 
     def __init__(self) -> None:
-        self.events: list[RuntimeEvent] = []
+        self.events: Iterable[RuntimeEvent] = []
         self.cleaned = False
         self.last_stream_args: tuple[tuple, dict] | None = None
 
@@ -128,7 +133,7 @@ class TestKimiCliConfig:
         self, mock_cost_limits: AgentCostLimits
     ) -> None:
         with pytest.raises(Exception):
-            KimiCliConfig(
+            KimiCliConfig(  # type: ignore[missing-argument]
                 type="kimi_cli",
                 cost_limits=mock_cost_limits,
             )
@@ -188,6 +193,43 @@ class TestKimiCliWireHelpers:
             "ToolResult",
             "TurnEnd",
         ]
+
+    def test_jsonrpc_framer_matches_batch_parsing_with_diagnostics(
+        self,
+    ) -> None:
+        raw = """diagnostic before JSON-RPC
+{
+  "params": {
+    "payload": {"n": 1},
+    "type": "StepBegin"
+  },
+  "method": "event",
+  "jsonrpc": "2.0"
+}
+diagnostic between messages
+{
+  "result": {"status": "finished"},
+  "jsonrpc": "2.0",
+  "id": 1
+}
+diagnostic after JSON-RPC"""
+        framer = JsonRpcMessageFramer()
+        streamed_events: list[dict[str, object]] = []
+        streamed_final_results = 0
+
+        for chunk in (raw[:41], raw[41:167], raw[167:]):
+            for message in framer.feed(chunk):
+                params = wire_event_params(message)
+                if params is not None:
+                    streamed_events.append(params)
+                if message.get("id") in {"1", 1} and "result" in message:
+                    streamed_final_results += 1
+
+        assert streamed_events == parse_wire_events(raw)
+        assert streamed_events == [
+            {"payload": {"n": 1}, "type": "StepBegin"},
+        ]
+        assert bool(streamed_final_results) is has_final_result(raw)
 
     def test_wire_step_finalize_pending_tool_invalid_json_falls_back(
         self,
@@ -534,19 +576,6 @@ class TestKimiCliAgent:
         moonshot_credential: ProviderCredential,
     ) -> None:
         runtime = FakeRuntime()
-        runtime.events = [
-            RuntimeEvent(
-                kind="stdout",
-                text=(
-                    '{"jsonrpc":"2.0","method":"event","params":{"type":"StepBegin",'
-                    '"payload":{"n":1}}}\n'
-                    '{"jsonrpc":"2.0","method":"event","params":{"type":"TurnEnd",'
-                    '"payload":{}}}\n'
-                    '{"jsonrpc":"2.0","id":"1","result":{"status":"finished"}}\n'
-                ),
-            ),
-            _finished_event(exit_code=0),
-        ]
         session = FakeSession(
             runtime=runtime,
             working_dir=tmp_path,
@@ -568,11 +597,42 @@ class TestKimiCliAgent:
             base_url=None,
             max_context_size=None,
         )
-        agent.setup(session)
+        agent.setup(cast(Session, session))
+
+        def live_events() -> Iterable[RuntimeEvent]:
+            yield RuntimeEvent(
+                kind="stdout",
+                text=(
+                    '{"params":{"payload":{"n":1},"type":"StepBegin"},'
+                    '"method":"event","jsonrpc":"2.0"}'
+                ),
+            )
+            assert agent.usage.steps == 1
+            yield RuntimeEvent(
+                kind="stdout",
+                text=(
+                    '{"jsonrpc":"2.0","params":{"type":"StepBegin",'
+                    '"payload":{"n":2}},"method":"event"}'
+                ),
+            )
+            assert agent.usage.steps == 2
+            yield RuntimeEvent(
+                kind="stdout",
+                text=(
+                    '{"jsonrpc":"2.0","method":"event","params":{"type":"TurnEnd",'
+                    '"payload":{}}}'
+                    '{"result":{"status":"finished"},"id":"1","jsonrpc":"2.0"}'
+                ),
+            )
+            yield _finished_event(exit_code=0)
+
+        runtime.events = live_events()
         result = agent._run_invocation("solve task")
-        assert agent.usage.steps == 1
-        assert result.usage_totals["steps"] == 1
-        assert result.usage_totals["live_steps"] == 1
+        assert agent.usage.steps == 2
+        assert result.usage_totals["steps"] == 2
+        assert result.usage_totals["live_steps"] == 2
+        agent._sync_usage(result.usage_totals)
+        assert agent.usage.steps == 2
 
     def test_run_allows_exit_143_after_final_result(
         self,
@@ -624,7 +684,7 @@ class TestKimiCliAgent:
             base_url=None,
             max_context_size=None,
         )
-        agent.setup(session)
+        agent.setup(cast(Session, session))
         agent.run("solve task")
         assert agent.usage.steps == 1
 
@@ -658,7 +718,7 @@ class TestKimiCliAgent:
             base_url=None,
             max_context_size=None,
         )
-        agent.setup(session)
+        agent.setup(cast(Session, session))
         with pytest.raises(AgentError, match="exit code 143"):
             agent.run("solve task")
 

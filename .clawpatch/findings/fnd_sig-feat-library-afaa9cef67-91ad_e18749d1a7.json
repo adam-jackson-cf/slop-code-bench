@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-afaa9cef67-91ad_e18749d1a7",
+  "featureId": "feat_library_afaa9cef67",
+  "title": "Each strongly connected component rescans every graph edge",
+  "category": "performance",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "risk",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/scoring/production_graph.py",
+      "startLine": 174,
+      "endLine": 192,
+      "symbol": "produce_production_graph",
+      "quote": null
+    }
+  ],
+  "reasoning": "The mass calculation iterates all internal graph edges for every strongly connected component. An acyclic graph has one component per node, making this phase O(VE), or quadratic for a sparse chain, despite component detection itself being linear. Large ordinary call graphs therefore incur unnecessary scoring cost.",
+  "reproduction": "Score production call graphs formed as chains of increasing length. Every singleton component scans the full edge set even though its internal mass is zero.",
+  "recommendation": "Assign component membership first, then accumulate component masses in a single edge pass when both endpoints belong to the same component.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included; correctness checks on small graphs would return the expected masses despite the repeated scans.",
+  "suggestedRegressionTest": "Cover chains, disconnected nodes, cycles, and self-loops, verifying identical masses and that edge processing grows linearly rather than once per component.",
+  "minimumFixScope": "Component mass aggregation in produce_production_graph.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T195847-b12c65",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original path and lines still exist, but the implementation changed: lines 175–184 assign component membership, then lines 185–188 accumulate masses in one edge pass outside the component loop. This supports repair of the reported O(VE) aggregation. No linked patch attempts were supplied. Targeted pytest validation exited 1 before collection because the read-only environment had no usable temporary directory, so the repair cannot be classified as fixed under the requested validation rule.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/scoring/production_graph.py | sed -n '168,215p'",
+        "rg -n 'component_mass|single.*pass|production_graph|strongly_connected' tests/metrics/scoring",
+        "rg -l 'component_mass|produce_production_graph' tests",
+        "ls .venv/bin/python*",
+        "cat tests/metrics/scoring_production_graph_test.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/scoring_production_graph_test.py"
+      ],
+      "createdAt": "2026-09-12T19:59:21.287Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified component-local adjacency bounds graph traversal while preserving SCC output; 132 scoring tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:04:14.499Z"
+    }
+  ],
+  "signature": "sig_feat-library-afaa9cef67_91ad795302",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:41.946Z",
+  "updatedAt": "2026-09-12T20:04:14.498Z"
+}

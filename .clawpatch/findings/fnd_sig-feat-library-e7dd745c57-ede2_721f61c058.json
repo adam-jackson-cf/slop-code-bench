@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-e7dd745c57-ede2_721f61c058",
+  "featureId": "feat_library_e7dd745c57",
+  "title": "Router defaults override working OpenRouter configuration with empty strings",
+  "category": "api-contract",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/metrics/rubric/router.py",
+      "startLine": 19,
+      "endLine": 21,
+      "symbol": "grade_file_async",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/rubric/router.py",
+      "startLine": 56,
+      "endLine": 67,
+      "symbol": "grade_file_async",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/rubric/llm_grade.py",
+      "startLine": 175,
+      "endLine": 177,
+      "symbol": "grade_file_async",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/metrics/rubric/llm_grade.py",
+      "startLine": 206,
+      "endLine": 212,
+      "symbol": "grade_file_async",
+      "quote": null
+    }
+  ],
+  "reasoning": "The router explicitly forwards empty api_key_env and api_url defaults, replacing the provider's OPENROUTER_API_KEY and chat-completions URL defaults. A normal routed call therefore fails credential lookup even when OPENROUTER_API_KEY is configured. Passing an explicit key still leaves an empty request URL.",
+  "reproduction": "Call router.grade_file_async with the required arguments and OPENROUTER_API_KEY configured, without endpoint or environment-name overrides.",
+  "recommendation": "Use the provider defaults when overrides are omitted, either by forwarding only supplied overrides or by declaring the canonical defaults in the router.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests do not exercise routing or OpenRouter request configuration.",
+  "suggestedRegressionTest": "Exercise routed OpenRouter calls with omitted overrides and explicit overrides, asserting the resolved credential source and request URL.",
+  "minimumFixScope": "src/slop_code/metrics/rubric/router.py and routing coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T201350-8f6cd3",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence paths and cited lines still exist. router.py:56-72 now forwards api_key_env and api_url only when nonempty, preserving the provider defaults at llm_grade.py:175-177. This supports the intended repair. tests/metrics/rubric/grade_test.py:140-159 checks routed default credentials and URL. However, targeted pytest validation exited 1 before executing tests because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/metrics/rubric/router.py",
+        "rg -n 'router|api_key_env|api_url|OPENROUTER' tests/metrics/rubric",
+        "sed -n '130,164p' tests/metrics/rubric/grade_test.py",
+        "nl -ba src/slop_code/metrics/rubric/llm_grade.py | sed -n '165,218p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/metrics/rubric/grade_test.py"
+      ],
+      "createdAt": "2026-09-12T20:14:13.476Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified omitted router overrides remain unset and explicit OpenRouter values take precedence; 59 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:14:52.584Z"
+    }
+  ],
+  "signature": "sig_feat-library-e7dd745c57_ede2b40c26",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:52.707Z",
+  "updatedAt": "2026-09-12T20:14:52.583Z"
+}

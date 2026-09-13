@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-11ced79257-5_049d695872",
+  "featureId": "feat_test-suite_11ced79257",
+  "title": "History-gap scenarios supply expected transition scores as inputs",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/metrics/scoring_models_test.py",
+      "startLine": 646,
+      "endLine": 673,
+      "symbol": "test_history_gap_golden_cases_reset_and_resume_transition_components",
+      "quote": null
+    }
+  ],
+  "reasoning": "For transition cases, the produced history is used only for its length. Every checkpoint receives successful correctness evidence, and expected_rework and expected_regression are passed directly into the score calculator. Consequently, the assertions cannot detect failure to reset or resume transition state across a missing checkpoint.",
+  "reproduction": "Change a fixture's produced flags while preserving its length and expected component values; the transition calculation receives identical inputs.",
+  "recommendation": "Exercise the transition-producing code with the actual produced/missing sequence and compare its resulting components against the golden expectations.",
+  "whyTestsDoNotAlreadyCoverThis": "The included lineage test covers consecutive produced checkpoints, and the finalization tests cover missing evidence, but this history-gap scenario never sends its gap pattern into production logic.",
+  "suggestedRegressionTest": "Expand the existing history scenarios to cover edits before and after missing checkpoints, verifying both reset behavior and subsequent repeated-edit tracking.",
+  "minimumFixScope": "The history-gap golden test and its scenario setup.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T205222-ca74cb",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The original evidence remains at tests/metrics/scoring_models_test.py:646–673. Transition cases use produced only for its length, give every checkpoint successful correctness evidence, and pass expected_rework and expected_regression directly into calculate_problem_score. Changing gap flags without changing length therefore leaves calculation inputs unchanged. Nearby lineage and integration tests exercise consecutive checkpoints, not reset and resumed repeated-edit tracking across gaps. No linked patch attempts were supplied. This conclusion is based on current source inspection; tests were not run. CodeGraph status failed because its database could not be opened.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '640,680p'",
+        "rg -n 'history_cases|history_gap|reset|resume|produced=False' tests/metrics/scoring* tests/metrics/fixtures/scoring_golden.json",
+        "sed -n '27,55p' tests/metrics/fixtures/scoring_golden.json",
+        "rg -n 'def calculate_problem_rework|produced|ledger|def _produce_rework_evidence' src/slop_code/metrics/scoring/lineage.py src/slop_code/metrics/scoring/live_evidence.py",
+        "rg -n 'gap|missing|calculate_problem_rework|_produce_rework_evidence' tests/metrics/scoring_lineage_test.py tests/metrics/scoring_production_integration_test.py"
+      ],
+      "createdAt": "2026-09-12T20:52:46.923Z"
+    },
+    {
+      "runId": "20260912T205850-1daf52",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The evidence file exists, but lines 646–673 now contain unrelated quality evidence; the history-gap test moved to lines 719–745. It no longer passes golden expectations directly into scoring, but the underlying coverage gap remains: _history_components (127–173) implements gap resets itself, hardcodes gap/resumption scores and every regression score, and calls production calculate_problem_rework only with consecutive produced checkpoints. Production gap handling therefore remains untested by these scenarios. The actual producer rejects missing symbol evidence, rather than implementing this helper’s reset/resume behavior. Nearby integration coverage still exercises consecutive checkpoints and malformed evidence. No linked patch attempts or validation results were supplied. Tests were not run; CodeGraph status failed because its database could not be opened. Current source does not support marking this repaired.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '125,185p;700,780p'",
+        "rg -n 'history|gap|reset|resume|produced' tests/metrics/scoring*test.py tests/metrics/fixtures/scoring_golden.json",
+        "rg -n 'def _produce_rework_evidence|active|produced|def calculate_problem_rework' src/slop_code/metrics/scoring/live_evidence.py src/slop_code/metrics/scoring/lineage.py",
+        "sed -n '582,652p' src/slop_code/metrics/scoring/live_evidence.py",
+        "sed -n '410,465p' src/slop_code/metrics/scoring/lineage.py",
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '646,673p'",
+        "rg -n '_produce_rework_evidence|history_components' tests"
+      ],
+      "createdAt": "2026-09-12T20:59:23.495Z"
+    },
+    {
+      "runId": "20260912T210150-84d92c",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "The evidence file exists, but lines 646–673 now contain unrelated tests. Both the original history-gap test and the subsequently reported _history_components helper are absent. The history_cases fixture remains at tests/metrics/fixtures/scoring_golden.json:27–34 without a test consumer. Removing the test has not supplied the missing behavioral coverage. Current lineage tests cover consecutive edits and rejection of missing evidence; production integration coverage exercises consecutive checkpoints and malformed evidence, not reset/resumed tracking across gaps. Production calculate_problem_rework still rejects missing symbol evidence at lineage.py:425–426. No linked patch attempts or validation results were supplied. Tests were not run; CodeGraph status failed because its database could not be opened. Current source does not establish a repair.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "rg -n 'history|gap|resume|expected_rework|expected_regression' tests/metrics/scoring* tests/metrics/fixtures/scoring_golden.json",
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '640,780p'",
+        "nl -ba src/slop_code/metrics/scoring/lineage.py | sed -n '410,475p'",
+        "nl -ba src/slop_code/metrics/scoring/live_evidence.py | sed -n '582,660p'",
+        "nl -ba tests/metrics/scoring_lineage_test.py | sed -n '455,520p'",
+        "nl -ba tests/metrics/scoring_production_integration_test.py | sed -n '260,305p'",
+        "rg -n 'history_cases|test_history_gap|_history_components|produced_after_gap|two_produced_after_gap' tests/metrics src/slop_code/metrics/scoring",
+        "sed -n '27,40p' tests/metrics/fixtures/scoring_golden.json"
+      ],
+      "createdAt": "2026-09-12T21:02:26.794Z"
+    },
+    {
+      "runId": "20260912T210841-cea43d",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Original file exists, but lines 646–673 now contain unrelated tests; the original history-gap test is absent. Replacement coverage at scoring_production_integration_test.py:268–290 passes actual produced/missing patterns into _produce_rework_evidence and asserts missing-provenance rejection. Golden expected component inputs were removed. This matches current production behavior: gaps block evidence generation rather than reset/resume scoring. Source inspection supports remediation of the circular test, but targeted validation failed before collection because uv cache access was denied, so fixed cannot be confirmed. No linked patch attempts were supplied. CodeGraph also failed to open its database.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "rg -n 'history_cases|history_gap|_history_components|expected_rework|expected_regression|reset|resume' tests/metrics/scoring* tests/metrics/fixtures/scoring_golden.json",
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '640,680p'",
+        "nl -ba tests/metrics/scoring_production_integration_test.py | sed -n '275,335p'",
+        "nl -ba src/slop_code/metrics/scoring/lineage.py | sed -n '410,450p'",
+        "nl -ba src/slop_code/metrics/scoring/live_evidence.py | sed -n '582,665p'",
+        "sed -n '27,40p' tests/metrics/fixtures/scoring_golden.json",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/metrics/scoring_production_integration_test.py::test_canonical_producer_joins_once_and_raw_payloads_recompute tests/metrics/scoring_lineage_test.py::test_problem_rework_carries_modified_lineage_across_every_transition tests/metrics/scoring_lineage_test.py::test_problem_rework_rejects_missing_symbol_evidence"
+      ],
+      "createdAt": "2026-09-12T21:09:12.112Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central verification passed 29 focused tests. Replacement test consumes every golden produced/missing pattern through _produce_rework_evidence and asserts strict canonical-provenance rejection, removing circular expected-component inputs without changing runtime semantics.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T21:09:29.846Z"
+    },
+    {
+      "runId": "20260912T212750-1b7792",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original file exists, but lines 646–673 now contain unrelated tests. The circular history-gap test is absent. Replacement coverage at scoring_production_integration_test.py:268–290 consumes all six golden produced/missing patterns through _produce_rework_evidence and asserts canonical-provenance rejection. This matches current production behavior: missing evidence blocks transitions rather than resetting/resuming scores. Expected transition scores are no longer supplied as inputs. Although the supplied triage history reports 29 passing tests, current targeted validation failed before collection because uv cache access was denied, so fixed cannot be confirmed. No linked patch attempts were supplied. CodeGraph also could not open its database.",
+      "commands": [
+        "codegraph --version\ncodegraph status",
+        "nl -ba tests/metrics/scoring_models_test.py | sed -n '640,680p'",
+        "nl -ba tests/metrics/scoring_production_integration_test.py | sed -n '235,300p'",
+        "nl -ba src/slop_code/metrics/scoring/live_evidence.py | sed -n '582,665p'",
+        "nl -ba src/slop_code/metrics/scoring/lineage.py | sed -n '410,445p'",
+        "rg -n 'history_cases|history_gap|_history_components|expected_rework|expected_regression' tests/metrics src/slop_code/metrics/scoring",
+        "sed -n '27,40p' tests/metrics/fixtures/scoring_golden.json",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/metrics/scoring_production_integration_test.py::test_canonical_producer_joins_once_and_raw_payloads_recompute tests/metrics/scoring_lineage_test.py::test_problem_rework_carries_modified_lineage_across_every_transition tests/metrics/scoring_lineage_test.py::test_problem_rework_rejects_missing_symbol_evidence"
+      ],
+      "createdAt": "2026-09-12T21:28:24.909Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Central focused validation passed 29 tests after final fixture alignment. All six produced/missing patterns flow through _produce_rework_evidence and assert their fixture-declared canonical_provenance_unavailable outcome; circular transition-score inputs are absent and runtime strict provenance is unchanged.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T21:29:01.677Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-11ced79257_52e2c5b424",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:10.908Z",
+  "updatedAt": "2026-09-12T21:29:01.676Z"
+}

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-679419b772-ed06_ac003a360b",
+  "featureId": "feat_library_679419b772",
+  "title": "Missing complexity metrics are displayed as measured zeros",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/pages/run_analysis_quality.py",
+      "startLine": 104,
+      "endLine": 120,
+      "symbol": "update_quality",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/pages/run_analysis_quality.py",
+      "startLine": 57,
+      "endLine": 60,
+      "symbol": "build_histogram",
+      "quote": null
+    }
+  ],
+  "reasoning": "When mass.cc or cc_concentration is absent, assigning the scalar default 0 creates a zero measurement for every checkpoint. The histogram then displays a populated distribution at zero, suggesting measured low complexity instead of unavailable analysis. Creating these columns also defeats build_histogram's existing missing-column guard.",
+  "reproduction": "Provide a nonempty checkpoint dataframe without mass.cc and cc_concentration. Both complexity histograms receive one zero per checkpoint.",
+  "recommendation": "Pass the original metric columns to build_histogram, or preserve missing values and explicitly display unavailable data. Do not synthesize zero measurements.",
+  "whyTestsDoNotAlreadyCoverThis": "No tests were included in the supplied feature context; missing-metric coverage cannot be verified.",
+  "suggestedRegressionTest": "Exercise quality rendering with present, partially missing, and absent metric data. Assert that only actual measurements contribute to histogram counts and absent metrics produce an empty or unavailable state.",
+  "minimumFixScope": "Metric preparation in update_quality and focused quality-rendering coverage.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T204058-339097",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and symbols still exist. Lines 107–118 now pass mass.cc and cc_concentration directly to build_histogram; lines 57–62 reject absent columns and discard missing values without synthesizing zeros. Existing coverage in tests/dashboard/pages_test.py:56 checks absent complexity metrics and exclusion of missing measurements. This supports an apparent repair, but targeted pytest validation exited 1 before collection because the read-only environment provided no writable temporary directory. Therefore fixed cannot be confirmed. No linked patch attempts or prior validation results were supplied.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/pages/run_analysis_quality.py",
+        "rg -n 'quality|mass.cc|cc_concentration' tests/dashboard src/slop_code/dashboard/page_context.py",
+        "sed -n '1,100p' tests/dashboard/pages_test.py",
+        "sed -n '1,160p' src/slop_code/dashboard/page_context.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/pages_test.py"
+      ],
+      "createdAt": "2026-09-12T20:41:32.219Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified missing complexity stays unavailable and only actual measurements contribute to histogram counts; 5 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:42:40.825Z"
+    }
+  ],
+  "signature": "sig_feat-library-679419b772_ed06a20f8a",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:18.804Z",
+  "updatedAt": "2026-09-12T20:42:40.825Z"
+}

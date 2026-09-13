@@ -22,6 +22,7 @@ from .models import CheckpointCostEvidence
 from .models import Eligibility
 from .models import ProblemCostEvidence
 from .models import ProblemScoreInput
+from .models import ProductionQualityRawEvidence
 from .models import ScoreEvidenceIndex
 from .schema import canonical_json_bytes
 from .schema import problem_key
@@ -77,9 +78,9 @@ def _build_score_evidence(
             elif tail.startswith("checkpoints/") and tail.endswith(
                 "/production_quality.json"
             ):
-                quality = json.loads(raw)
+                quality = ProductionQualityRawEvidence.model_validate_json(raw)
                 parser_tokenizer_schema_ids.add(
-                    quality["parser_tokenizer_schema_id"]
+                    quality.parser_tokenizer_schema_id
                 )
             elif tail.startswith("checkpoints/") and tail.endswith(".json"):
                 checkpoints[
@@ -103,7 +104,7 @@ def _build_score_evidence(
                 transitions.setdefault((problem, transition_id), {}).update(
                     json.loads(raw)
                 )
-        except (ValueError, json.JSONDecodeError):
+        except (TypeError, ValueError, json.JSONDecodeError):
             reasons.add("canonical_artifact_invalid")
     inputs: list[ProblemScoreInput] = []
     costs: list[ProblemCostEvidence] = []
@@ -298,22 +299,25 @@ def _materialize_score_evidence(
         lineage_sidecars=checkpoint_evidence,
     )
     sidecars.update(regression)
-    sidecars["generation_inputs.json"] = _generation_inputs(
-        run_dir, problem_configs, sidecars
-    )
     evidence, evidence_eligibility = _build_score_evidence(
         sidecars, problem_configs
     )
-    if evidence is not None:
-        name, payload = score_evidence_sidecar(evidence)
-        sidecars[name] = payload
-    return aggregate_eligibility(
+    eligibility = aggregate_eligibility(
         (
             checkpoint_eligibility,
             regression_eligibility,
             evidence_eligibility,
         )
     )
+    if not eligibility.eligible:
+        return eligibility
+    sidecars["generation_inputs.json"] = _generation_inputs(
+        run_dir, problem_configs, sidecars
+    )
+    if evidence is not None:
+        name, payload = score_evidence_sidecar(evidence)
+        sidecars[name] = payload
+    return eligibility
 
 
 def _producer_status_rows(

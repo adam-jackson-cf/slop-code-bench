@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a8bc57d38d-a566_d7b849dac4",
+  "featureId": "feat_library_a8bc57d38d",
+  "title": "--assessment-policy is accepted but has no effect",
+  "category": "api-contract",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "contract-mismatch",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/eval_run_dir.py",
+      "startLine": 150,
+      "endLine": 154,
+      "symbol": "evaluate_agent_run",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/eval_run_dir.py",
+      "startLine": 282,
+      "endLine": 289,
+      "symbol": "evaluate_agent_run",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/eval_run_dir.py",
+      "startLine": 369,
+      "endLine": 375,
+      "symbol": "evaluate_agent_run",
+      "quote": null
+    }
+  ],
+  "reasoning": "assessment_policy is used only in logging. It is never passed to evaluation, report generation, or summary generation. Consequently, the advertised policy selector cannot affect checkpoint assessment, although logs imply that the requested policy was applied.",
+  "reproduction": "Invoke the command with different accepted assessment-policy values while holding other inputs constant. All evaluation and reporting calls receive identical arguments.",
+  "recommendation": "Remove the ineffective policy selector and retain the canonical all-cases assessment, or explicitly reject unsupported policies instead of logging them as applied.",
+  "whyTestsDoNotAlreadyCoverThis": "Every included command test supplies PassPolicy.ALL_CASES, and reporting and summary functions are mocked without checking policy semantics.",
+  "suggestedRegressionTest": "Add command-level coverage verifying that unsupported assessment policies are rejected and the supported workflow uses strict all-cases assessment.",
+  "minimumFixScope": "The assessment-policy CLI contract in evaluate_agent_run and its command tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T202547-1738dd",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original file and line ranges still exist, but relevant code shifted. eval_run_dir.py:156-159 now advertises only all-cases, and lines 185-187 validate it before loading the environment. common.py:78-91 rejects every other value with exit code 1. A rejection test exists at test_eval_run_dir.py:245. These changes support the recommended repair; no linked patch attempts were supplied. However, targeted pytest validation exited 1 before collection because the read-only environment has no writable temporary directory. Therefore the repair cannot be reported as verified fixed.",
+      "commands": [
+        "codegraph --version",
+        "codegraph status",
+        "nl -ba src/slop_code/entrypoints/commands/eval_run_dir.py | sed -n '150,195p;280,310p;369,395p'",
+        "sed -n '75,94p' src/slop_code/entrypoints/commands/common.py",
+        "rg -n 'all.cases|policy|strict' tests/entrypoints tests/evaluation --glob '*test*.py'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/commands/test_eval_run_dir.py tests/entrypoints/test_utils_summary.py tests/entrypoints/test_evaluation_driver.py"
+      ],
+      "createdAt": "2026-09-12T20:26:18.374Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified only all-cases is accepted before side effects; help/docs expose only all-cases and continuation remains independent; 27 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:26:53.690Z"
+    }
+  ],
+  "signature": "sig_feat-library-a8bc57d38d_a566d319e0",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:30.109Z",
+  "updatedAt": "2026-09-12T20:26:53.690Z"
+}

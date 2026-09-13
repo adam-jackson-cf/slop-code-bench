@@ -18,6 +18,7 @@ from slop_code.metrics.checkpoint import get_checkpoint_metrics
 from slop_code.metrics.checkpoint import get_evaluation_metrics
 from slop_code.metrics.checkpoint import get_quality_metrics
 from slop_code.metrics.checkpoint import get_rubric_metrics
+from slop_code.metrics.checkpoint.extractors import _compute_distributions
 
 
 class TestGetEvaluationMetrics:
@@ -918,6 +919,63 @@ class TestComputeCheckpointDelta:
         result = compute_checkpoint_delta(prev, curr)
 
         assert result["delta.churn_ratio"] == float("inf")
+
+    def test_unavailable_measurements_serialize_as_null_deltas(self):
+        """Missing values remain distinct from measured zero in delta output."""
+        result = compute_checkpoint_delta(
+            {"total_lines": 0, "verbosity": None},
+            {
+                "loc": 0,
+                "verbosity": 0,
+                "lines_added": 0,
+                "lines_removed": 0,
+            },
+        )
+
+        assert result["delta.loc"] is None
+        assert result["delta.verbosity"] is None
+        assert result["delta.churn_ratio"] == 0.0
+        assert json.loads(json.dumps(result))["delta.loc"] is None
+
+    def test_measured_zero_delta_remains_numeric_zero(self):
+        """Measured zero values do not become unavailable."""
+        result = compute_checkpoint_delta(
+            {"loc": 0, "verbosity": 0, "total_lines": 0},
+            {
+                "loc": 0,
+                "verbosity": 0,
+                "lines_added": 0,
+                "lines_removed": 0,
+            },
+        )
+
+        assert result["delta.loc"] == 0.0
+        assert result["delta.verbosity"] == 0.0
+        assert result["delta.churn_ratio"] == 0.0
+
+    def test_churn_includes_eligible_deleted_files(self):
+        """Added, modified, and deleted measured paths contribute to churn."""
+        distributions = _compute_distributions(
+            iter(
+                [
+                    {"file_path": "added.py"},
+                    {"file_path": "modified.py"},
+                ]
+            ),
+            iter([]),
+            {
+                "file_diffs": {
+                    "added.py": {"lines_added": 3, "lines_removed": 0},
+                    "modified.py": {"lines_added": 2, "lines_removed": 1},
+                    "deleted.py": {"lines_added": 0, "lines_removed": 5},
+                    "ignored.txt": {"lines_added": 9, "lines_removed": 4},
+                }
+            },
+            {"modified.py", "deleted.py"},
+        )
+
+        assert distributions["lines_added"] == 5
+        assert distributions["lines_removed"] == 6
 
     def test_all_delta_keys_present(self):
         """Test that all expected delta keys are present in output."""

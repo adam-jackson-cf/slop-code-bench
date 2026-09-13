@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 from decimal import Decimal
 from types import SimpleNamespace
@@ -9,7 +10,9 @@ from rich.console import Console
 
 from slop_code.common import SUMMARY_FILENAME
 from slop_code.entrypoints.utils import EXPERIMENT_SUMMARY_FILENAME
+from slop_code.entrypoints.utils import _verified_score_projection
 from slop_code.entrypoints.utils import display_and_save_summary
+from slop_code.metrics.scoring import ScoreEvidenceError
 
 
 def _patch_verified_generation(
@@ -51,7 +54,7 @@ def _patch_verified_generation(
     }
     monkeypatch.setattr(
         "slop_code.entrypoints.utils.load_verified_current_generation_state",
-        lambda _run_dir: (manifest, evidence),
+        lambda _run_dir: ("a" * 64, manifest, evidence),
     )
 
 
@@ -65,7 +68,7 @@ def _config() -> dict:
     }
 
 
-def test_display_and_save_summary_uses_new_composite_formulas(tmp_path):
+def test_display_and_save_summary_uses_new_composite_formulas(tmp_path, capsys):
     results_file = tmp_path / "checkpoint_results.jsonl"
     rows = [
         {
@@ -86,7 +89,8 @@ def test_display_and_save_summary_uses_new_composite_formulas(tmp_path):
         },
     ]
     results_file.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-    console = Console(record=True)
+    supplied_output = io.StringIO()
+    console = Console(file=supplied_output, record=True)
 
     summary = display_and_save_summary(
         results_file, tmp_path, _config(), console, expected_checkpoints=2
@@ -106,10 +110,12 @@ def test_display_and_save_summary_uses_new_composite_formulas(tmp_path):
     persisted = (tmp_path / EXPERIMENT_SUMMARY_FILENAME).read_text()
     assert "Completion Summary" in persisted
     assert "Scoring Quality" not in persisted
+    assert supplied_output.getvalue() == rendered
+    assert capsys.readouterr().out == ""
 
 
 def test_display_and_save_summary_projects_verified_score(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, capsys
 ):
     results_file = tmp_path / "checkpoint_results.jsonl"
     results_file.write_text(
@@ -151,7 +157,8 @@ def test_display_and_save_summary_projects_verified_score(
     )
     _patch_verified_generation(monkeypatch, tmp_path, benchmark)
 
-    console = Console(record=True)
+    supplied_output = io.StringIO()
+    console = Console(file=supplied_output, record=True)
     display_and_save_summary(
         results_file,
         tmp_path,
@@ -204,6 +211,8 @@ def test_display_and_save_summary_projects_verified_score(
     assert "cpython cpython-312" in persisted
     assert "e" * 64 in persisted
     assert "/private/evaluator/bin/python" not in persisted
+    assert supplied_output.getvalue() == rendered
+    assert capsys.readouterr().out == ""
 
 
 def test_verified_checkpoint_additions_merge_by_exact_checkpoint_identity(
@@ -237,6 +246,16 @@ def test_verified_checkpoint_additions_merge_by_exact_checkpoint_identity(
             "problem_score": "99.000000",
         },
     )
+
+    cross_problem_addition = SimpleNamespace(
+        problem_name="prob2",
+        checkpoint_id="checkpoint_twenty",
+        model_dump=lambda **_kwargs: {
+            "problem_name": "prob2",
+            "checkpoint_id": "checkpoint_twenty",
+            "problem_score": "100.000000",
+        },
+    )
     benchmark = SimpleNamespace(
         benchmark_score=Decimal("42"),
         correctness=Decimal("1"),
@@ -248,7 +267,7 @@ def test_verified_checkpoint_additions_merge_by_exact_checkpoint_identity(
         monkeypatch,
         tmp_path,
         benchmark,
-        (addition, unmatched_addition),
+        (addition, unmatched_addition, cross_problem_addition),
     )
 
     display_and_save_summary(
@@ -270,9 +289,107 @@ def test_verified_checkpoint_additions_merge_by_exact_checkpoint_identity(
     ]
 
 
-def test_display_and_save_summary_omits_tampered_score(tmp_path, monkeypatch):
-    from slop_code.metrics.scoring import ScoreEvidenceError
+def _manifest_for_generation(
+    generation_id: str, formula_id: str = "f" * 64
+) -> SimpleNamespace:
+    eligibility = SimpleNamespace(
+        eligible=True,
+        reasons=(),
+        model_dump=lambda **_kwargs: {"eligible": True, "reasons": []},
+    )
+    benchmark = SimpleNamespace(
+        benchmark_score=Decimal(generation_id),
+        correctness=Decimal("1"),
+        inertia=Decimal("0"),
+        cost_per_configured_checkpoint=None,
+        problems=(),
+    )
+    return SimpleNamespace(
+        benchmark=benchmark,
+        eligibility=eligibility,
+        formula_id=formula_id,
+        report_additions=(),
+    )
 
+
+def test_verified_score_projection_uses_stable_generation(
+    tmp_path, monkeypatch
+):
+    analysis_dir = tmp_path / "measurement_analysis"
+    analysis_dir.mkdir()
+    pointer_path = analysis_dir / "current.json"
+    pointer_path.write_text(json.dumps({"generation_id": "1"}))
+    monkeypatch.setattr(
+        "slop_code.entrypoints.utils.load_verified_current_generation_state",
+        lambda _run_dir: ("1", _manifest_for_generation("1"), {}),
+    )
+
+    projection = _verified_score_projection(tmp_path, set())
+
+    assert projection is not None
+    assert projection["generation_id"] == "1"
+    assert projection["benchmark_score"] == Decimal("1")
+
+
+def test_verified_score_projection_uses_snapshot_identity_during_aba_republication(
+    tmp_path, monkeypatch
+):
+    analysis_dir = tmp_path / "measurement_analysis"
+    analysis_dir.mkdir()
+    pointer_path = analysis_dir / "current.json"
+    pointer_path.write_text(json.dumps({"generation_id": "a"}))
+    load_count = 0
+
+    def load_generation(_run_dir):
+        nonlocal load_count
+        load_count += 1
+        if load_count == 1:
+            pointer_path.write_text(json.dumps({"generation_id": "b"}))
+            pointer_path.write_text(json.dumps({"generation_id": "a"}))
+            return "b", _manifest_for_generation("2", "b" * 64), {}
+        return "a", _manifest_for_generation("1", "a" * 64), {}
+
+    monkeypatch.setattr(
+        "slop_code.entrypoints.utils.load_verified_current_generation_state",
+        load_generation,
+    )
+
+    projection = _verified_score_projection(tmp_path, set())
+
+    assert load_count == 2
+    assert projection is not None
+    assert projection["generation_id"] == "a"
+    assert projection["benchmark_score"] == Decimal("1")
+    assert projection["formula_id"] == "a" * 64
+
+
+def test_verified_score_projection_omits_twice_advancing_generation(
+    tmp_path, monkeypatch
+):
+    analysis_dir = tmp_path / "measurement_analysis"
+    analysis_dir.mkdir()
+    pointer_path = analysis_dir / "current.json"
+    pointer_path.write_text(json.dumps({"generation_id": "1"}))
+    load_count = 0
+
+    def load_generation(_run_dir):
+        nonlocal load_count
+        load_count += 1
+        pointer_path.write_text(
+            json.dumps({"generation_id": str(load_count + 1)})
+        )
+        return str(load_count), _manifest_for_generation(str(load_count)), {}
+
+    monkeypatch.setattr(
+        "slop_code.entrypoints.utils.load_verified_current_generation_state",
+        load_generation,
+    )
+
+    assert _verified_score_projection(tmp_path, set()) is None
+    assert load_count == 2
+
+
+def test_display_and_save_summary_omits_tampered_score(tmp_path, monkeypatch):
     results_file = tmp_path / "checkpoint_results.jsonl"
     results_file.write_text(
         json.dumps(

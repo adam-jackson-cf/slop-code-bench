@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-a779b6f7f0-9a94_627969111e",
+  "featureId": "feat_library_a779b6f7f0",
+  "title": "Docker command logging exposes environment secrets",
+  "category": "security",
+  "severity": "high",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/execution/docker_runtime/exec.py",
+      "startLine": 208,
+      "endLine": 228,
+      "symbol": "DockerExecRuntime._build_docker_run_command",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/execution/docker_runtime/streaming.py",
+      "startLine": 318,
+      "endLine": 326,
+      "symbol": "DockerStreamingRuntime._build_exec_command",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both builders insert complete environment values into the argument list and then log that list. When these debug events are enabled, credentials supplied through runtime or environment configuration are emitted without redaction.",
+  "reproduction": "Capture debug events while building either command with a synthetic secret environment variable; its complete value appears in args.",
+  "recommendation": "Log safe command metadata without environment values, or redact values in a separate logging representation.",
+  "whyTestsDoNotAlreadyCoverThis": "Environment tests verify argument construction or delivery but never inspect logging for disclosure.",
+  "suggestedRegressionTest": "Extend environment propagation scenarios to capture logs and assert that synthetic sensitive values are absent while still reaching the subprocess.",
+  "minimumFixScope": "Both Docker command builders and their environment tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260911T170218-51a7fb",
+      "kind": "revalidate",
+      "status": "fixed",
+      "note": null,
+      "reasoning": "Both evidence files and builders still exist. exec.py:222–229 and streaming.py:327–333 now log metadata and environment counts instead of argv. Both files have logging regression coverage. An isolated execution of each current builder passed: synthetic environment values remained in argv and were absent from captured debug events. The initial here-document invocation was blocked by the read-only sandbox; the same validation passed using python -c. Full pytest and Docker integration were not run. No linked patch attempts were supplied.",
+      "commands": [
+        "rg -n 'Built docker|environment_count|args=|test_environment_value' src/slop_code/execution/docker_runtime/{exec,streaming}.py tests/execution/docker_runtime/{exec,streaming}_test.py",
+        "sed -n '205,231p' src/slop_code/execution/docker_runtime/exec.py",
+        "sed -n '309,336p' src/slop_code/execution/docker_runtime/streaming.py",
+        "sed -n '192,222p' tests/execution/docker_runtime/exec_test.py",
+        "sed -n '258,296p' tests/execution/docker_runtime/streaming_test.py",
+        ".venv/bin/python -B -c '<in-memory AST extraction and execution of both current builders; assert environment propagation and absence from captured debug events>'"
+      ],
+      "createdAt": "2026-09-11T17:02:59.681Z"
+    }
+  ],
+  "signature": "sig_feat-library-a779b6f7f0_9a94a68bc6",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:58:39.908Z",
+  "updatedAt": "2026-09-11T17:02:59.681Z"
+}

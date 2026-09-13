@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-11ced79257-3_256ecef6e2",
+  "featureId": "feat_test-suite_11ced79257",
+  "title": "Pointer-repair assertions compare the pointer with itself",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/metrics/scoring_generation_test.py",
+      "startLine": 282,
+      "endLine": 295,
+      "symbol": "test_reuse_revalidates_scores_and_repairs_pointer",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/scoring_generation_test.py",
+      "startLine": 324,
+      "endLine": 329,
+      "symbol": "test_reuse_pointer_repair_observes_atomic_boundaries",
+      "quote": null
+    }
+  ],
+  "reasoning": "Both assertions derive the expected generation ID by rereading the pointer being checked. A pointer that still contains \"stale\", or points to another generation, satisfies these comparisons. Reading evidence from the separately saved generation does not verify the pointer targets it.",
+  "reproduction": "If reuse returns the existing manifest without repairing current.json, the first test's pointer assertion still passes.",
+  "recommendation": "Capture the original generation ID before corrupting the pointer and compare the repaired pointer directly against that saved ID.",
+  "whyTestsDoNotAlreadyCoverThis": "The reuse-boundary test already saves generation_id but does not use it in its post-rename pointer assertion.",
+  "suggestedRegressionTest": "Strengthen both existing reuse scenarios to require the saved generation ID after successful repair or the after_pointer_rename boundary, retaining the stale-pointer expectation before publication.",
+  "minimumFixScope": "Pointer assertions in the two generation reuse tests.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T205221-e4885a",
+      "kind": "revalidate",
+      "status": "open",
+      "note": null,
+      "reasoning": "Current repository evidence persists in tests/metrics/scoring_generation_test.py:296–298 and 327–332. Both assertions obtain the expected ID through _current_generation_id (lines 80–84), which rereads the same current.json being checked. A stale or incorrect generation ID therefore satisfies them. The boundary test saves generation_id at line 311 but only uses it to verify separate generation evidence, not the repaired pointer. No linked patch attempts or validation results were supplied. This conclusion is based on current-file inspection; tests were not run.",
+      "commands": [
+        "nl -ba tests/metrics/scoring_generation_test.py | sed -n '75,88p;278,335p'",
+        "sed -n '1,180p' /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md"
+      ],
+      "createdAt": "2026-09-12T20:52:41.531Z"
+    },
+    {
+      "runId": "20260912T205851-77ac8e",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and both tests still exist. The assertions have been repaired: line 291 captures generation_id before corruption and lines 297–299 compare against it; line 312 captures the boundary test's ID and line 330 checks it after publication, retaining the stale-pointer expectation at line 332. No linked patch attempts were supplied. Targeted validation exited 2 because sandbox permissions blocked uv cache access, so the apparent source repair cannot be reported as verified fixed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "nl -ba tests/metrics/scoring_generation_test.py | sed -n '278,340p'",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/metrics/scoring_generation_test.py::test_reuse_revalidates_scores_and_repairs_pointer tests/metrics/scoring_generation_test.py::test_reuse_pointer_repair_observes_atomic_boundaries"
+      ],
+      "createdAt": "2026-09-12T20:59:12.209Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified both generation reuse tests save the original ID before corruption and require repaired pointer equality to that ID; 56 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:59:57.604Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-11ced79257_39d399175d",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:10.908Z",
+  "updatedAt": "2026-09-12T20:59:57.603Z"
+}

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-63b4d53547-9031_f6b012987e",
+  "featureId": "feat_library_63b4d53547",
+  "title": "Forced consolidation leaves stale CSVs from previous exports",
+  "category": "data-loss",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/entrypoints/commands/consolidate_runs.py",
+      "startLine": 165,
+      "endLine": 176,
+      "symbol": "consolidate_runs",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/entrypoints/commands/consolidate_runs.py",
+      "startLine": 339,
+      "endLine": 377,
+      "symbol": "consolidate_runs",
+      "quote": null
+    }
+  ],
+  "reasoning": "--force reuses the existing directory, but output files are written only when their new datasets are nonempty. A subsequent export that skips rubric, quality, or evaluation processing leaves the previous files intact alongside newly written run data. Consumers can therefore read a mixture of different exports.",
+  "reproduction": "Consolidate runs containing rubric and evaluation data, then consolidate a different collection into the same output directory with --force --skip-rubric --skip-evaluations. The old rubric.csv and evaluations.csv.gz remain.",
+  "recommendation": "Publish a complete replacement export, or explicitly remove command-owned output files that are absent from the new export. Preserve the existing export until collection and validation succeed.",
+  "whyTestsDoNotAlreadyCoverThis": "The consolidation integration test writes to a fresh directory and does not exercise repeated forced exports or datasets becoming empty.",
+  "suggestedRegressionTest": "Expand the consolidation workflow test to perform successive exports with different optional datasets and verify that every retained output belongs to the latest export.",
+  "minimumFixScope": "Output publication and cleanup of command-owned CSV files in consolidate_runs.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200511-b50993",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and line ranges still exist, but their contents changed. Current lines 102–118 identify command-owned outputs, lines 185–196 remove owned files absent from the staged export, and lines 411–429 stage output before publication. This supports repairing stale rubric, evaluation, and quality CSVs. An existing successive-export test verifies removal of stale checkpoint output while preserving unrelated files. However, targeted pytest validation exited 1 before running tests because the read-only environment has no usable temporary directory. No linked patch attempts or successful validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/entrypoints/commands/consolidate_runs.py | sed -n '100,205p;400,444p'",
+        "rg -n 'force|stale|publish|preserv|skip|empty|failure' tests/entrypoints/commands/test_consolidate_runs.py",
+        "sed -n '185,310p' tests/entrypoints/commands/test_consolidate_runs.py",
+        "sed -n '339,377p' src/slop_code/entrypoints/commands/consolidate_runs.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/entrypoints/commands/test_consolidate_runs.py"
+      ],
+      "createdAt": "2026-09-12T20:05:37.080Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified staged successive consolidation removes only stale command-owned CSVs after successful validation; 35 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:06:28.908Z"
+    }
+  ],
+  "signature": "sig_feat-library-63b4d53547_903191bcbf",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:57:26.300Z",
+  "updatedAt": "2026-09-12T20:06:28.908Z"
+}

@@ -36,10 +36,6 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Docker commands are constructed from fixed CLI flags and validated runtime
-# configuration; never from shell-interpreted input.
-_spawn_trusted_docker_process = subprocess.Popen
-
 
 class DockerStreamingRuntime(StreamingRuntime):
     """Docker-based streaming runtime for agent execution.
@@ -152,14 +148,17 @@ class DockerStreamingRuntime(StreamingRuntime):
     def _resolve_ports(
         self,
         extra_ports: dict[int, int] | None,
-    ) -> dict[int, int] | None:
-        """Resolve port mappings, handling network mode."""
+    ) -> dict[str, int] | None:
+        """Translate public host-to-container ports to Docker SDK bindings."""
         if self._network_mode == "host":
             return None
         resolved: dict[int, int] = dict(self._ports)
         if extra_ports:
             resolved.update(extra_ports)
-        return resolved or None
+        return {
+            f"{container_port}/tcp": host_port
+            for host_port, container_port in resolved.items()
+        } or None
 
     def _build_volumes(self) -> dict[str, dict[str, str]]:
         """Build volume mappings for the container."""
@@ -230,7 +229,8 @@ class DockerStreamingRuntime(StreamingRuntime):
                 container_id=container.id[:12],
                 verbose=True,
             )
-            container.kill()
+            with contextlib.suppress(DockerException, APIError):
+                container.kill()
         with contextlib.suppress(DockerException, APIError):
             container.remove(force=True)
 
@@ -287,8 +287,13 @@ class DockerStreamingRuntime(StreamingRuntime):
         )
         if container is None:
             raise SolutionRuntimeError("Failed to create container")
-        container.start()
         self._container = container
+        try:
+            container.start()
+        except BaseException:
+            self._stop_and_remove_container(container)
+            self._container = None
+            raise
         logger.debug(
             "Started Docker container",
             container_id=container.id[:12],
@@ -321,7 +326,9 @@ class DockerStreamingRuntime(StreamingRuntime):
         args.extend(["/bin/sh", "-c", command])
         logger.debug(
             "Built docker exec command",
-            args=args,
+            docker_binary=self.spec.docker.binary,
+            container_id=container.id[:12],
+            environment_count=len(exec_env),
             verbose=True,
         )
         return args
@@ -340,7 +347,7 @@ class DockerStreamingRuntime(StreamingRuntime):
             verbose=True,
         )
         try:
-            proc = _spawn_trusted_docker_process(
+            proc = subprocess.Popen(  # noqa: S603 - local argv, no shell
                 exec_args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -441,15 +448,26 @@ class DockerStreamingRuntime(StreamingRuntime):
             verbose=True,
         )
 
-        result = yield from process_stream(
-            stream,
-            timeout,
-            lambda: self.poll(),
-            yield_only_after=SPLIT_STRING if not self._disable_setup else None,
-        )
+        try:
+            result = yield from process_stream(
+                stream,
+                timeout,
+                lambda: self.poll(),
+                yield_only_after=(
+                    SPLIT_STRING if not self._disable_setup else None
+                ),
+            )
+        except BaseException:
+            self.kill()
+            raise
+
+        if result is None:
+            raise SolutionRuntimeError(
+                "Docker exec process exited without a result"
+            )
 
         if result.timed_out:
-            self._stop_active_exec_process()
+            self.kill()
 
         if self._active_exec_process is proc:
             self._active_exec_process = None

@@ -5,6 +5,7 @@ import contextlib
 import gzip
 from abc import ABC
 from abc import abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -47,7 +48,7 @@ class FileType(Enum):
     YAML = "yaml"
 
 
-FileContent = JsonValue | bytes
+FileContent = JsonValue | bytes | Mapping[str, object]
 
 
 class FileHandler(ABC):

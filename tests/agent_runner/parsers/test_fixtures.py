@@ -105,7 +105,7 @@ def get_codex_reasoning(text: str = "I need to analyze the code") -> dict:
 
 def get_codex_command(
     command: str = "ls -la", exit_code: int = 0, output: str = ""
-) -> dict:
+) -> list[dict]:
     """Get realistic Codex command execution messages."""
     return [
         {
@@ -157,10 +157,10 @@ def get_opencode_step_start() -> dict:
 
 
 def get_opencode_step_finish(
-    reason: str = "tool-calls", tokens: dict = None
+    reason: str = "tool-calls", tokens: dict[str, int] | None = None
 ) -> dict:
     """Get realistic OpenCode step_finish message."""
-    part = {
+    part: dict[str, object] = {
         "id": "prt_test",
         "sessionID": "test_session",
         "messageID": "msg_test",

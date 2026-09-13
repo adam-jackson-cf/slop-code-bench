@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-library-cbe7be3794-97e7_2b3d1361e5",
+  "featureId": "feat_library_cbe7be3794",
+  "title": "Bulk selection switches do not target the groups rendered by the UI",
+  "category": "bug",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "confirmed-bug",
+  "evidence": [
+    {
+      "path": "src/slop_code/dashboard/settings_content.py",
+      "startLine": 76,
+      "endLine": 81,
+      "symbol": "build_hierarchical_run_selector",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/settings_content.py",
+      "startLine": 110,
+      "endLine": 123,
+      "symbol": "build_hierarchical_run_selector",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/settings_callbacks.py",
+      "startLine": 92,
+      "endLine": 109,
+      "symbol": "_manage_run_selection_logic",
+      "quote": null
+    },
+    {
+      "path": "src/slop_code/dashboard/settings_callbacks.py",
+      "startLine": 124,
+      "endLine": 142,
+      "symbol": "_manage_run_selection_logic",
+      "quote": null
+    }
+  ],
+  "reasoning": "The UI groups runs by model_name, but the callback matches switch indices against the filesystem parent directory name. These need not match, so model switches select or deselect no runs, or the wrong runs. Additionally, 'subgroup-select-switch' contains 'group-select-switch', so subgroup events enter the earlier parent branch and never reach subgroup handling.",
+  "reproduction": "Render a run with model_name='Model A' and value='/runs/batch/run1'. Toggle its model switch, then its prompt subgroup switch. Neither targets the rendered run correctly.",
+  "recommendation": "Parse the JSON component ID once, dispatch on exact type equality, and match groups using the same model_name and prompt_template keys as the UI builder.",
+  "whyTestsDoNotAlreadyCoverThis": "The included tests cover data processing and scoring, with no hierarchical selection callback scenarios.",
+  "suggestedRegressionTest": "Cover model and prompt bulk selection and deselection across multiple models and prompts, using directory names different from model names and asserting unrelated selections remain unchanged.",
+  "minimumFixScope": "Bulk-switch dispatch and group matching in _manage_run_selection_logic.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T202324-c3f2e7",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "Both evidence files and cited ranges still exist. settings_content.py:76–123 still groups by model_name and prompt_template. The callback now parses JSON once (40–51), dispatches by exact type, and matches the same metadata keys (98–146), supporting repair of both reported defects. Existing settings_callbacks_test.py covers model and prompt selection/deselection with unrelated selections preserved and directory names differing from model names. However, targeted pytest validation exited 1 before running tests because the read-only environment provided no usable temporary directory. No linked patch attempts or prior validation results were supplied, so fixed cannot be confirmed.",
+      "commands": [
+        "nl -ba src/slop_code/dashboard/settings_callbacks.py | head -180",
+        "rg -n 'group.*select|manage_run_selection' tests/dashboard",
+        "rg --files tests/dashboard",
+        "sed -n '1,230p' tests/dashboard/settings_callbacks_test.py",
+        "nl -ba src/slop_code/dashboard/settings_content.py | sed -n '74,150p'",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/settings_callbacks_test.py"
+      ],
+      "createdAt": "2026-09-12T20:23:51.023Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified exact component type dispatch and UI model_name/prompt_template matching select only intended groups; 11 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:24:26.229Z"
+    }
+  ],
+  "signature": "sig_feat-library-cbe7be3794_97e7c8dfeb",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T10:59:37.605Z",
+  "updatedAt": "2026-09-12T20:24:26.226Z"
+}

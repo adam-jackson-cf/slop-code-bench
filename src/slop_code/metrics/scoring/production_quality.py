@@ -7,12 +7,14 @@ import json
 from collections.abc import Iterable
 from collections.abc import Mapping
 from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN
 from decimal import Decimal
 from decimal import localcontext
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypeGuard
+from uuid import uuid4
 
 from .contract import EXPECTED_INTERPRETER
 from .contract import EXPECTED_RUFF_VERSION
@@ -31,6 +33,8 @@ from .models import QualityInterpreterEvidence
 from .models import QualityRuffDiagnosticEvidence
 from .models import QualityRuffEvidence
 from .models import SymbolExclusionReason
+
+DEFAULT_MEASUREMENT_DEADLINE_SECONDS = 300
 
 
 @dataclass(frozen=True)
@@ -59,6 +63,7 @@ class DockerProcessExecutor:
     image: str
     mount_root: Path
     binary: str = "docker"
+    deadline_seconds: float = DEFAULT_MEASUREMENT_DEADLINE_SECONDS
 
     def __call__(
         self,
@@ -76,10 +81,13 @@ class DockerProcessExecutor:
                 "measurement_environment_mismatch: evaluator executable "
                 "is outside the mounted run"
             )
+        container_name = f"slop-code-measurement-{uuid4().hex}"
         command = [
             self.binary,
             "run",
             "--rm",
+            "--name",
+            container_name,
             "--interactive",
             "--pull=never",
             "--network=none",
@@ -105,11 +113,18 @@ class DockerProcessExecutor:
             command.extend(("--workdir", str(working_directory)))
         command.extend((self.image, *argv))
         try:
-            completed = _execute(command, stdin=stdin)
-        except OSError as error:
-            raise ProductionQualityError(
-                "measurement_environment_mismatch: Docker runtime unavailable"
-            ) from error
+            completed = _execute(
+                command,
+                stdin=stdin,
+                deadline_seconds=self.deadline_seconds,
+            )
+        except BaseException:
+            with suppress(OSError, ProductionQualityError):
+                _execute(
+                    (self.binary, "rm", "--force", container_name),
+                    deadline_seconds=self.deadline_seconds,
+                )
+            raise
         if completed.returncode in {125, 126, 127}:
             raise ProductionQualityError(
                 "measurement_environment_mismatch: Docker measurement failed"
@@ -122,8 +137,11 @@ def _execute(
     *,
     cwd: Path | None = None,
     stdin: str | None = None,
+    deadline_seconds: float = DEFAULT_MEASUREMENT_DEADLINE_SECONDS,
 ) -> _ProcessResult:
     """Execute an argv-only process and collect UTF-8 standard streams."""
+    if deadline_seconds <= 0:
+        raise ValueError("measurement deadline must be positive")
 
     async def communicate() -> _ProcessResult:
         process = await asyncio.create_subprocess_exec(
@@ -133,9 +151,25 @@ def _execute(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate(
-            stdin.encode("utf-8") if stdin is not None else None
-        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(
+                    stdin.encode("utf-8") if stdin is not None else None
+                ),
+                timeout=deadline_seconds,
+            )
+        except TimeoutError as error:
+            with suppress(ProcessLookupError):
+                process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=1)
+            except TimeoutError:
+                with suppress(ProcessLookupError):
+                    process.kill()
+                await process.wait()
+            raise ProductionQualityError(
+                "measurement_environment_mismatch: measurement timed out"
+            ) from error
         returncode = process.returncode
         if returncode is None:
             raise RuntimeError("process did not terminate")
@@ -146,6 +180,25 @@ def _execute(
         )
 
     return asyncio.run(communicate())
+
+
+def _run_measurement(
+    argv: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    stdin: str | None = None,
+    executor: ProcessExecutor | None = None,
+    deadline_seconds: float = DEFAULT_MEASUREMENT_DEADLINE_SECONDS,
+) -> _ProcessResult:
+    """Run through an injected executor or the bounded production worker."""
+    if executor is not None:
+        return executor(argv, cwd=cwd, stdin=stdin)
+    return _execute(
+        argv,
+        cwd=cwd,
+        stdin=stdin,
+        deadline_seconds=deadline_seconds,
+    )
 
 
 class ProductionQualityError(ValueError):
@@ -258,11 +311,13 @@ def _verified_payload(
     sources: Mapping[str, bytes],
     *,
     executor: ProcessExecutor | None = None,
+    deadline_seconds: float = DEFAULT_MEASUREMENT_DEADLINE_SECONDS,
 ) -> dict[str, Any]:
     """Use the evaluator interpreter for token and AST semantics, never this host."""
     program = r"""import ast, hashlib, json, sys, tokenize
 from io import BytesIO
 payload=json.loads(sys.stdin.read())
+MIN_STATEMENTS=6
 def digest(path):
     return hashlib.sha256(open(path,'rb').read()).hexdigest()
 probe=b"x = 1\nif x:\n    y = 'z'\n"
@@ -276,52 +331,97 @@ def loc(data):
 def stmt_lists(node):
     result=[]
     for parent in ast.walk(node):
-        for field, value in ast.iter_fields(parent):
-            if isinstance(value,list) and value and all(isinstance(x,ast.stmt) for x in value): result.append(value)
+        for _, value in ast.iter_fields(parent):
+            if isinstance(value,list) and value and all(isinstance(x,ast.stmt) for x in value):
+                result.append(value)
     return result
-def vectors(path, data, source_lines):
-    tree=ast.parse(data); result=[]
-    source=set(source_lines)
-    for statements in stmt_lists(tree):
-        dumps=[ast.dump(s,annotate_fields=True,include_attributes=False) for s in statements]
-        for start in range(len(statements)):
-            for end in range(start+6,len(statements)+1):
-                span=(statements[start].lineno, statements[end-1].end_lineno)
-                if sum(line in source for line in range(span[0],span[1]+1)) >= 12:
-                    result.append((tuple(dumps[start:end]),(path,*span)))
-    return result
-files=[]; candidates={}
+def index_candidates(path,data,index):
+    for list_id, statements in enumerate(stmt_lists(ast.parse(data))):
+        tokens=[hashlib.sha256(ast.dump(statement,annotate_fields=True,include_attributes=False).encode()).digest() for statement in statements]
+        for start in range(len(tokens)-MIN_STATEMENTS+1):
+            end=start+MIN_STATEMENTS
+            key=hashlib.sha256(b'\0'.join(tokens[start:end])).digest()
+            index.setdefault(key,[]).append((path,list_id,start))
+def statement_data(path,data,cache):
+    if path not in cache:
+        cache[path]=[
+            (
+                tuple(ast.dump(statement,annotate_fields=True,include_attributes=False) for statement in statements),
+                tuple((statement.lineno,statement.end_lineno) for statement in statements),
+            )
+            for statements in stmt_lists(ast.parse(data))
+        ]
+    return cache[path]
+files=[]; source_data={}; index={}
 for item in payload['files']:
     data=bytes.fromhex(item['bytes'])
     try:
         source_lines=loc(data)
-        for vector, occurrence in vectors(item['path'],data,source_lines): candidates.setdefault(vector,[]).append(occurrence)
+        index_candidates(item['path'],data,index)
     except Exception as error:
         print(json.dumps({'error':str(error)})); raise SystemExit(2)
+    source_data[item['path']]=data
     files.append({'path':item['path'],'hash':hashlib.sha256(data).hexdigest(),'source_lines':source_lines})
+cache={}; candidates={}
+for occurrences in index.values():
+    if len(occurrences)<2:
+        continue
+    repeated={}
+    for path,list_id,start in occurrences:
+        values,_=statement_data(path,source_data[path],cache)[list_id]
+        vector=values[start:start+MIN_STATEMENTS]
+        repeated.setdefault(vector,[]).append((path,list_id,start))
+    for records in repeated.values():
+        if len(records)<2:
+            continue
+        for first in range(len(records)):
+            for second in range(first+1,len(records)):
+                left_path,left_list,left_start=records[first]
+                right_path,right_list,right_start=records[second]
+                left_values,left_spans=statement_data(left_path,source_data[left_path],cache)[left_list]
+                right_values,right_spans=statement_data(right_path,source_data[right_path],cache)[right_list]
+                prefix=0
+                while left_start-prefix-1>=0 and right_start-prefix-1>=0 and left_values[left_start-prefix-1]==right_values[right_start-prefix-1]:
+                    prefix+=1
+                suffix=MIN_STATEMENTS
+                while left_start+suffix<len(left_values) and right_start+suffix<len(right_values) and left_values[left_start+suffix]==right_values[right_start+suffix]:
+                    suffix+=1
+                vector=left_values[left_start-prefix:left_start+suffix]
+                left_span=(left_path,left_spans[left_start-prefix][0],left_spans[left_start+suffix-1][1])
+                right_span=(right_path,right_spans[right_start-prefix][0],right_spans[right_start+suffix-1][1])
+                candidates.setdefault(vector,set()).update((left_span,right_span))
 accepted=[]
 for vector, occurrences in candidates.items():
     chosen=[]
     for occurrence in sorted(occurrences):
-        if all(occurrence[0] != old[0] or occurrence[2] < old[1] or old[2] < occurrence[1] for old in chosen): chosen.append(occurrence)
-    if len(chosen)>=2: accepted.append((vector,tuple(chosen)))
+        if all(occurrence[0] != old[0] or occurrence[2] < old[1] or old[2] < occurrence[1] for old in chosen):
+            chosen.append(occurrence)
+    if len(chosen)>=2:
+        accepted.append((vector,tuple(chosen)))
 maximal=[]
 for vector, occurrences in accepted:
-    if not any(len(other)>len(vector) and any(tuple(other[i:i+len(vector)])==vector for i in range(len(other)-len(vector)+1)) for other,_ in accepted): maximal.append((vector,occurrences))
+    if not any(len(other)>len(vector) and any(other[index:index+len(vector)]==vector for index in range(len(other)-len(vector)+1)) for other,_ in accepted):
+        maximal.append((vector,occurrences))
 groups=[{'vector':list(vector),'occurrences':[list(occurrence) for occurrence in occurrences]} for vector,occurrences in sorted(maximal,key=lambda pair:(pair[0],pair[1]))]
 print(json.dumps({'interpreter':{'executable':sys.executable,'implementation':sys.implementation.name,'version':sys.version,'cache_tag':sys.implementation.cache_tag,'executable_sha256':digest(sys.executable),'ast_sha256':digest(ast.__file__),'tokenize_sha256':digest(tokenize.__file__)},'parser_tokenizer_probe':probe.hex(),'parser_tokenizer_schema_id':schema,'files':files,'clone_groups':groups},sort_keys=True,separators=(',',':')))"""
-    process_executor = _execute if executor is None else executor
-    completed = process_executor(
-        [str(executable), "-c", program],
-        stdin=json.dumps(
-            {
-                "files": [
-                    {"path": path, "bytes": data.hex()}
-                    for path, data in sources.items()
-                ]
-            }
-        ),
-    )
+    try:
+        completed = _run_measurement(
+            [str(executable), "-c", program],
+            stdin=json.dumps(
+                {
+                    "files": [
+                        {"path": path, "bytes": data.hex()}
+                        for path, data in sources.items()
+                    ]
+                }
+            ),
+            executor=executor,
+            deadline_seconds=deadline_seconds,
+        )
+    except OSError as error:
+        raise ProductionQualityError(
+            "measurement_environment_mismatch: evaluator unavailable"
+        ) from error
     if completed.returncode:
         raise ProductionQualityError(
             f"score_evidence_invalid: evaluator parser failed: {completed.stderr or completed.stdout}"
@@ -340,11 +440,13 @@ def _ruff(
     paths: Sequence[str],
     *,
     executor: ProcessExecutor | None = None,
+    deadline_seconds: float = DEFAULT_MEASUREMENT_DEADLINE_SECONDS,
 ) -> tuple[str, tuple[dict[str, Any], ...], tuple[str, ...]]:
-    process_executor = _execute if executor is None else executor
     try:
-        version_result = process_executor(
-            [str(executable), "-m", "ruff", "--version"]
+        version_result = _run_measurement(
+            [str(executable), "-m", "ruff", "--version"],
+            executor=executor,
+            deadline_seconds=deadline_seconds,
         )
     except OSError as error:
         raise ProductionQualityError(
@@ -360,7 +462,12 @@ def _ruff(
         )
     invocation = (str(executable), *RUFF_ARGUMENTS, *paths)
     try:
-        done = process_executor(invocation, cwd=root)
+        done = _run_measurement(
+            invocation,
+            cwd=root,
+            executor=executor,
+            deadline_seconds=deadline_seconds,
+        )
     except OSError as error:
         raise ProductionQualityError(
             "measurement_environment_mismatch: Ruff unavailable"
@@ -473,8 +580,17 @@ def produce_production_quality(
     *,
     executor: ProcessExecutor | None = None,
     expected_executable_sha256: str | None = None,
+    measurement_deadline_seconds: int = DEFAULT_MEASUREMENT_DEADLINE_SECONDS,
 ) -> ProductionQualityResult:
     """Produce V/E from canonical inventory and existing successful metric rows."""
+    if (
+        isinstance(measurement_deadline_seconds, bool)
+        or not isinstance(measurement_deadline_seconds, int)
+        or not 1 <= measurement_deadline_seconds <= 3600
+    ):
+        raise ValueError(
+            "measurement_deadline_seconds must be an integer from 1 to 3600"
+        )
     if not checkpoint_id:
         raise ProductionQualityError(
             "score_evidence_invalid: checkpoint identity missing"
@@ -512,9 +628,16 @@ def produce_production_quality(
         sources[path] = data
     payload = (
         _verified_payload(Path(evaluator_executable), sources)
-        if executor is None
+        if (
+            executor is None
+            and measurement_deadline_seconds
+            == DEFAULT_MEASUREMENT_DEADLINE_SECONDS
+        )
         else _verified_payload(
-            Path(evaluator_executable), sources, executor=executor
+            Path(evaluator_executable),
+            sources,
+            executor=executor,
+            deadline_seconds=measurement_deadline_seconds,
         )
     )
     _validate_measurement_environment(
@@ -527,11 +650,20 @@ def produce_production_quality(
     denominator = sum(len(lines) for lines in source_by_path.values())
     if not denominator:
         raise ProductionQualityError("production_source_loc_zero")
-    quality_arguments = (Path(evaluator_executable), root, paths)
     version, diagnostics, invocation = (
-        _ruff(*quality_arguments)
-        if executor is None
-        else _ruff(*quality_arguments, executor=executor)
+        _ruff(Path(evaluator_executable), root, paths)
+        if (
+            executor is None
+            and measurement_deadline_seconds
+            == DEFAULT_MEASUREMENT_DEADLINE_SECONDS
+        )
+        else _ruff(
+            Path(evaluator_executable),
+            root,
+            paths,
+            executor=executor,
+            deadline_seconds=measurement_deadline_seconds,
+        )
     )
     verbosity = set()
     clone_lines = set()

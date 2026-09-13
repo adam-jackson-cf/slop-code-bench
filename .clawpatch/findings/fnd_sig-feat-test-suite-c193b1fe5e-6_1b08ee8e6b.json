@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-c193b1fe5e-6_1b08ee8e6b",
+  "featureId": "feat_test-suite_c193b1fe5e",
+  "title": "Several exclusion tests pass without applying their exclusion patterns",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 139,
+      "endLine": 148,
+      "symbol": "TestMeasureFiles.setup_test_language",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 245,
+      "endLine": 273,
+      "symbol": "TestMeasureFiles",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 307,
+      "endLine": 319,
+      "symbol": "TestMeasureFiles.test_measure_files_excludes_pyc_files_with_glob",
+      "quote": null
+    },
+    {
+      "path": "tests/metrics/driver_test.py",
+      "startLine": 462,
+      "endLine": 480,
+      "symbol": "TestMeasureSnapshotQuality.test_measure_snapshot_quality_excludes_patterns",
+      "quote": null
+    }
+  ],
+  "reasoning": "The fixtures register only .py files, but these exclusion scenarios place unsupported .pyc or extensionless files in the excluded locations. Unsupported-extension filtering alone produces the asserted results, so the tests cannot detect broken __pycache__, .git, *.pyc, or default-pattern handling.",
+  "reproduction": "Make the relevant exclusion patterns ineffective while retaining supported-extension filtering; these scenarios still produce the same measured files.",
+  "recommendation": "Use supported .py files inside excluded directories. For extension-glob tests, register the excluded extension and establish that the file is measured without the pattern. Exercise default exclusions with a supported file inside a default-excluded directory.",
+  "whyTestsDoNotAlreadyCoverThis": "Other scenarios cover some directory exclusions, but the cited scenarios do not distinguish their intended exclusion rule from language filtering.",
+  "suggestedRegressionTest": "Expand the existing exclusion scenarios to compare results with and without each explicit pattern and to verify default exclusion of otherwise measurable files.",
+  "minimumFixScope": "The exclusion fixtures and scenarios in tests/metrics/driver_test.py.",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T200114-c32808",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The evidence file and original scenarios still exist, with shifted lines. Current coverage appears to repair the substantive gap: lines 146–156 register .pyc; lines 318–333 establish measurement before applying *.pyc; lines 360–383 independently test directory exclusions using supported .py files; lines 560–574 verify default exclusion of an otherwise measurable file. The older .git and snapshot-pattern scenarios remain individually weak, but the new scenarios cover their missing behavioral rules. Production code applies component-wise patterns and includes the expected defaults. No linked patch attempts were supplied. Targeted validation exited 2 because sandbox permissions prevented uv cache access, so a fixed outcome cannot be confirmed.",
+      "commands": [
+        "cat /Users/adamjackson/.agents/skills/clawpatch/SKILL.md",
+        "cat /Users/adamjackson/.agents/skills/clawpatch/references/revalidation-runbook.md",
+        "nl -ba tests/metrics/driver_test.py | sed -n '130,165p;245,280p;307,395p;560,615p'",
+        "rg -n 'exclude|def measure_files' src/slop_code/metrics/driver.py",
+        "sed -n '100,140p;410,449p' src/slop_code/metrics/driver.py",
+        "PYTHONDONTWRITEBYTECODE=1 uv run --no-sync pytest -q -p no:cacheprovider tests/metrics/driver_test.py -k 'exclu'"
+      ],
+      "createdAt": "2026-09-12T20:01:47.484Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified explicit and default exclusion tests use otherwise measurable supported files and compare without patterns; 123 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:03:58.312Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-c193b1fe5e_6492aefa78",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:01:06.751Z",
+  "updatedAt": "2026-09-12T20:03:58.311Z"
+}

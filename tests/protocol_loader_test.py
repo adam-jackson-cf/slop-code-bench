@@ -203,6 +203,55 @@ class TestClass:
             instance = result()
             assert instance.test_method() == "nested_result"
 
+    def test_load_same_named_packages_from_different_roots(self):
+        """Load each same-named package from its requested root."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            roots = (temp_path / "first", temp_path / "second")
+            resolved_roots = tuple(root.resolve() for root in roots)
+
+            module_files = []
+
+            for root in roots:
+                package_dir = root / "shared_package"
+                package_dir.mkdir(parents=True)
+                (package_dir / "__init__.py").write_text("")
+                (package_dir / "dependency.py").write_text(
+                    "ORIGIN = __file__\n"
+                )
+                module_file = package_dir / "implementation.py"
+                module_file.write_text(
+                    "from .dependency import ORIGIN\n"
+                    "\n"
+                    "class TestClass:\n"
+                    "    def test_method(self) -> str:\n"
+                    "        return ORIGIN\n"
+                )
+                module_files.append(module_file)
+
+            first_class = load_protocol_entrypoint(
+                protocol=TestProtocol,
+                module_path=module_files[0],
+                entrypoint_name="TestClass",
+            )
+            second_class = load_protocol_entrypoint(
+                protocol=TestProtocol,
+                module_path=module_files[1],
+                entrypoint_name="TestClass",
+            )
+
+            assert first_class.__module__ != second_class.__module__
+            assert (
+                Path(first_class().test_method())
+                .resolve()
+                .is_relative_to(resolved_roots[0])
+            )
+            assert (
+                Path(second_class().test_method())
+                .resolve()
+                .is_relative_to(resolved_roots[1])
+            )
+
 
 class TestGetSourceFiles:
     """Test cases for get_source_files function."""
@@ -277,6 +326,8 @@ def helper_function() -> str:
                 spec = importlib.util.spec_from_file_location(
                     "main", main_module
                 )
+                assert spec is not None
+                assert spec.loader is not None
                 module = importlib.util.module_from_spec(spec)
                 sys.modules["main"] = module
                 spec.loader.exec_module(module)

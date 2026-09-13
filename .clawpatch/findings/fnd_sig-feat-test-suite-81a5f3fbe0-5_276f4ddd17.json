@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "findingId": "fnd_sig-feat-test-suite-81a5f3fbe0-5_276f4ddd17",
+  "featureId": "feat_test-suite_81a5f3fbe0",
+  "title": "Tamper-rejection test does not verify that score validation runs",
+  "category": "test-gap",
+  "severity": "medium",
+  "confidence": "high",
+  "triage": "test-gap",
+  "evidence": [
+    {
+      "path": "tests/dashboard/data_test.py",
+      "startLine": 132,
+      "endLine": 148,
+      "symbol": "test_load_run_rejects_tampered_canonical_generation",
+      "quote": null
+    }
+  ],
+  "reasoning": "The checkpoint fixture contains only an empty object, and the patched score verifier has no call assertion. The test therefore also passes if load_run rejects that incomplete checkpoint before reaching score verification. Its assertions cannot distinguish rejection of tampered scores from an unrelated loading failure, leaving the intended integrity boundary unprotected.",
+  "reproduction": "A loader that returns an empty DataFrame and None before calling load_verified_score_summary satisfies every assertion in this test.",
+  "recommendation": "Use an otherwise loadable checkpoint fixture, assert that the verifier is invoked, and cover successful loading with valid score evidence alongside rejection when verification raises ScoreEvidenceError.",
+  "whyTestsDoNotAlreadyCoverThis": "The separate successful-loading scenario uses a different checkpoint fixture. It does not establish that this test reaches its patched verifier.",
+  "suggestedRegressionTest": "Expand the existing scenario to use the same valid checkpoint input for accepted and rejected score evidence, checking verifier invocation and the corresponding load result.",
+  "minimumFixScope": "tests/dashboard/data_test.py",
+  "status": "fixed",
+  "history": [
+    {
+      "runId": "20260912T202325-8902d4",
+      "kind": "revalidate",
+      "status": "uncertain",
+      "note": null,
+      "reasoning": "The original file exists, but lines 132–148 now cover ranking. Its replacement, test_load_run_requires_verified_score_evidence at lines 200–248, uses the same complete checkpoint for acceptance and rejection, asserts successful loading, and verifies both verifier calls. load_run invokes score verification and rejects ScoreEvidenceError. This supports the intended repair, but targeted pytest validation exited 1 before collection because the read-only environment has no usable temporary directory; fixed cannot be confirmed. No linked patch attempts were supplied.",
+      "commands": [
+        "nl -ba tests/dashboard/data_test.py | sed -n '125,265p'",
+        "rg -n 'test_load_run_rejects_tampered_canonical_generation|test_load_run_requires_verified_score_evidence' tests/dashboard",
+        "sed -n '535,640p' src/slop_code/dashboard/data.py",
+        "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q -p no:cacheprovider tests/dashboard/data_test.py::test_load_run_requires_verified_score_evidence"
+      ],
+      "createdAt": "2026-09-12T20:23:51.404Z"
+    },
+    {
+      "runId": null,
+      "kind": "triage",
+      "status": "fixed",
+      "note": "Verified otherwise loadable checkpoint invokes score verifier, accepts valid evidence, and rejects ScoreEvidenceError; 11 tests pass.",
+      "reasoning": null,
+      "commands": [],
+      "createdAt": "2026-09-12T20:24:26.783Z"
+    }
+  ],
+  "signature": "sig_feat-test-suite-81a5f3fbe0_5dd44dffa7",
+  "linkedPatchAttemptIds": [],
+  "createdByRunId": "20260911T105524-37b7cd",
+  "createdAt": "2026-09-11T11:00:29.342Z",
+  "updatedAt": "2026-09-12T20:24:26.782Z"
+}

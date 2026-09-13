@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from slop_code.entrypoints.config.resolvers import register_resolvers
 from slop_code.entrypoints.config.run_config import ModelConfig
 from slop_code.entrypoints.config.run_config import OneShotConfig
 from slop_code.entrypoints.config.run_config import ResolvedRunConfig
+from slop_code.entrypoints.config.run_config import RunConfig
 from slop_code.entrypoints.config.run_config import ThinkingConfig
 from slop_code.entrypoints.config.run_config import ThinkingPresetType
 from slop_code.evaluation import PassPolicy
@@ -211,26 +213,20 @@ def _resolve_prompt(prompt_ref: str) -> tuple[Path, str]:
 
 
 def _get_thinking_values(
-    thinking: ThinkingPresetType | ThinkingConfig | dict[str, Any] | str,
+    thinking: Any,
 ) -> tuple[ThinkingPresetType | None, int | None]:
-    """Extract thinking preset and max_tokens from various input forms.
-
-    Args:
-        thinking: The thinking config in various forms
-
-    Returns:
-        Tuple of (preset, max_tokens)
-    """
+    """Validate and extract thinking preset and max_tokens."""
     if isinstance(thinking, str):
-        return thinking, None  # type: ignore[return-value]
-
-    if isinstance(thinking, ThinkingConfig):
-        return thinking.preset, thinking.max_tokens
-
-    if isinstance(thinking, dict):
-        return thinking.get("preset"), thinking.get("max_tokens")
-
-    return None, None
+        validated = ThinkingConfig.model_validate({"preset": thinking})
+    elif isinstance(thinking, ThinkingConfig):
+        validated = thinking
+    elif isinstance(thinking, dict):
+        validated = ThinkingConfig.model_validate(thinking)
+    else:
+        raise ValueError(
+            f"Invalid thinking configuration type: {type(thinking).__name__}"
+        )
+    return validated.preset, validated.max_tokens
 
 
 def _build_interpolation_context(
@@ -276,36 +272,19 @@ def _resolve_save_template(
     save_template: str,
     context: dict[str, Any],
 ) -> str:
-    """Resolve output path template with interpolation.
-
-    Handles the case where agent.version is None by cleaning up
-    artifacts like "-None" or "None_" from the resolved string.
-
-    Args:
-        save_template: The output path template with ${...} placeholders
-        context: The interpolation context dict
-
-    Returns:
-        Resolved output path string with clean version handling
-    """
-    # Create OmegaConf config with context + save_template
+    """Resolve an output path template with version-aware interpolation."""
+    if context["agent"]["version"] is None:
+        placeholder = r"\$\{agent\.version\}"
+        save_template = re.sub(rf"[-_]{placeholder}", "", save_template)
+        save_template = re.sub(
+            rf"^{placeholder}[-_]?",
+            "",
+            save_template,
+        )
+        save_template = re.sub(placeholder, "", save_template)
     cfg = OmegaConf.create({**context, "save_template": save_template})
-
-    # Resolve interpolations
     OmegaConf.resolve(cfg)
-
-    resolved = str(cfg.save_template)
-
-    # Clean up version artifacts when version is None
-    # OmegaConf renders None as the string "None"
-    resolved = resolved.replace("-None", "").replace("None_", "")
-
-    # Clean up any resulting double underscores or trailing underscores
-    while "__" in resolved:
-        resolved = resolved.replace("__", "_")
-
-    # Clean up any trailing underscore before path separator or at end
-    return resolved.replace("_/", "/").rstrip("_")
+    return str(cfg.save_template)
 
 
 def _get_default_config() -> dict[str, Any]:
@@ -439,13 +418,29 @@ def load_run_config(
     if not isinstance(cfg_dict, dict):
         raise ValueError("Expected config to be a dict")
 
-    # 6. Resolve references and load configs
-    agent_path, agent_data = _resolve_agent_config(cfg_dict["agent"])
+    # 6. Validate merged top-level configuration before resolving references.
+    raw_config_data = dict(cfg_dict)
+    try:
+        raw_config_data["problems"] = _normalize_problems(
+            raw_config_data.get("problems", [])
+        )
+    except ValueError as exc:
+        raise ValueError(f"Invalid problems configuration: {exc}") from exc
+    if isinstance(raw_config_data.get("one_shot"), bool):
+        raw_config_data["one_shot"] = {
+            "enabled": raw_config_data["one_shot"],
+        }
+    try:
+        run_config = RunConfig.model_validate(raw_config_data)
+    except ValidationError as exc:
+        raise ValueError(f"Invalid run configuration: {exc}") from exc
 
-    # 7. Merge agent overrides into loaded agent data
+    # 7. Resolve references and load configs.
+    agent_path, agent_data = _resolve_agent_config(run_config.agent)
+
+    # 8. Merge agent overrides into loaded agent data.
     if agent_overrides:
         for key, value in agent_overrides.items():
-            # Handle nested keys like "cost_limits.step_limit"
             parts = key.split(".")
             target = agent_data
             for part in parts[:-1]:
@@ -457,53 +452,17 @@ def load_run_config(
             "Applied agent config overrides",
             overrides=agent_overrides,
         )
-    env_path, env_data = _resolve_environment_config(cfg_dict["environment"])
-    prompt_path, prompt_content = _resolve_prompt(cfg_dict["prompt"])
+    env_path, env_data = _resolve_environment_config(run_config.environment)
+    prompt_path, prompt_content = _resolve_prompt(run_config.prompt)
 
-    # 8. Handle model config
-    model_data = cfg_dict["model"]
-    if isinstance(model_data, dict):
-        model = ModelConfig(**model_data)
-    else:
-        raise ValueError(f"Invalid model config: {model_data}")
-
-    # 9. Handle thinking config
+    # 9. Extract fields from the validated configuration.
+    model = run_config.model
     thinking_preset, thinking_max_tokens = _get_thinking_values(
-        cfg_dict["thinking"]
+        run_config.thinking
     )
-
-    # 10. Handle assessment policy independently from continuation behavior
-    assessment_policy_value = cfg_dict["assessment_policy"]
-    if isinstance(assessment_policy_value, str):
-        assessment_policy = PassPolicy(assessment_policy_value)
-    elif isinstance(assessment_policy_value, PassPolicy):
-        assessment_policy = assessment_policy_value
-    else:
-        raise ValueError(
-            f"Invalid assessment_policy: {assessment_policy_value}"
-        )
-
-    # 11. Normalize problems list (optional)
-    try:
-        problems = _normalize_problems(cfg_dict.get("problems", []))
-    except ValueError as exc:
-        raise ValueError(f"Invalid problems configuration: {exc}") from exc
-
-    # 12. Handle one_shot config
-    try:
-        one_shot_raw = cfg_dict.get("one_shot", {})
-        if isinstance(one_shot_raw, OneShotConfig):
-            one_shot = one_shot_raw
-        elif isinstance(one_shot_raw, bool):
-            one_shot = OneShotConfig(enabled=one_shot_raw)
-        elif isinstance(one_shot_raw, dict):
-            one_shot = OneShotConfig(**one_shot_raw)
-        else:
-            raise ValueError(
-                f"Invalid one_shot config type: {type(one_shot_raw).__name__}"
-            )
-    except ValidationError as exc:
-        raise ValueError(f"Invalid one_shot configuration: {exc}") from exc
+    assessment_policy = run_config.assessment_policy
+    problems = run_config.problems
+    one_shot = run_config.one_shot
 
     # 13. Build interpolation context and resolve output_path
     context = _build_interpolation_context(
@@ -515,12 +474,11 @@ def load_run_config(
     )
 
     # 14. Resolve output path from root and template
-    save_dir = cfg_dict.get("save_dir", "experiments")
-    save_template_raw = cfg_dict.get(
-        "save_template",
-        "${model.name}/${agent.type}-${agent.version}_${prompt}_${thinking}_${now:%Y%m%dT%H%M}",
+    save_dir = run_config.save_dir
+    save_template = _resolve_save_template(
+        run_config.save_template,
+        context,
     )
-    save_template = _resolve_save_template(save_template_raw, context)
 
     # Combine root and template, handling empty root case
     output_path = f"{save_dir}/{save_template}" if save_dir else save_template
@@ -550,7 +508,7 @@ def load_run_config(
         thinking=thinking_preset,
         thinking_max_tokens=thinking_max_tokens,
         assessment_policy=assessment_policy,
-        continue_after_test_failure=cfg_dict["continue_after_test_failure"],
+        continue_after_test_failure=run_config.continue_after_test_failure,
         problems=problems,
         save_dir=save_dir,
         save_template=save_template,

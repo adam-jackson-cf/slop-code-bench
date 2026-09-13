@@ -429,22 +429,33 @@ def _promote_install(
     had_catalog = catalog_root.exists()
     had_manifest = manifest_path.exists()
 
+    catalog_backup_created = False
+    catalog_promoted = False
+    manifest_backup_created = False
+    manifest_promoted = False
+
     try:
         if had_catalog:
             catalog_root.replace(catalog_backup)
+            catalog_backup_created = True
         staged_catalog.replace(catalog_root)
+        catalog_promoted = True
 
         if had_manifest:
             manifest_path.replace(manifest_backup)
+            manifest_backup_created = True
         staged_manifest.replace(manifest_path)
+        manifest_promoted = True
     except Exception as exc:  # noqa: BLE001
         _rollback_promotion(
             catalog_root=catalog_root,
             manifest_path=manifest_path,
-            had_catalog=had_catalog,
-            had_manifest=had_manifest,
             catalog_backup=catalog_backup,
             manifest_backup=manifest_backup,
+            catalog_backup_created=catalog_backup_created,
+            catalog_promoted=catalog_promoted,
+            manifest_backup_created=manifest_backup_created,
+            manifest_promoted=manifest_promoted,
         )
         raise CatalogError(
             f"Failed to promote staged catalog install: {exc}"
@@ -460,23 +471,21 @@ def _rollback_promotion(
     *,
     catalog_root: Path,
     manifest_path: Path,
-    had_catalog: bool,
-    had_manifest: bool,
     catalog_backup: Path,
     manifest_backup: Path,
+    catalog_backup_created: bool,
+    catalog_promoted: bool,
+    manifest_backup_created: bool,
+    manifest_promoted: bool,
 ) -> None:
-    if catalog_root.exists() and not had_catalog:
+    if catalog_promoted and catalog_root.exists():
         shutil.rmtree(catalog_root, ignore_errors=True)
-    if catalog_root.exists() and had_catalog:
-        shutil.rmtree(catalog_root, ignore_errors=True)
-    if had_catalog and catalog_backup.exists():
+    if catalog_backup_created and catalog_backup.exists():
         catalog_backup.replace(catalog_root)
 
-    if manifest_path.exists() and not had_manifest:
+    if manifest_promoted and manifest_path.exists():
         manifest_path.unlink(missing_ok=True)
-    if manifest_path.exists() and had_manifest:
-        manifest_path.unlink(missing_ok=True)
-    if had_manifest and manifest_backup.exists():
+    if manifest_backup_created and manifest_backup.exists():
         manifest_backup.replace(manifest_path)
 
 

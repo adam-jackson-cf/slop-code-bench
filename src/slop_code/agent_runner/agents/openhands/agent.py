@@ -324,13 +324,15 @@ disable_color = true
                 if not isinstance(entry, dict):
                     continue
                 llm_metrics = entry.get("llm_metrics")
-                if llm_metrics is None:
+                if not isinstance(llm_metrics, dict):
                     continue
 
                 accumulated_cost = llm_metrics.get("accumulated_cost", 0.0)
                 token_usage_data = llm_metrics.get(
                     "accumulated_token_usage", {}
                 )
+                if not isinstance(token_usage_data, dict):
+                    token_usage_data = {}
 
                 tokens = TokenUsage(
                     input=token_usage_data.get("prompt_tokens", 0),
@@ -405,6 +407,13 @@ disable_color = true
             )
             raise AgentError(message)
 
+        # Extract final usage from trajectory.json before handling a timeout:
+        # OpenHands may have persisted metrics before the runtime was stopped.
+        cost, tokens = self._extract_trajectory_usage()
+        self.usage.cost = cost
+        self.usage.net_tokens = tokens
+        self.usage.current_tokens = tokens
+
         if runtime_result.timed_out:
             message = (
                 f"OpenHands process timed out after {self.timeout}s."
@@ -426,11 +435,6 @@ disable_color = true
                 "agent.openhands.nonzero_exit",
                 exit_code=runtime_result.exit_code,
             )
-
-        # Extract final usage from trajectory.json llm_metrics
-        cost, tokens = self._extract_trajectory_usage()
-        self.usage.cost = cost
-        self.usage.net_tokens = tokens
 
     def _run_invocation(self, task: str) -> AgentCommandResult:
         """Execute an OpenHands CLI invocation and return results."""
