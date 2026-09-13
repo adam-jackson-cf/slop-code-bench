@@ -239,38 +239,68 @@ def _count_variable_occurrences(
     # {name: [def_count, use_count, first_def_line]}
     counts: dict[str, list[int]] = {}
 
-    stack: list[tuple[Node, bool]] = [(block, False)]
+    # When ``block`` is a decorated definition, the decorators belong to the
+    # enclosing scope but the definition they wrap is the scope being counted.
+    scope_ids = {block.id}
+    if block.type == "decorated_definition":
+        wrapped = block.child_by_field_name("definition")
+        if wrapped is not None:
+            scope_ids.add(wrapped.id)
+
+    # (node, is an assignment target, binds names in the counted block)
+    stack: list[tuple[Node, bool, bool]] = [(block, False, True)]
     while stack:
-        current, in_target = stack.pop()
+        current, in_target, binds = stack.pop()
+
+        if current.type == "class_definition" and current.id not in scope_ids:
+            # A class body is its own scope, so its assignments bind class
+            # attributes rather than names of the block being counted. What it
+            # reads still comes from the enclosing scope, so walk it bind-free.
+            for child in reversed(current.children):
+                stack.append((child, False, False))
+            continue
 
         if current.type in _ASSIGNMENT_TYPES:
             target = current.child_by_field_name("left")
             if target is None:
                 target = current.child_by_field_name("target")
             if target:
-                stack.append((target, True))
+                stack.append((target, True, binds))
             value = current.child_by_field_name("right")
             if value is None:
                 value = current.child_by_field_name("value")
             if value:
-                stack.append((value, False))
+                stack.append((value, False, binds))
             type_node = current.child_by_field_name("type")
             if type_node:
-                stack.append((type_node, False))
+                stack.append((type_node, False, binds))
+            continue
+
+        if current.type == "attribute":
+            # ``obj.attr`` reads ``obj``; ``attr`` is never a local binding.
+            obj = current.child_by_field_name("object")
+            if obj is not None:
+                stack.append((obj, False, binds))
+            continue
+
+        if current.type == "subscript":
+            # ``items[key] = value`` reads ``items`` and ``key``.
+            for child in reversed(current.children):
+                stack.append((child, False, binds))
             continue
 
         if current.type == "identifier":
             name = _decode_node_text(current)
             if name not in counts:
                 counts[name] = [0, 0, current.start_point[0] + 1]
-            if in_target:
+            if in_target and binds:
                 counts[name][0] += 1
                 counts[name][2] = current.start_point[0] + 1
             else:
                 counts[name][1] += 1
         else:
             for child in reversed(current.children):
-                stack.append((child, in_target))
+                stack.append((child, in_target, binds))
 
     return {n: (c[0], c[1], c[2]) for n, c in counts.items()}
 
@@ -303,6 +333,15 @@ def _module_variable_occurrences(root: Node) -> dict[str, tuple[int, int, int]]:
                 visit(target, in_target=True)
             if value:
                 visit(value, in_target=False)
+            return
+        if node.type == "attribute":
+            obj = node.child_by_field_name("object")
+            if obj is not None:
+                visit(obj, in_target=False)
+            return
+        if node.type == "subscript":
+            for child in node.children:
+                visit(child, in_target=False)
             return
         if node.type == "identifier":
             record(node, in_target=in_target)
@@ -356,6 +395,8 @@ def _module_variable_occurrences(root: Node) -> dict[str, tuple[int, int, int]]:
                     target_stack = [target]
                     while target_stack:
                         target_node = target_stack.pop()
+                        if target_node.type in {"attribute", "subscript"}:
+                            continue
                         if target_node.type == "identifier":
                             bindings.add(_decode_node_text(target_node))
                         else:
@@ -388,6 +429,15 @@ def _module_variable_occurrences(root: Node) -> dict[str, tuple[int, int, int]]:
                     stack.append((target, True))
                 if value:
                     stack.append((value, False))
+                continue
+            if current.type == "attribute":
+                obj = current.child_by_field_name("object")
+                if obj is not None:
+                    stack.append((obj, False))
+                continue
+            if current.type == "subscript":
+                for child in reversed(current.children):
+                    stack.append((child, False))
                 continue
             if current.type == "identifier":
                 name = _decode_node_text(current)
