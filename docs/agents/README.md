@@ -41,6 +41,7 @@ Implementing a new agent? See:
 | [OpenCode](agents/opencode.md) | OpenCode CLI agent |
 | [Gemini](agents/gemini.md) | Google's Gemini CLI agent |
 | [OpenHands](agents/openhands.md) | OpenHands framework agent |
+| [OMP](agents/omp.md) | oh-my-pi coding agent, driven by subscription models via a host auth broker |
 
 ## Core Concepts
 

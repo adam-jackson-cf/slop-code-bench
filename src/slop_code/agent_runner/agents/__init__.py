@@ -17,6 +17,8 @@ from slop_code.agent_runner.agents.gemini import GeminiAgent
 from slop_code.agent_runner.agents.gemini import GeminiConfig
 from slop_code.agent_runner.agents.kimi_cli import KimiCliAgent
 from slop_code.agent_runner.agents.kimi_cli import KimiCliConfig
+from slop_code.agent_runner.agents.omp import OmpAgent
+from slop_code.agent_runner.agents.omp import OmpConfig
 from slop_code.agent_runner.agents.opencode import OpenCodeAgentConfig
 from slop_code.agent_runner.agents.openhands import OpenHandsAgent
 from slop_code.agent_runner.agents.openhands import OpenHandsConfig
@@ -31,6 +33,7 @@ type AgentConfigType = Annotated[
     | KimiCliConfig
     | OpenCodeAgentConfig
     | OpenHandsConfig
+    | OmpConfig
     | PiConfig,
     Field(discriminator="type"),
 ]
@@ -47,6 +50,8 @@ __all__ = [
     "GeminiConfig",
     "KimiCliAgent",
     "KimiCliConfig",
+    "OmpAgent",
+    "OmpConfig",
     "OpenCodeAgentConfig",
     "OpenHandsAgent",
     "OpenHandsConfig",

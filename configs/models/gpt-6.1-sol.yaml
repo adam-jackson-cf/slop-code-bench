@@ -1,0 +1,34 @@
+internal_name: gpt-6.1-sol
+provider: omp_broker
+authentication_mode: chatgpt_subscription_oauth
+
+# Driven through OMP (`omp` agent) using ChatGPT Codex subscription
+# credentials held by `omp auth-broker serve` on the host; select with
+# --model omp_broker/gpt-6.1-sol thinking=<low|medium|high|xhigh>.
+agent_specific:
+  omp:
+    provider: openai-codex
+    model: gpt-6.1-sol
+
+cost_accounting:
+  actual_billed_cost: subscription_included
+  estimated_api_equivalent_cost: catalog_pricing
+
+pricing:
+  source: https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  effective_date: 2026-09-30
+  # Prompts above 272k input tokens use 2x input/cache and 1.5x output pricing.
+  # cache_write is 0 because this route bills through Codex, which does not
+  # charge cache writes (https://learn.chatgpt.com/docs/pricing); the API's
+  # $2.50/1M cache-write rate does not apply. Matches OMP's openai-codex
+  # catalog, whose reported cost the omp agent records in preference to this.
+  input: 4.00
+  output: 15.00
+  cache_read: 0.20
+  cache_write: 0
+  prompt_tiers:
+    - max_input_tokens: 272000
+      input: 2.00
+      output: 10.00
+      cache_read: 0.10
+      cache_write: 0

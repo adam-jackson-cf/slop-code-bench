@@ -11,6 +11,11 @@ agent_specific:
     config:
       "$schema": "https://opencode.ai/config.json"
 
+  # Use --model omp_broker/gpt-5.6-terra with the omp agent (OMP auth broker).
+  omp:
+    provider: openai-codex
+    model: gpt-5.6-terra
+
 cost_accounting:
   actual_billed_cost: subscription_included
   estimated_api_equivalent_cost: catalog_pricing

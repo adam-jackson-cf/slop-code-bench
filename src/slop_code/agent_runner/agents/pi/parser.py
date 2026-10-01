@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from slop_code.agent_runner.agents.provenance import read_marker_agent_type
 from slop_code.agent_runner.trajectory import AgentStep
 from slop_code.agent_runner.trajectory import ThinkingStep
 from slop_code.agent_runner.trajectory import ToolUseStep
@@ -25,7 +26,14 @@ _PI_EVENT_TYPES = {
 class PiParser(TrajectoryParser):
     """Parser for PI JSON event trajectories."""
 
+    agent_type = "pi"
+
     def can_parse(self, artifact_dir: Path) -> bool:
+        if read_marker_agent_type(artifact_dir) == "omp":
+            return False
+        return self._has_pi_events(artifact_dir)
+
+    def _has_pi_events(self, artifact_dir: Path) -> bool:
         jsonl_file = self._find_jsonl_file(artifact_dir)
         if not jsonl_file:
             return False
@@ -99,7 +107,9 @@ class PiParser(TrajectoryParser):
                 else:
                     continue
 
-        return Trajectory(agent_type="pi", steps=steps, metadata=metadata)
+        return Trajectory(
+            agent_type=self.agent_type, steps=steps, metadata=metadata
+        )
 
     def _process_message_end(
         self,

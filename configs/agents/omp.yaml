@@ -1,0 +1,13 @@
+type: omp
+binary: omp
+
+version: 18.4.4
+timeout: 7200 # seconds; adjust to fit expected checkpoint duration
+# Host address of `omp auth-broker serve` as seen from inside the container.
+broker_url: http://host.docker.internal:8765
+extra_args: []
+env: {}
+cost_limits:
+  cost_limit: 20
+  step_limit: 250
+  net_cost_limit: 0

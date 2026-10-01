@@ -39,6 +39,7 @@ Providers define where credentials come from for each API service. They map prov
 | `codex_auth` | `~/.codex/auth.json` | OpenAI Codex CLI authentication file |
 | `opencode_auth` | `~/.local/share/opencode/auth.json` | OpenCode authentication file; mounted without reading its contents |
 | `gemini_auth` | `~/.gemini/oauth_creds.json` | Gemini CLI OAuth credentials file |
+| `omp_broker` | `~/.omp/auth-broker.token` | Bearer token for the host's OMP auth broker (used by the `omp` agent); the broker holds the OAuth credentials |
 
 ## Provider Types
 

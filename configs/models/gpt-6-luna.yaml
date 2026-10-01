@@ -1,0 +1,23 @@
+internal_name: gpt-6-luna
+provider: omp_broker
+authentication_mode: chatgpt_subscription_oauth
+
+# Driven through OMP (`omp` agent) using ChatGPT Codex subscription
+# credentials held by `omp auth-broker serve` on the host; select with
+# --model omp_broker/gpt-6-luna thinking=<low|medium|high|xhigh>.
+agent_specific:
+  omp:
+    provider: openai-codex
+    model: gpt-6-luna
+
+cost_accounting:
+  actual_billed_cost: subscription_included
+  estimated_api_equivalent_cost: catalog_pricing
+
+pricing:
+  source: https://developers.openai.com/api/docs/models/gpt-6-luna
+  effective_date: 2026-09-30
+  input: 0.10
+  output: 0.50
+  cache_read: 0.01
+  cache_write: 0

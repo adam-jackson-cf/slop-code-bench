@@ -68,6 +68,7 @@ def parse_trajectory(artifact_dir: Path) -> Trajectory:
     from slop_code.agent_runner.agents.gemini.parser import GeminiParser
     from slop_code.agent_runner.agents.kimi_cli.parser import KimiCliParser
     from slop_code.agent_runner.agents.miniswe.parser import MinisweParser
+    from slop_code.agent_runner.agents.omp.parser import OmpParser
     from slop_code.agent_runner.agents.opencode.parser import OpenCodeParser
     from slop_code.agent_runner.agents.openhands.parser import OpenHandsParser
     from slop_code.agent_runner.agents.pi.parser import PiParser
@@ -102,6 +103,7 @@ def parse_trajectory(artifact_dir: Path) -> Trajectory:
         ClaudeCodeParser,
         CodexParser,
         OpenCodeParser,
+        OmpParser,
         PiParser,
         KimiCliParser,
         GeminiParser,

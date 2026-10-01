@@ -1,0 +1,26 @@
+FROM {{ base_image }}
+
+USER root
+
+# Install the pinned OMP release binary (no Bun/Node runtime required) and
+# verify it against the checksums published with the same release.
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        arm64) OMP_ASSET=omp-linux-arm64 ;; \
+        amd64) OMP_ASSET=omp-linux-x64 ;; \
+        *) echo "Unsupported architecture: $(dpkg --print-architecture)" >&2; exit 1 ;; \
+    esac; \
+    OMP_BASE="https://github.com/can1357/oh-my-pi/releases/download/v{{ version }}"; \
+    curl --fail --location --silent --show-error \
+        "${OMP_BASE}/${OMP_ASSET}" -o /tmp/omp; \
+    curl --fail --location --silent --show-error \
+        "${OMP_BASE}/SHA256SUMS.txt" -o /tmp/omp-SHA256SUMS.txt; \
+    OMP_SHA256="$(awk -v f="${OMP_ASSET}" '$2 == f { print $1 }' /tmp/omp-SHA256SUMS.txt)"; \
+    test -n "${OMP_SHA256}"; \
+    echo "${OMP_SHA256}  /tmp/omp" | sha256sum --check --status; \
+    install -m 0755 /tmp/omp /usr/local/bin/omp; \
+    rm /tmp/omp /tmp/omp-SHA256SUMS.txt; \
+    omp --version
+
+USER agent
+WORKDIR /workspace

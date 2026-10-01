@@ -1,0 +1,24 @@
+internal_name: claude-sonnet-5-5
+provider: omp_broker
+
+# Driven through OMP (`omp` agent) using Claude subscription credentials held
+# by `omp auth-broker serve` on the host; select with
+# --model omp_broker/claude-sonnet-5-5 thinking=<low|medium|high|xhigh>.
+agent_specific:
+  omp:
+    provider: anthropic
+    model: claude-sonnet-5-5
+
+cost_accounting:
+  actual_billed_cost: subscription_included
+  estimated_api_equivalent_cost: catalog_pricing
+
+pricing:
+  source: https://www.anthropic.com/claude/sonnet
+  effective_date: 2026-09-30
+  input: 2
+  output: 10
+  cache_read: 0.2
+  cache_write: 2.5
+aliases:
+  - sonnet-5-5

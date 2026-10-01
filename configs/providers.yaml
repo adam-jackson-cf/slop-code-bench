@@ -168,3 +168,8 @@ providers:
     type: file
     file_path: ~/.gemini/oauth_creds.json
     description: Gemini CLI OAuth credentials file
+
+  omp_broker:
+    type: file
+    file_path: ~/.omp/auth-broker.token
+    description: OMP auth-broker bearer token (broker holds the OAuth credentials)
