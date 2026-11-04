@@ -34,7 +34,7 @@ PytestRunner.run()
     │   └─► uv sync --frozen --no-install-project
     │
     ├─► Build pytest command
-    │   └─► <locked-python> -m pytest ...
+    │   └─► PATH=<locked-env>/bin:"$PATH" <locked-python> -m pytest ...
     ├─► Execute pytest
     │   └─► Run in Docker container
     │
@@ -92,9 +92,15 @@ BUILTIN_MARKERS = {
 ## Command Construction
 
 The pytest command uses the interpreter from the problem's content-addressed
-evaluator environment:
+evaluator environment. A `/bin/sh -c` wrapper prepends the locked environment's
+`bin/` directory to `PATH`, so test subprocesses that call `uv run <script>`
+outside a project resolve the evaluator interpreter and its
+`test_dependencies`. The wrapper is explicit because the local runtime execs
+argv without a shell:
 
 ```bash
+/bin/sh -c 'PATH="$1:$PATH"; shift; exec "$@"' sh \
+measurement_analysis/evaluator_environments/<environment_id>/.venv/bin \
 measurement_analysis/evaluator_environments/<environment_id>/.venv/bin/python \
     -m pytest .evaluation_tests \
     --entrypoint="python main.py" \
@@ -107,9 +113,12 @@ measurement_analysis/evaluator_environments/<environment_id>/.venv/bin/python \
     -vv
 ```
 
-Every `test_dependencies` entry must exactly match an entry in the problem's
-`pyproject.toml` `[project].dependencies`. `uv.lock` fixes resolution before
-execution; the runner does not add packages dynamically.
+Every `test_dependencies` entry must exactly match an entry in the harness lock's
+`[project].dependencies`
+(`src/slop_code/evaluation/evaluator_locks/<problem_name>/pyproject.toml`).
+Its `uv.lock` fixes resolution before execution; the runner does not add
+packages dynamically. A problem without a harness lock directory fails with a
+missing-input `LockedEnvironmentError`.
 
 ## Report Parsing
 
@@ -213,9 +222,11 @@ PytestRunner sets these environment variables:
 
 ## Test Dependencies
 
-The problem's `pyproject.toml` declares the full evaluator environment,
-including pytest, its report and timeout plugins, coverage, Ruff, and any
-problem-specific libraries. Commit the generated `uv.lock` with the problem.
+The harness-owned lock at `src/slop_code/evaluation/evaluator_locks/<problem_name>/`
+declares the full evaluator environment, including pytest, its report and
+timeout plugins, coverage, Ruff, and any problem-specific libraries. Generate
+it with `uv run python scripts/lock_evaluator.py <problem_dir> [--with PKG ...]`
+and commit it to the harness repo; problem directories contain no lock files.
 
 `test_dependencies` documents problem-specific packages and must use the exact
 same requirement strings:
@@ -320,9 +331,12 @@ Reports are saved to the workspace:
 ### Run Tests Locally
 
 ```bash
+# From the repo root: build the env from the harness lock
+LOCK="$PWD/src/slop_code/evaluation/evaluator_locks/my_problem"
+uv sync --frozen --no-install-project --directory "$LOCK"
+
 cd problems/my_problem
-uv sync --frozen --no-install-project
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -v

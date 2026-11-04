@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2026-08-29
+last_updated: 2026-10-01
 ---
 
 # Interpreting Metrics Results
@@ -180,7 +180,12 @@ better, and `scb_check_version` records the checker release.
 Canonical scoring does not treat these files as score authority. A verified
 generation under `measurement_analysis/` recomputes favorable components for
 verbosity, erosion, architecture, rework, and regression. Each is in `[0, 1]`,
-and higher is better. See the [Metrics Reference](../metrics-reference.md) for
+and higher is better. The regression component counts only newly broken
+regression tests (passed at the prior checkpoint, failing now); failures
+inherited from earlier checkpoints are not penalized. In
+`checkpoint_results.jsonl`, `regression_broken` counts newly broken tests while
+`regression_still_failing` counts inherited failures. See the
+[Metrics Reference](../metrics-reference.md) for
 the formulas, eligibility rules, and published artifacts.
 
 ## Summary: What Good Code Looks Like

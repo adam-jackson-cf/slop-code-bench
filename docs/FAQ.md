@@ -67,12 +67,7 @@ Each run creates:
 - **Quality**: How clean, maintainable, and well-structured is the code? (Metrics like complexity, duplication, etc.)
 
 ### How do I interpret assessment policies?
-`assessment_policy` determines what counts as a successful checkpoint:
-- `all-cases` - All test cases must pass; this is the strict default
-- `all-non-error-cases` - All non-error test cases must pass
-- `core-cases` / `all-core-cases` - All core cases must pass
-- `any-core-cases` - At least one core case must pass
-- `any` / `any-case` - At least one test case must pass
+`assessment_policy` is always strict `all-cases`: a checkpoint is solved only when every evaluated test in every group passes. Other values are rejected.
 
 Execution stops after a failed assessment by default. Set
 `continue_after_test_failure: true` only when later checkpoints must still run.

@@ -609,8 +609,9 @@ pytest -k "core" tests/
 # Run cases matching pattern
 pytest -k "case_1 or case_2" tests/
 
+# $LOCK: harness lock dir synced as in debugging-workflows.md
 # Run specific parametrized test
-.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_core[case_1]
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py::test_core[case_1]
 ```
 
 ## Edge Cases and Gotchas

@@ -21,8 +21,6 @@ Complete walkthrough of the `etl_pipeline` problem, a stream-based data transfor
 ```
 problems/etl_pipeline/
 ├── config.yaml
-├── pyproject.toml
-├── uv.lock
 ├── checkpoint_1.md
 ├── checkpoint_2.md
 └── tests/
@@ -381,11 +379,13 @@ def test_error_1(): ...
 ## Running Locally
 
 ```bash
+# From the repo root: build the env from the harness lock
+LOCK="$PWD/src/slop_code/evaluation/evaluator_locks/etl_pipeline"
+uv sync --frozen --no-install-project --directory "$LOCK"
 cd problems/etl_pipeline
-uv sync --frozen --no-install-project
 
 # Run tests
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solutions/reference/etl.py" \
   --checkpoint=checkpoint_1 \
   -v

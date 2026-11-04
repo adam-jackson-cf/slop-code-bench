@@ -31,7 +31,8 @@ SCBench uses pytest as its evaluation framework because:
 │                    Test Execution                            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  <locked-python> -m pytest .evaluation_tests/                 │
+│  PATH=<locked-env>/bin:$PATH <locked-python> -m pytest        │
+│    .evaluation_tests/                                        │
 │    --entrypoint="python main.py"                             │
 │    --checkpoint=checkpoint_1                                 │
 │    --ctrf=.scbench/ctrf-report.json                         │
@@ -123,7 +124,7 @@ This naming is used to:
 
 Tests run in an isolated environment:
 
-- **Locked evaluator**: `pyproject.toml` and `uv.lock` fix every dependency
+- **Locked evaluator**: the harness-owned lock under `src/slop_code/evaluation/evaluator_locks/<problem_name>/` fixes every dependency
 - **Immutable reuse**: Content-addressed environments are inventoried and verified
 - **Trusted tests**: `--confcutdir` prevents agent-authored parent conftest loading
 - **Session scope**: Fixtures are shared within the session

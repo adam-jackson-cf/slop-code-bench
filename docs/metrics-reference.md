@@ -36,7 +36,7 @@ P1 = sum(c1_p1, c2_p1),  P2 = sum(c1_p2, c2_p2, c3_p2)  →  MetricStats
 |----------|--------|
 | Solves more? | `pct_problems_solved`, `pct_checkpoints_solved` |
 | Meets core spec? | `pct_checkpoints_core_solved`, `pass_rates.checkpoint.core` |
-| Breaks prior work? | `pass_rates.checkpoint.regression` |
+| Breaks prior work? | `regression_broken` (newly broken); `pass_rates.checkpoint.regression` includes inherited failures |
 | Cleaner code? | `ratios.lint.mean`, `verbosity.mean` |
 | Quality degrades? | `delta.loc`, `delta.verbosity`, `delta.churn_ratio`, `erosion.mean` |
 | Cheaper end-to-end? | `costs.problem.mean`, `costs.total` |
@@ -44,11 +44,13 @@ P1 = sum(c1_p1, c2_p1),  P2 = sum(c1_p2, c2_p2, c3_p2)  →  MetricStats
 
 ### Pass Rate Variants
 
-- **`pass_rate`** — all tests including regression. Strictest: solved this checkpoint *and* didn't break prior ones.
+- **`pass_rate`** — all tests including regression; strict (every failing test lowers it). A regression failure may be inherited from an earlier checkpoint rather than newly broken.
 - **`checkpoint_pass_rate`** — excludes regression. Did the agent solve the new requirements?
 - **`core_pass_rate`** — core tests only. Did the agent meet the minimum spec?
 
-The gap between `pct_checkpoints_solved` and `pct_checkpoints_iso_solved` reveals how often an agent solves new requirements but breaks old ones.
+The gap between `pct_checkpoints_solved` and `pct_checkpoints_iso_solved` measures prior-test failures at a checkpoint — inherited or newly broken. Use `regression_broken` to separate tests broken at this checkpoint from failures carried forward.
+
+The four `regression_*` ledger fields match Regression-group tests at checkpoint N to the same (origin checkpoint, test name) at checkpoint N-1 in the same run. They are `null` on the first checkpoint and when the prior evaluation is missing or errored. A Regression test absent from the prior evaluation (or skipped) is counted in none of them and logged.
 
 ---
 
@@ -98,6 +100,10 @@ From `evaluation.json`. Tests grouped by pytest markers:
 | `core_pass_rate` | `core_passed / core_total` |
 | `{core,functionality,error,regression}_total` | Per-group test count |
 | `{core,functionality,error,regression}_passed` | Per-group pass count |
+| `regression_retained` | Regression tests that passed at the prior checkpoint and pass now |
+| `regression_broken` | Regression tests that passed at the prior checkpoint and fail now |
+| `regression_repaired` | Regression tests that failed at the prior checkpoint and pass now |
+| `regression_still_failing` | Regression tests that failed at the prior checkpoint and fail now (inherited) |
 | `duration` | Pytest execution seconds |
 
 ### Code Size
@@ -272,6 +278,16 @@ For a configured problem with `K_p` checkpoints, `C_p,k` is the canonical
 the means of checkpoint `verbosity`, `erosion`, and `architecture`; `R` and
 `G` are the means of adjacent-transition `rework` and `regression`.
 
+Transition `regression` (`G`) counts only *newly broken* regression tests: a
+Regression-group test is newly broken when the same test (origin checkpoint
+and test id) passed in the prior checkpoint's canonical evaluation and
+fails or errors in the current one. Inherited failures (already failing at the
+prior checkpoint) are never attributed. Each newly broken test's executed
+lines are attributed to the innermost changed production symbol, and
+`G = 1 - affected_changed_symbols / all_changed_symbols` (`1` when no symbol
+changed). A failing regression test with no exact prior outcome makes the
+transition ineligible with `regression_prior_outcome_unavailable`.
+
 ```text
 C_p=sum(C_p,k)/K_p
 I_p=.15V_p+.15E_p+.20H_p+.30R_p+.20G_p
@@ -339,7 +355,8 @@ deduplicated ASCII-sorted `reasons`. The only reason values are
 `coverage_parity_failed`, `coverage_parity_unavailable`,
 `measurement_environment_mismatch`, `production_language_unsupported`,
 `production_source_loc_zero`, `production_symbol_evidence_invalid`,
-`score_evidence_invalid`, and `score_formula_invalid`. Input ineligibility
+`regression_prior_outcome_unavailable`, `score_evidence_invalid`, and
+`score_formula_invalid`. Input ineligibility
 publishes an immutable scoreless generation with `eligibility.json`,
 `producer_status.json`, `manifest.json`, and `READY`, then atomically replaces
 `current.json`. Execution failure publishes no generation and leaves the prior

@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2026-08-29
+last_updated: 2026-10-03
 ---
 
 # Evaluation System Documentation
@@ -11,7 +11,7 @@ The evaluation module provides a pytest-based framework for testing agent submis
 
 Tests are standard pytest files in `problems/{problem}/tests/`. `PytestRunner`
 executes them with a content-addressed evaluator interpreter built from the
-problem's `pyproject.toml` and `uv.lock`, parses results, and categorizes tests
+harness-owned lock for the problem (`src/slop_code/evaluation/evaluator_locks/<problem_name>/`), parses results, and categorizes tests
 using pytest markers:
 
 - **Unmarked tests** in current checkpoint = **CORE** (must pass)
@@ -47,8 +47,6 @@ using pytest markers:
 ```
 problems/{problem}/
 ├── config.yaml              # Problem configuration
-├── pyproject.toml           # Pinned evaluator dependencies
-├── uv.lock                  # Exact evaluator lock
 └── tests/
     ├── conftest.py          # Shared fixtures (entrypoint, checkpoint)
     ├── test_checkpoint_1.py # Tests for checkpoint 1
@@ -79,13 +77,13 @@ results = run_checkpoint_pytest(
     ),
 )
 
-print(f"Passed: {results.passes_policy('core-cases')}")
+print(f"Passed: {results.is_solved()}")
 ```
 
 ### Checking Results
 ```python
-# Check if all CORE tests passed
-if results.passes_policy("core-cases"):
+# Check if every evaluated test passed (strict all-cases)
+if results.is_solved():
     print("Checkpoint passed!")
 
 # Inspect individual test results

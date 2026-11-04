@@ -21,8 +21,6 @@ Advanced example demonstrating shared utilities and complex test infrastructure.
 ```
 problems/layered_config_synthesizer/
 ├── config.yaml
-├── pyproject.toml
-├── uv.lock
 ├── checkpoint_1.md
 ├── checkpoint_2.md
 ├── checkpoint_3.md
@@ -427,17 +425,19 @@ def assert_subset_match(actual: dict, expected: dict) -> None:
 ## Running Locally
 
 ```bash
+# From the repo root: build the env from the harness lock
+LOCK="$PWD/src/slop_code/evaluation/evaluator_locks/layered_config_synthesizer"
+uv sync --frozen --no-install-project --directory "$LOCK"
 cd problems/layered_config_synthesizer
-uv sync --frozen --no-install-project
 
 # Run tests
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solutions/reference/synthesizer.py" \
   --checkpoint=checkpoint_1 \
   -v
 
 # Run specific checkpoint
-.venv/bin/python -m pytest tests/test_checkpoint_2.py \
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_2.py \
   --entrypoint="python solutions/reference/synthesizer.py" \
   --checkpoint=checkpoint_2 \
   -v

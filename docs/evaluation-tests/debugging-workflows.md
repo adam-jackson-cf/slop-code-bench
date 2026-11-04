@@ -13,13 +13,18 @@ This guide covers common test failure patterns and debugging strategies for pyte
 5. **Timeout failures** - Tests exceed time limits
 6. **Stateful test failures** - State-dependent tests fail
 
-Run commands from the problem root after synchronizing its committed lock:
+Run commands from the problem root after synchronizing the harness-owned lock
+(`src/slop_code/evaluation/evaluator_locks/<problem_name>/`; problem directories
+contain no lock files):
 
 ```bash
-uv sync --frozen --no-install-project
+# From the repo root
+LOCK="$PWD/src/slop_code/evaluation/evaluator_locks/my_problem"
+uv sync --frozen --no-install-project --directory "$LOCK"
+cd problems/my_problem
 ```
 
-The examples below use the resulting `.venv` interpreter.
+The examples below use the resulting `$LOCK/.venv` interpreter.
 
 ## Failure Type 1: Test Collection Errors
 
@@ -37,16 +42,16 @@ The examples below use the resulting `.venv` interpreter.
 
 ```bash
 # Step 1: See what pytest collects
-.venv/bin/python -m pytest tests/ --collect-only -q
+"$LOCK/.venv/bin/python" -m pytest tests/ --collect-only -q
 
 # Step 2: Get full traceback of collection error
-.venv/bin/python -m pytest tests/ --collect-only -vv
+"$LOCK/.venv/bin/python" -m pytest tests/ --collect-only -vv
 
 # Step 3: Check Python import path
-.venv/bin/python -c "import sys; print(sys.path)"
+"$LOCK/.venv/bin/python" -c "import sys; print(sys.path)"
 
 # Step 4: Try importing test file directly
-.venv/bin/python -c "from tests.test_checkpoint_1 import *"
+"$LOCK/.venv/bin/python" -c "from tests.test_checkpoint_1 import *"
 ```
 
 ### Example: Fixture Not Found
@@ -154,13 +159,13 @@ def api_server(entrypoint_argv):
 **Run with output visible:**
 ```bash
 # Show print statements
-.venv/bin/python -m pytest tests/ -s
+"$LOCK/.venv/bin/python" -m pytest tests/ -s
 
 # Show setup/teardown
-.venv/bin/python -m pytest tests/ --setup-show
+"$LOCK/.venv/bin/python" -m pytest tests/ --setup-show
 
 # Show full traceback
-.venv/bin/python -m pytest tests/ -vv
+"$LOCK/.venv/bin/python" -m pytest tests/ -vv
 ```
 
 ### Debugging: Port Already in Use
@@ -260,7 +265,7 @@ def test_calculation(entrypoint_argv):
 
 **Run single test with output:**
 ```bash
-.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_calculation -xvs
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py::test_calculation -xvs
 ```
 
 ### Debugging: Floating Point Comparison
@@ -285,13 +290,13 @@ assert abs(actual_float - 0.1) < 0.0001
 
 ```bash
 # Run only the failing case
-.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_core[case_5] -xvs
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py::test_core[case_5] -xvs
 
 # Run with case ID
-.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_core -k "case_5" -xvs
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py::test_core -k "case_5" -xvs
 
 # See what cases were collected
-.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_core --collect-only
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py::test_core --collect-only
 ```
 
 ### Debugging: Case Not Found
@@ -299,7 +304,7 @@ assert abs(actual_float - 0.1) < 0.0001
 ```bash
 # If case doesn't exist in parametrize:
 # First, verify it's being discovered
-.venv/bin/python -m pytest tests/test_checkpoint_1.py --collect-only -q | grep test_core
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py --collect-only -q | grep test_core
 
 # Add debug to discover function
 def discover_cases(group_dir):
@@ -360,13 +365,13 @@ def test_core_case(entrypoint_argv, case_dir, tmp_path):
 
 ```bash
 # Increase timeout to get actual error
-.venv/bin/python -m pytest tests/ --timeout=300 -xvs
+"$LOCK/.venv/bin/python" -m pytest tests/ --timeout=300 -xvs
 
 # Find slow tests
-.venv/bin/python -m pytest tests/ --durations=10  # Show 10 slowest tests
+"$LOCK/.venv/bin/python" -m pytest tests/ --durations=10  # Show 10 slowest tests
 
 # Run specific test with no timeout
-.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_slow -xvs --timeout=0
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py::test_slow -xvs --timeout=0
 ```
 
 ### Common Timeout Causes
@@ -414,34 +419,36 @@ Test locally without Docker for faster iteration:
 
 ```bash
 # Run tests locally (outside Docker)
+# From the repo root: build the env from the harness lock
+LOCK="$PWD/src/slop_code/evaluation/evaluator_locks/my_problem"
+uv sync --frozen --no-install-project --directory "$LOCK"
 cd problems/my_problem
-uv sync --frozen --no-install-project
 
 # Basic run
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1
 
 # Verbose with output
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -xvs
 
 # Single test
-.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_basic \
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py::test_basic \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -xvs
 
 # With print output visible
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -s
 
 # Stop on first failure
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solution/main.py" \
   --checkpoint=checkpoint_1 \
   -x

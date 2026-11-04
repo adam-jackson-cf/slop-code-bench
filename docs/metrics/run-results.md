@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2026-08-29
+last_updated: 2026-10-01
 ---
 
 # Run-Level Results
@@ -61,6 +61,10 @@ One JSON object per line, one line per checkpoint across all problems.
   "error_passed": 9,
   "regression_total": 0,
   "regression_passed": 0,
+  "regression_retained": null,
+  "regression_broken": null,
+  "regression_repaired": null,
+  "regression_still_failing": null,
   "started": "2025-12-25T16:21:09.469411",
   "ended": "2025-12-25T16:29:08.741500",
   "elapsed": 479.272089,
@@ -109,13 +113,14 @@ One JSON object per line, one line per checkpoint across all problems.
 - `is_first` / `is_last`: Boolean flags for checkpoint position
 
 **Correctness (from evaluation.json):**
-- `pass_rate`: Total pass rate (passed_tests / total_tests)
+- `pass_rate`: Strict total pass rate (passed_tests / total_tests); a regression failure may be inherited from an earlier checkpoint rather than newly broken
 - `core_pass_rate`: CORE tests pass rate
-- `checkpoint_pass_rate`: Same as pass_rate
+- `checkpoint_pass_rate`: Pass rate excluding REGRESSION tests
 - `total_tests`, `passed_tests`: Overall test counts
 - `core_total` / `core_passed`: CORE test counts
 - `functionality_total` / `functionality_passed`: FUNCTIONALITY test counts
 - `regression_total` / `regression_passed`: REGRESSION test counts
+- `regression_retained` / `regression_broken` / `regression_repaired` / `regression_still_failing`: REGRESSION transition ledger against the prior checkpoint of the same run (passed→passed, passed→failed, failed→passed, failed→failed). `regression_broken` counts newly broken tests; `regression_still_failing` counts inherited failures. All four are `null` for the first checkpoint or when the prior evaluation is missing or errored
 - `error_total` / `error_passed`: ERROR test counts
 - `duration`: Test execution time in seconds
 

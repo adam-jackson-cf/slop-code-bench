@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2026-08-29
+last_updated: 2026-10-01
 ---
 
 # Reporting Guide
@@ -66,12 +66,12 @@ class CorrectnessResults(BaseModel):
     pytest_collected: int      # Number of tests collected
     infrastructure_failure: bool  # True if pytest itself failed
     # Canonical measurement provenance (populated for measurement runs)
-    coverage_ledger: dict | None
+    coverage_ledger: dict | None   # From the separate coverage pass only
     evaluator_environment: dict | None
     platform_identity: dict | None
     problem_config: dict | None
     test_corpus: dict | None
-    invocation: dict | None
+    invocation: dict | None        # command (correctness) + coverage_command
     environment_fingerprint: str | None
 ```
 
@@ -98,7 +98,7 @@ from slop_code.evaluation import run_checkpoint_pytest
 results = run_checkpoint_pytest(...)
 
 # Check if checkpoint passed
-if results.passes_policy("core-cases"):
+if results.is_solved():
     print("Checkpoint passed!")
 
 # Get pass rates
@@ -146,71 +146,30 @@ if results.infrastructure_failure:
     print(f"Collected: {results.pytest_collected} tests")
 ```
 
-## Assessment Policies
+## Assessment Policy
 
-`assessment_policy` determines whether a checkpoint succeeds based on test
-results. The `PassPolicy` enum and `CorrectnessResults.passes_policy()` expose
-the same policy values to Python callers.
+Checkpoint success is strict `assessment_policy: all-cases`, the only supported
+value. `CorrectnessResults.is_solved()` and `PassPolicy.ALL_CASES.check()`
+expose the same rule to Python callers.
 
-### Available Policies
+### Rule
 
-| Policy | Description |
-|--------|-------------|
-| `core-cases` | All CORE tests must pass (`passes_policy()` method default) |
-| `all-non-error-cases` | All CORE, FUNCTIONALITY, and REGRESSION tests pass |
-| `any-case` | At least one test passes |
-| `all-cases` | All tests must pass |
-
-### Using Assessment Policies
+A checkpoint is solved only when every evaluated test in every group (CORE,
+FUNCTIONALITY, REGRESSION, ERROR) passes. Group labels are diagnostic; ERROR
+tests are not assumed to fail. Infrastructure failures always fail, and a
+checkpoint with no evaluation result is not solved.
 
 ```python
-# Check specific policy
-if results.passes_policy("core-cases"):
-    print("Core tests passed!")
+if results.is_solved():
+    print("Checkpoint solved!")
 
-# Check multiple policies
-for policy in ["core-cases", "all-non-error-cases"]:
-    status = "PASS" if results.passes_policy(policy) else "FAIL"
-    print(f"{policy}: {status}")
+# Or from raw counts
+from slop_code.evaluation import PassPolicy
+
+passed = PassPolicy.ALL_CASES.check(results.pass_counts, results.total_counts)
 ```
 
-### Policy Behavior
-
-Run configuration defaults to strict `assessment_policy: all-cases`.
-`passes_policy()` without an argument retains its API default of `core-cases`.
-
-**`core-cases`**:
-- Only tests with `GroupType.CORE` must pass
-- FUNCTIONALITY, REGRESSION, and ERROR tests can fail
-- Use for: Essential functionality validation
-
-**`all-non-error-cases`**:
-- CORE, FUNCTIONALITY, and REGRESSION tests must all pass
-- Only ERROR tests can fail
-- Use for: Comprehensive validation
-
-**Infrastructure failures** always cause policy failure regardless of policy type.
-
-### PassPolicy Enum
-
-```python
-from slop_code.evaluation.report import PassPolicy
-
-class PassPolicy(str, Enum):
-    ANY = "any"
-    ANY_CASE = "any-case"
-    ALL_CASES = "all-cases"
-    ALL_NON_ERROR_CASES = "all-non-error-cases"
-    CORE_CASES = "core-cases"
-    ANY_CORE_CASES = "any-core-cases"
-    ALL_CORE_CASES = "all-core-cases"
-
-# Use enum directly
-passed = PassPolicy.CORE_CASES.check(
-    results.pass_counts,
-    results.total_counts
-)
-```
+Any other `assessment_policy` value in run configuration is rejected.
 
 ## Export Formats
 
@@ -333,7 +292,7 @@ for test in ctrf.get("results", {}).get("tests", []):
 def print_summary(results):
     total_passed = sum(results.pass_counts.values())
     total_count = sum(results.total_counts.values())
-    passed = results.passes_policy("core-cases")
+    passed = results.is_solved()
 
     print(f"{'='*50}")
     print(f"Problem: {results.problem_name}")

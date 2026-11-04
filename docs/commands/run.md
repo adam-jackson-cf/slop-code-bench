@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2026-08-29
+last_updated: 2026-10-01
 ---
 
 # Run Configuration Guide
@@ -216,17 +216,9 @@ thinking:
 
 ### assessment_policy
 
-Policy for determining whether a checkpoint passes:
-
-| Value | Description |
-|-------|-------------|
-| `any` | Pass if any case passes |
-| `any-case` | Same as `any` |
-| `all-cases` | Pass only if all cases pass |
-| `all-non-error-cases` | Pass if all non-error cases pass |
-| `core-cases` | Pass if all core cases pass |
-| `any-core-cases` | Pass if any core case passes |
-| `all-core-cases` | Same as `core-cases` |
+Checkpoint assessment. `all-cases` is the only supported value: a checkpoint
+passes only when every evaluated test in every group passes, and a checkpoint
+with no evaluation result does not pass. Any other value is rejected.
 
 Strict assessment is the default:
 
@@ -400,6 +392,8 @@ slop-code run [OPTIONS] [OVERRIDES]...
 | `--concurrent-evaluation/--no-concurrent-evaluation` | Evaluate one checkpoint while the next checkpoint is solved; does not change assessment and cannot stop before the overlapping solve |
 | `--provider-api-key-env VAR` | Override API key environment variable (see [Credentials Guide](../agents/credentials.md)) |
 | `--resume PATH` | Resume from an existing run directory (loads saved config; mutually exclusive with `--config`, `--agent`, `--environment`, `--prompt`, `--model`, and overrides) |
+| `--start-snapshot PATH` | Controlled continuation seed implementation (requires `--start-checkpoint` and exactly one problem; see [Controlled Continuation](#controlled-continuation)) |
+| `--start-checkpoint NAME` | First checkpoint the agent solves in a controlled continuation |
 | `--dry-run` | Preview what would be done without making changes |
 | `--live-progress/--no-live-progress` | Control live progress display (default: enabled) |
 
@@ -445,6 +439,7 @@ slop-code run --resume experiments/my_run/opus-4.5/claude_code-2.0.51_just-solve
 **Key behaviors:**
 - Loads the saved configuration from the run directory
 - Detects the last completed checkpoint and resumes from the next one
+- Re-runs checkpoints that errored, lack results, or whose specification changed, plus every later checkpoint; their directories and pending scoring evidence under `measurement_analysis/pending/` are deleted first
 - Validates that current config matches saved config for critical fields (model, agent, thinking, prompt, environment)
 - Cannot be combined with `--config`, `--agent`, `--environment`, `--prompt`, `--model`, or config overrides
 - Useful for recovering from network interruptions or timeout issues
@@ -459,6 +454,63 @@ slop-code run --config my_run.yaml --dry-run --problem file_backup
 ```
 
 Shows the resolved configuration and planned execution without consuming resources or API tokens.
+
+### Controlled Continuation
+
+Use `--start-snapshot` and `--start-checkpoint` to give an agent a fixed
+starting implementation and have it solve a later checkpoint, so different
+starting implementations can be compared under identical agent, tools, budget,
+and context:
+
+```bash
+slop-code run --problem file_backup \
+  --start-snapshot path/to/implementation \
+  --start-checkpoint checkpoint_3
+```
+
+**Flags:**
+- `--start-snapshot PATH`: directory copied as the seed implementation.
+- `--start-checkpoint NAME`: first checkpoint the agent solves. Both flags are
+  required together.
+
+**Validation (errors before any work starts):** exactly one selected problem;
+`NAME` exists and is not the first checkpoint; `PATH` is a directory; not
+combined with `--resume` or one-shot mode.
+
+**Seed semantics:**
+- The checkpoint immediately before `NAME` is the *seed checkpoint*. Before any
+  agent work the harness materialises it in the run directory as a normal
+  checkpoint directory whose `snapshot/` is a copy of `PATH`, and evaluates it
+  with the standard strict evaluation (`evaluation.json`, quality metrics, and
+  the same artifacts as any checkpoint). Its `inference_result.json` records
+  `is_seed: true`, the source path and digest, and zero cost and steps; its
+  `run_info.yaml` state is `seed`.
+- The agent session starts from the seed snapshot exactly like a resume
+  (snapshot restore plus the environment's `resume_commands`) with the
+  continuation prompt variant (`is_continuation` true), then proceeds through
+  `NAME` and the later checkpoints normally (`continue_after_test_failure` is
+  honoured).
+- Checkpoints before the seed checkpoint are absent, not skipped or errored.
+  Reporting and `checkpoint_results.jsonl` start at the seed checkpoint, so the
+  first measured transition (regression ledger, rework) is seed → `NAME`. The
+  seed checkpoint's own result never counts for or against the run's
+  `passed_policy`.
+- `config.yaml` and `run_info.yaml` persist `continuation_seed` (`source_path`,
+  `start_checkpoint`, and a content `digest` of `PATH`), so the experiment is
+  reproducible from the run directory. `--resume` of such a run keeps the seed:
+  an already materialised seed is not copied or re-evaluated again.
+
+**Inherited state.** Harnesses with a fresh session per checkpoint (OMP,
+`--no-session`) make the seed snapshot the only state inherited from earlier
+work; harnesses that continue sessions (Claude Code, OpenCode) have no earlier
+session to continue here, so the first agent checkpoint starts without
+conversation history either way. See *Continuation semantics* in
+[Measurement Validity](../metrics/measurement-validity.md).
+
+**Scoring.** A controlled continuation has no agent-produced checkpoints before
+the seed, so its canonical score generation is ineligible and it is never a
+benchmark score. Analyse it with `checkpoint_results.jsonl`: strict pass, new
+requirement pass rate, the regression transition fields, and effort.
 
 ## Example Configurations
 

@@ -157,10 +157,10 @@ def test_basic(entrypoint_argv):
 
 ```bash
 # Wrong:
-.venv/bin/python -m pytest tests/
+"$LOCK/.venv/bin/python" -m pytest tests/
 
 # Right:
-.venv/bin/python -m pytest tests/ --entrypoint="python main.py" --checkpoint=checkpoint_1
+"$LOCK/.venv/bin/python" -m pytest tests/ --entrypoint="python main.py" --checkpoint=checkpoint_1
 ```
 
 ### Problem: "scope mismatch"
@@ -372,9 +372,11 @@ specification so the agent adds it to the solution's package manifest.
 
 For a dependency imported only by trusted tests:
 
-1. Add the exact requirement to the problem's `pyproject.toml`
-2. Regenerate and commit `uv.lock`
-3. Add the identical requirement to `config.yaml`
+1. Add the exact requirement to `test_dependencies` in `config.yaml`
+2. Regenerate the harness lock (committed under
+   `src/slop_code/evaluation/evaluator_locks/<problem_name>/`):
+   `uv run python scripts/lock_evaluator.py problems/<problem_name> [--with PKG ...]`
+3. Do not add `pyproject.toml` or `uv.lock` to the problem directory
 
 ```yaml
 test_dependencies:
@@ -618,29 +620,31 @@ def test_legacy_error():
 ### Tool 1: Run pytest directly
 
 ```bash
+# From the repo root: build the env from the harness lock
+LOCK="$PWD/src/slop_code/evaluation/evaluator_locks/my_problem"
+uv sync --frozen --no-install-project --directory "$LOCK"
 cd problems/my_problem
-uv sync --frozen --no-install-project
 
 # Run with verbose output
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solution.py" \
   --checkpoint=checkpoint_1 \
   -v
 
 # Run single test
-.venv/bin/python -m pytest tests/test_checkpoint_1.py::test_basic \
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py::test_basic \
   --entrypoint="python solution.py" \
   --checkpoint=checkpoint_1 \
   -v
 
 # Show print statements
-.venv/bin/python -m pytest tests/ ... -s
+"$LOCK/.venv/bin/python" -m pytest tests/ ... -s
 
 # Stop on first failure
-.venv/bin/python -m pytest tests/ ... -x
+"$LOCK/.venv/bin/python" -m pytest tests/ ... -x
 
 # Show full assertion diffs
-.venv/bin/python -m pytest tests/ ... --tb=long
+"$LOCK/.venv/bin/python" -m pytest tests/ ... --tb=long
 ```
 
 ### Tool 2: Debug test case manually
@@ -686,7 +690,7 @@ def test_example(entrypoint_argv, tmp_path):
 
 Run with `-s` to see print output:
 ```bash
-.venv/bin/python -m pytest tests/ ... -s
+"$LOCK/.venv/bin/python" -m pytest tests/ ... -s
 ```
 
 ### Tool 4: Validate case files
@@ -701,7 +705,7 @@ find problems/my_problem/tests -name "*.yaml" -exec \
 
 ```bash
 # See what tests will be collected
-.venv/bin/python -m pytest tests/ --collect-only \
+"$LOCK/.venv/bin/python" -m pytest tests/ --collect-only \
   --entrypoint="python main.py" \
   --checkpoint=checkpoint_1
 
@@ -712,7 +716,7 @@ find problems/my_problem/tests -name "*.yaml" -exec \
 
 ```bash
 # Drop into debugger on failure
-.venv/bin/python -m pytest tests/ ... --pdb
+"$LOCK/.venv/bin/python" -m pytest tests/ ... --pdb
 
 # Or set breakpoint in code
 def test_example():

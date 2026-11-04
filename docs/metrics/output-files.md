@@ -1,6 +1,6 @@
 ---
 version: 1.1
-last_updated: 2026-08-29
+last_updated: 2026-10-01
 ---
 
 # Metrics Output Files Reference
@@ -43,7 +43,11 @@ experiments/run_name/
 ```
 
 `result.json` and `checkpoint_results.jsonl` are descriptive. Consumers accept
-canonical scores only from a fully verified current generation.
+canonical scores only from a fully verified current generation. Each
+`checkpoint_results.jsonl` row also carries the regression transition ledger
+(`regression_retained`, `regression_broken`, `regression_repaired`,
+`regression_still_failing`), which is `null` on the first checkpoint or when the
+prior evaluation is missing or errored.
 
 ## overall_quality.json
 

@@ -6,8 +6,11 @@ Complete field-by-field reference for problem configuration files.
 
 Located at: `problems/<problem_name>/config.yaml`
 
-The problem root must also contain `pyproject.toml` and `uv.lock`. They define
-the immutable evaluator environment used for pytest and canonical measurement.
+The problem directory must not contain `pyproject.toml` or `uv.lock`. The
+immutable evaluator environment used for pytest and canonical measurement comes
+from the harness-owned lock at
+`src/slop_code/evaluation/evaluator_locks/<problem_name>/`, keyed by the `name`
+field below.
 
 ### Required Fields
 
@@ -29,7 +32,7 @@ the immutable evaluator environment used for pytest and canonical measurement.
 | `timeout` | integer | `30` | Default timeout in seconds | `60` |
 | `tags` | array | `[]` | Searchable tags | `[cli, json, parsing]` |
 | `static_assets` | object | `{}` | Static file mappings | See below |
-| `test_dependencies` | array | `[]` | Problem-specific packages already locked in `pyproject.toml` | `["pyyaml==6.0.2"]` |
+| `test_dependencies` | array | `[]` | Problem-specific packages already in the harness evaluator lock | `["pyyaml==6.0.2"]` |
 | `measurement_generated_globs` | array | `[]` | Generated-source globs excluded from production scoring | `["src/generated/**"]` |
 | `measurement_test_globs` | array | `[]` | Test-source globs excluded from production scoring | `["tests/**"]` |
 | `markers` | object | `{}` | Custom pytest markers | See below |
@@ -81,10 +84,11 @@ Static assets are accessible via environment variables:
 
 ### Test Dependencies
 
-The complete evaluator dependency set is declared in the problem's
-`pyproject.toml`; exact resolution is committed in `uv.lock`. Every
+The complete evaluator dependency set is declared in the harness-owned lock at
+`src/slop_code/evaluation/evaluator_locks/<problem_name>/` (`pyproject.toml` and
+`uv.lock`), generated with `scripts/lock_evaluator.py`. Every
 `test_dependencies` string must exactly match one `[project].dependencies`
-entry:
+entry in that lock:
 
 ```yaml
 test_dependencies:
@@ -93,9 +97,10 @@ test_dependencies:
   - "deepdiff==8.6.1"
 ```
 
-`pyproject.toml` must also include the standard evaluator packages: pytest,
-pytest-json-ctrf, pytest-json-report, pytest-timeout, coverage, and Ruff.
-Evaluation uses frozen synchronization and never installs undeclared packages.
+The harness lock also includes the standard evaluator packages: pytest,
+pytest-json-ctrf, pytest-json-report, pytest-timeout, coverage, and Ruff, and
+may include extra packages the tests import. Evaluation uses frozen
+synchronization and never installs undeclared packages.
 
 ### Measurement Globs
 

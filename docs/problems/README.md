@@ -19,8 +19,6 @@ Create a problem in 4 steps:
 ```
 problems/my_problem/
 ├── config.yaml           # Problem metadata
-├── pyproject.toml        # Pinned evaluator dependencies
-├── uv.lock               # Exact evaluator lock
 ├── checkpoint_1.md       # Spec for checkpoint 1
 ├── checkpoint_2.md       # Spec for checkpoint 2
 └── tests/
@@ -49,13 +47,18 @@ checkpoints:
 
 ### Step 3: Lock Evaluator Dependencies
 
-Declare the complete evaluator environment in `pyproject.toml`, including
-pytest, its report and timeout plugins, coverage, Ruff, and any libraries used
-by tests. Generate and commit the exact lock:
+The evaluator lock is owned by the harness, not the problem directory. Do not add
+`pyproject.toml` or `uv.lock` to `problems/my_problem`. Generate the lock at
+`src/slop_code/evaluation/evaluator_locks/<problem_name>/` (keyed by the `name`
+in `config.yaml`) and commit it to the harness repository:
 
 ```bash
-uv lock --project problems/my_problem
+uv run python scripts/lock_evaluator.py problems/my_problem [--with PKG ...]
 ```
+
+The script writes the base evaluator dependencies (pytest, its report and
+timeout plugins, coverage, Ruff), your `test_dependencies`, and any `--with`
+packages, then runs `uv lock`.
 
 ### Step 4: Create Test Files
 
@@ -103,8 +106,6 @@ def test_invalid_input(entrypoint_argv):
 ```
 problems/{problem_name}/
 ├── config.yaml              # Problem metadata and checkpoint definitions
-├── pyproject.toml           # Pinned evaluator dependencies
-├── uv.lock                  # Exact evaluator lock
 ├── checkpoint_1.md          # Specification for checkpoint 1
 ├── checkpoint_2.md          # Specification for checkpoint 2
 ├── tests/

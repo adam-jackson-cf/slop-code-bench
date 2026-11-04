@@ -36,6 +36,15 @@ reference solutions, and problem-specific supporting assets, whether stored
 in this repository, a separate problem repository, or a copied snapshot.
 - A request to change the benchmark harness, evaluation, scoring, remediation,
 or quality tooling does not implicitly authorize checkpoint problem changes.
+- Treat the problem catalogue (`scb-problems`, or any `SCBENCH_PROBLEMS_PATH`)
+as read-only upstream content. Hidden tests that assert behaviour the spec does
+not state are intentional difficulty, not defects. When a reference solution
+fails its own tests in this harness, fix the harness (environment, locks,
+plugins, timeouts); report genuine problem defects upstream instead of editing
+them.
+- Evaluator dependency locks are harness-owned under
+`src/slop_code/evaluation/evaluator_locks/<problem>/`; create them with
+`scripts/lock_evaluator.py`, never inside a problem directory.
 - Experiment snapshots include `tests/agent_runner/resources/**`,
 `tests/mining/fixtures/**`, `tests/evaluation/fixtures/**`,
 `examples/**/submission/**`, `examples/**/submissions/**`,
@@ -69,6 +78,9 @@ for classes.
 - **NEVER** run a benchmark problem's tests directly with pytest. **ALWAYS**
 use `uv run slop-code --quiet eval-snapshot` or
 `uv run slop-code --quiet tools run-case`.
+- Validate evaluator, harness, or process changes against the `mocked_http`
+reference solutions for checkpoints 1–8 only. **NEVER** run the full problem
+catalogue to validate a change.
 
 ## Commit and Pull Request Guidelines
 

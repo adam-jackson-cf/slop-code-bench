@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2026-08-29
+last_updated: 2026-10-03
 ---
 
 # Configuration Guide
@@ -9,9 +9,10 @@ This guide covers problem and checkpoint configuration for the pytest-based eval
 
 ## Overview
 
-Configuration is defined in `config.yaml` at the problem root. The same
-directory must contain `pyproject.toml` and `uv.lock` for the locked evaluator
-environment. The pytest runner uses:
+Configuration is defined in `config.yaml` at the problem root. The problem
+directory contains no `pyproject.toml` or `uv.lock`; the locked evaluator
+environment comes from the harness-owned lock at
+`src/slop_code/evaluation/evaluator_locks/<problem_name>/`. The pytest runner uses:
 
 - **ProblemConfig**: Entry file, static assets, custom markers, test dependencies, measurement globs
 - **CheckpointConfig**: Timeout, environment variables, test inclusion settings
@@ -99,8 +100,9 @@ markers:
 
 ### Test Dependencies
 
-Every evaluator dependency must be pinned through the problem's
-`pyproject.toml` and committed `uv.lock`:
+Every evaluator dependency is pinned in the harness-owned lock
+(`src/slop_code/evaluation/evaluator_locks/<problem_name>/pyproject.toml` and
+`uv.lock`), for example:
 
 ```toml
 [project]
@@ -118,9 +120,10 @@ dependencies = [
 ]
 ```
 
-Generate and commit `uv.lock` after changing this manifest. `test_dependencies`
-may list problem-specific packages used by tests, but every listed string must
-exactly match an entry in `[project].dependencies`:
+Regenerate and commit the lock after changing dependencies with
+`uv run python scripts/lock_evaluator.py problems/<problem_name> [--with PKG ...]`.
+`test_dependencies` may list problem-specific packages used by tests, but every
+listed string must exactly match an entry in the lock's `[project].dependencies`:
 
 ```yaml
 test_dependencies:

@@ -134,6 +134,18 @@ When using bridge networking:
 - **Agent context:** May use different user for isolation
 - Helpers: `get_eval_user()` vs `get_actual_user()`
 
+## Daemon Resolution
+
+Runtimes and image builds create SDK clients with
+`docker_runtime.docker_client()`. The Docker SDK ignores `docker context`, while
+`docker run`/`docker exec` follow it, so when `DOCKER_HOST` is unset the helper
+uses the active context's endpoint (`docker context inspect`). Both paths then
+reach the same daemon, even when Docker Desktop, Colima, or OrbStack moves the
+socket. An explicit `DOCKER_HOST` always takes precedence.
+
+The test suite uses the same helper; a red `Docker tests SKIPPED` banner in the
+pytest summary means the daemon was unreachable and Docker tests did not run.
+
 ## Docker Configuration
 
 `DockerConfig` in `src/slop_code/execution/docker_runtime/models.py` provides
