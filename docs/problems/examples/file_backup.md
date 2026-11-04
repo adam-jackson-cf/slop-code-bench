@@ -21,8 +21,6 @@ Complete walkthrough of the `file_backup` problem, a CLI-based backup scheduler.
 ```
 problems/file_backup/
 ├── config.yaml              # Problem configuration
-├── pyproject.toml         # Pinned evaluator dependencies
-├── uv.lock                # Exact evaluator lock
 ├── checkpoint_1.md          # Spec: Basic scheduling
 ├── checkpoint_2.md          # Spec: Execution modes
 ├── checkpoint_3.md          # Spec: Verification
@@ -383,11 +381,13 @@ def parse_jsonl(text):
 ## Running Locally
 
 ```bash
+# From the repo root: build the env from the harness lock
+LOCK="$PWD/src/slop_code/evaluation/evaluator_locks/file_backup"
+uv sync --frozen --no-install-project --directory "$LOCK"
 cd problems/file_backup
-uv sync --frozen --no-install-project
 
 # Run tests against reference solution
-.venv/bin/python -m pytest tests/ \
+"$LOCK/.venv/bin/python" -m pytest tests/ \
   --entrypoint="python solutions/reference/backup_scheduler.py" \
   --checkpoint=checkpoint_1 \
   -v

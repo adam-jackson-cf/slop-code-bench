@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2026-08-29
+last_updated: 2026-10-01
 ---
 
 # infer-problem
@@ -42,7 +42,7 @@ slop-code infer-problem [OPTIONS] PROBLEM_NAME
 | `--provider-api-key-env` | string | - | Override API key environment variable |
 | `--thinking` | string | - | Thinking budget: none, low, medium, high |
 | `--max-thinking-tokens` | int | - | Maximum thinking tokens |
-| `--assessment-policy` | enum | `all-cases` | Policy used to assess checkpoint success |
+| `--assessment-policy` | string | `all-cases` | Strict assessment policy; only `all-cases` is accepted |
 | `--continue-after-test-failure/--stop-after-test-failure` | flag | stop | Continue later checkpoints after failed assessment |
 | `--evaluate/--no-evaluate` | flag | evaluate | Run evaluation after inference |
 

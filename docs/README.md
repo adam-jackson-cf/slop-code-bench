@@ -93,6 +93,7 @@ configuration, and output formats.
 - [metrics/README.md](metrics/README.md) - Overview and metric categories
 - [metrics/interpreting-results.md](metrics/interpreting-results.md) - Explanation of each metric
 - [metrics/configuration.md](metrics/configuration.md) - Metric configuration
+- [metrics/measurement-validity.md](metrics/measurement-validity.md) - What each measurement may claim, outcome definitions, and validation status
 
 ## Support Files
 

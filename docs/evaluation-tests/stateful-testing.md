@@ -458,11 +458,12 @@ def test_something(case_store, processed_data):
 ### Check Test Ordering
 
 ```bash
+# $LOCK: harness lock dir synced as in debugging-workflows.md
 # Use -v to see test execution order
-.venv/bin/python -m pytest tests/test_checkpoint_1.py -v
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py -v
 
 # Collect only, don't run
-.venv/bin/python -m pytest tests/test_checkpoint_1.py --collect-only
+"$LOCK/.venv/bin/python" -m pytest tests/test_checkpoint_1.py --collect-only
 ```
 
 ### Isolate State Issues

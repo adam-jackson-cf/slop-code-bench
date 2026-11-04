@@ -32,12 +32,6 @@ problems/{problem_name}/
 │       order: 1                 └─────────────────────────────
 │       state: Core Tests
 │
-├── pyproject.toml             ─────────────────────────────
-│   [project]                  │ Evaluator Environment     │
-│   dependencies = [...]       │ • Pinned dependencies     │
-├── uv.lock                    │ • Exact frozen lock       │
-│                              └─────────────────────────────
-│
 ├── checkpoint_1.md              ─────────────────────────────
 │   # Checkpoint 1: Feature      │ Specification            │
 │   Build a tool that...         │ • What agents must build │
@@ -130,7 +124,7 @@ static_assets:
     path: static_assets/files
 
 test_dependencies:
-  - "pyyaml==6.0.2"        # Must exactly match pyproject.toml
+  - "pyyaml==6.0.2"        # Must exactly match the harness lock's dependencies
   - "requests==2.32.5"
 
 markers:
@@ -139,19 +133,22 @@ markers:
     group: FUNCTIONALITY
 ```
 
-### pyproject.toml and uv.lock (Required)
+### Evaluator lock (harness-owned)
 
-`pyproject.toml` declares the complete trusted evaluator dependency set.
-Generate `uv.lock` after every manifest change and commit both files:
+Problem directories contain no `pyproject.toml` or `uv.lock`. The trusted
+evaluator lock lives in the harness at
+`src/slop_code/evaluation/evaluator_locks/<problem_name>/`, keyed by the `name`
+in `config.yaml`. Generate or refresh it and commit it to the harness repo:
 
 ```bash
-uv lock --project problems/my_problem
+uv run python scripts/lock_evaluator.py problems/my_problem [--with PKG ...]
 ```
 
-Evaluation copies both files into a content-addressed environment, runs
+Evaluation copies the harness lock into a content-addressed environment, runs
 `uv sync --frozen --no-install-project`, and verifies the completed environment
-before reuse. Every `test_dependencies` entry in `config.yaml` must exactly
-match one `[project].dependencies` entry.
+before reuse. A problem without a harness lock directory fails evaluation. Every
+`test_dependencies` entry in `config.yaml` must exactly match one
+`[project].dependencies` entry in the harness lock.
 
 ### checkpoint_N.md (Required)
 
@@ -368,9 +365,6 @@ problems/etl_pipeline/
 │       order: 3
 │       state: Core Tests
 │       include_prior_tests: true
-│
-├── pyproject.toml
-├── uv.lock
 │
 ├── checkpoint_1.md              # Basic parsing
 ├── checkpoint_2.md              # Add filtering

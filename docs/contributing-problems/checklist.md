@@ -61,8 +61,6 @@ Your PR should include:
 ```
 problems/your_problem/
 ├── config.yaml           # Problem configuration (with inline checkpoints)
-├── pyproject.toml        # Pinned evaluator dependencies
-├── uv.lock               # Exact evaluator lock
 ├── checkpoint_1.md       # Checkpoint 1 specification
 ├── checkpoint_2.md       # Checkpoint 2 specification
 ├── tests/

@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2026-08-29
+last_updated: 2026-10-03
 ---
 
 # Troubleshooting Guide
@@ -82,8 +82,7 @@ Infrastructure failures mean pytest itself failed to run properly.
    ```
 
 2. **Missing pytest dependency**
-   - Add the requirement to problem `pyproject.toml`
-   - Regenerate `uv.lock`
+   - Add the requirement to the harness lock (`scripts/lock_evaluator.py <problem_dir> --with PKG`)
    - Add the identical requirement string to `test_dependencies`
 
 3. **Fixture not defined**
@@ -162,7 +161,7 @@ for test in ctrf["results"]["tests"]:
 
 1. **Keep declared dependencies identical**
    ```toml
-   # pyproject.toml
+   # src/slop_code/evaluation/evaluator_locks/<problem_name>/pyproject.toml
    dependencies = ["requests==2.32.5"]
    ```
    ```yaml
@@ -171,21 +170,21 @@ for test in ctrf["results"]["tests"]:
      - "requests==2.32.5"
    ```
 
-2. **Regenerate and commit the lock after manifest changes**
+2. **Regenerate and commit the harness lock after dependency changes**
    ```bash
-   uv lock --project problems/my_problem
-   uv sync --project problems/my_problem --frozen --no-install-project
+   uv run python scripts/lock_evaluator.py problems/my_problem
    ```
 
 3. **Check immutable environment errors**
    - Remove neither `READY` nor inventory files from a published evaluator
-   - Investigate source `pyproject.toml`, `uv.lock`, plugin, or interpreter changes
+   - Investigate changes to the harness lock's `pyproject.toml`/`uv.lock`, plugin, or interpreter
    - Let the runner create the new content-addressed environment
 
 ### Package Not Found
 
-Add the exact package requirement to `[project].dependencies`, regenerate
-`uv.lock`, and use the same requirement string in `test_dependencies`.
+Add the exact package requirement to the harness lock (`--with PKG` on
+`scripts/lock_evaluator.py`) and use the same requirement string in
+`test_dependencies`.
 
 ## Marker Issues
 
@@ -281,11 +280,12 @@ for test in report["results"]["tests"]:
 ### Run Pytest Manually
 
 ```bash
-# Build the problem's frozen evaluator environment
-uv sync --project problems/my_problem --frozen --no-install-project
+# Build the problem's frozen evaluator environment from the harness lock
+LOCK=/absolute/path/to/repo/src/slop_code/evaluation/evaluator_locks/my_problem
+uv sync --frozen --no-install-project --directory "$LOCK"
 
 # From the checkpoint workspace, run copied trusted tests
-/absolute/path/to/repo/problems/my_problem/.venv/bin/python \
+PATH="$LOCK/.venv/bin:$PATH" "$LOCK/.venv/bin/python" \
   -m pytest \
   --entrypoint='python main.py' \
   --checkpoint='checkpoint_1' \
@@ -379,8 +379,8 @@ commands:
    ```
 
 2. **Increase parallelization** (if tests are independent)
-   - Add an exact `pytest-xdist` requirement to `pyproject.toml`
-   - Regenerate `uv.lock`
+   - Add an exact `pytest-xdist` requirement via `--with pytest-xdist==<version>` on `scripts/lock_evaluator.py`
+   - Commit the regenerated harness lock
    - Add the identical requirement to `test_dependencies`
    - Run pytest with `-n auto`
 
@@ -425,8 +425,6 @@ pytest_collected: 0
 Directory structure:
 problems/my_problem/
 ├── config.yaml
-├── pyproject.toml
-├── uv.lock
 └── tests/
     ├── conftest.py
     └── test_checkpoint_1.py
@@ -434,7 +432,7 @@ problems/my_problem/
 stderr:
 ModuleNotFoundError: No module named 'custom_utils'
 
-pyproject.toml and uv.lock:
+Harness lock (evaluator_locks/my_problem/):
 custom_utils is not declared or locked
 
 config.yaml:

@@ -23,10 +23,9 @@ for review.
 - [ ] Checkpoints have sequential `order` starting at 1
 - [ ] All checkpoints have `state: Core Tests` (or `Draft` for WIP)
 - [ ] `include_prior_tests` defaults to `true` — only set `false` with clear justification
-- [ ] Every `test_dependencies` entry is needed by tests and exactly matches `pyproject.toml`
+- [ ] Every `test_dependencies` entry is needed by tests
 - [ ] `static_assets` entries (if any) have paths that exist on disk
-- [ ] `pyproject.toml` declares the complete evaluator dependency set
-- [ ] `uv.lock` is current and committed
+- [ ] A harness lock directory exists at `src/slop_code/evaluation/evaluator_locks/<problem_name>/` whose `[project].dependencies` include every `test_dependencies` entry
 
 ---
 
@@ -112,7 +111,7 @@ for review.
 
 - [ ] Named `test_checkpoint_N.py` matching checkpoint numbering
 - [ ] CORE tests are unmarked (no decorator)
-- [ ] Optional/nice-to-have tests marked with `@pytest.mark.functionality`
+- [ ] Extended-feature tests marked with `@pytest.mark.functionality` (labels are diagnostic; every test must pass for a checkpoint to be solved)
 - [ ] Error-handling tests marked with `@pytest.mark.error`
 - [ ] Tests use `entrypoint_argv` fixture for subprocess invocation
 
@@ -122,3 +121,9 @@ for review.
 - [ ] Each case directory has a `case.yaml` and expected output file
 - [ ] `{{static:files}}` placeholder used correctly for asset references
 - [ ] Edge cases covered: empty input, large input, boundary values, special characters
+
+---
+
+## Evaluator Validity
+
+- [ ] Every reference checkpoint passes every collected test under `eval-snapshot` (strict `all-cases`, `infrastructure_failure: false`)

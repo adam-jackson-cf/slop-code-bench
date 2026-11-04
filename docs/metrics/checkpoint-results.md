@@ -1,6 +1,6 @@
 ---
 version: 1.0
-last_updated: 2025-12-26
+last_updated: 2026-10-01
 ---
 
 # Checkpoint Results
@@ -24,33 +24,20 @@ Test results are saved to `evaluation.json` in each checkpoint directory.
 
 ### Test Categorization
 
-Tests are grouped into categories based on pytest markers. The **GroupType** determines what tests are required for checkpoint success.
+Tests are grouped into categories based on pytest markers. The **GroupType** labels where a test came from; it does not change whether the test must pass.
 
-| GroupType | Marker | Purpose | Required? |
-|-----------|--------|---------|-----------|
-| **CORE** | Unmarked tests | Must-pass requirements | Yes (default) |
-| **FUNCTIONALITY** | `@pytest.mark.functionality` | Optional extended features | No |
-| **REGRESSION** | Tests from prior checkpoints | Prevent backsliding | No (unless policy requires) |
-| **ERROR** | `@pytest.mark.error` | Error handling tests | No (assumed to fail) |
+| GroupType | Marker | Purpose |
+|-----------|--------|---------|
+| **CORE** | Unmarked tests | Baseline requirements |
+| **FUNCTIONALITY** | `@pytest.mark.functionality` | Extended features |
+| **REGRESSION** | Tests from prior checkpoints | Prevent backsliding |
+| **ERROR** | `@pytest.mark.error` | Error handling tests |
 
-**GroupType determines which tests must pass:**
-- CORE tests measure core functionality
-- FUNCTIONALITY tests measure feature completeness
-- REGRESSION tests ensure prior checkpoints still work
-- ERROR tests verify error handling (expected failures)
+### Assessment Policy
 
-### PassPolicy
+The only assessment is strict `all-cases` (`assessment_policy: all-cases`): a checkpoint is "solved" when every evaluated test in every group passes. ERROR tests are not assumed to fail; they count like any other test. An infrastructure failure, or a checkpoint with no evaluation result, is not solved.
 
-The **PassPolicy** determines when a checkpoint is considered "solved." It controls which GroupTypes must have all tests passing.
-
-| Policy | Requirement | When Used |
-|--------|-------------|-----------|
-| **CORE_CASES** | All CORE tests pass | Default (most common) |
-| **ALL_NON_ERROR_CASES** | All CORE, FUNCTIONALITY, and REGRESSION tests pass | High bar for completeness |
-
-**Example**: A checkpoint with 10 CORE tests and 5 FUNCTIONALITY tests:
-- Passes CORE_CASES policy if: all 10 CORE pass (FUNCTIONALITY can fail)
-- Passes ALL_NON_ERROR_CASES policy if: all 10 CORE + all 5 FUNCTIONALITY pass
+**Example**: A checkpoint with 10 CORE tests and 5 FUNCTIONALITY tests is solved only if all 15 pass.
 
 ### evaluation.json Structure
 
@@ -113,20 +100,18 @@ Example from an actual checkpoint:
 
 ### Interpreting Pass/Fail by GroupType
 
-**CORE tests**: Must pass for checkpoint to be considered "solved"
-- All CORE passing → ✅ Checkpoint passes (under CORE_CASES policy)
-- Any CORE failing → ❌ Checkpoint fails (requirements not met)
+A checkpoint is solved only when every evaluated test in every group passes. The group labels are diagnostic; they locate where a failure occurred but do not make any group optional.
 
-**FUNCTIONALITY tests**: Optional but indicate feature completeness
-- All FUNCTIONALITY passing → More complete implementation
-- Any FUNCTIONALITY failing → Features not fully implemented (acceptable under CORE_CASES)
+**CORE tests**: Baseline requirements for the checkpoint
+- Any CORE failing → ❌ Checkpoint fails
 
-**REGRESSION tests**: Indicate code stability across checkpoints
-- All REGRESSION passing → Prior functionality still works
-- Any REGRESSION failing → Code broke something from prior checkpoint (usually bad sign)
+**FUNCTIONALITY tests**: Feature completeness
+- Any FUNCTIONALITY failing → ❌ Checkpoint fails (feature not fully implemented)
 
-**ERROR tests**: Verify error handling (expected to have some failures)
-- More passing → Better error handling coverage
+**REGRESSION tests**: REGRESSION tests re-run earlier checkpoints' tests. A failing regression test is either inherited (it was already failing at the previous checkpoint) or newly broken (it passed at the previous checkpoint); see the regression transition fields in checkpoint_results.jsonl.
+
+**ERROR tests**: Verify error handling
+- Any ERROR failing → ❌ Checkpoint fails
 
 ### Pytest Artifacts
 

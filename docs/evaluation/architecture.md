@@ -1,6 +1,6 @@
 ---
 version: 2.0
-last_updated: 2026-08-29
+last_updated: 2026-10-03
 ---
 
 # Evaluation System Architecture
@@ -17,8 +17,6 @@ is separate from the trusted test runner.
 ```
 Problem
 ├── config.yaml              # Problem + checkpoint configuration
-├── pyproject.toml           # Evaluator dependencies
-├── uv.lock                  # Exact evaluator dependency lock
 └── tests/
     ├── conftest.py          # Required fixtures
     ├── test_checkpoint_1.py # Tests for checkpoint 1
@@ -63,14 +61,18 @@ Problem
    - Generate `pytest.ini` with marker registration
 
 2. **Evaluator Environment**
-   - Hash `pyproject.toml`, `uv.lock`, declared `test_dependencies`, the
-     coverage plugin, and interpreter identity
+   - Hash the harness lock (`evaluator_locks/<problem_name>/pyproject.toml` and
+     `uv.lock`), declared `test_dependencies`, the coverage plugin, and
+     interpreter identity
    - Reuse a fully verified environment with that identity, or build it with
      `uv sync --frozen --no-install-project`
    - Verify the environment inventory, hashes, file modes, and `READY` marker
 
 3. **Command Construction and Execution**
-   - Run pytest through the locked evaluator interpreter
+   - Prepend the locked environment's `bin/` to `PATH` and run pytest through the
+     locked evaluator interpreter, so test subprocesses calling `uv run <script>`
+     outside a project resolve the evaluator interpreter and its
+     `test_dependencies`
    - Pass `--entrypoint` and `--checkpoint` options to pytest
    - Limit conftest discovery to `.evaluation_tests`
    - Configure CTRF and pytest-json-report output paths
@@ -187,6 +189,8 @@ class CorrectnessResults(BaseModel):
 The runner builds a command like:
 
 ```bash
+/bin/sh -c 'PATH="$1:$PATH"; shift; exec "$@"' sh \
+measurement_analysis/evaluator_environments/<environment_id>/.venv/bin \
 measurement_analysis/evaluator_environments/<environment_id>/.venv/bin/python \
   -m pytest \
   .evaluation_tests \
@@ -200,8 +204,24 @@ measurement_analysis/evaluator_environments/<environment_id>/.venv/bin/python \
   -vv
 ```
 
-Canonical coverage runs insert `coverage run --branch -m` before `pytest` and
-load the internal `coverage_plugin`.
+The `/bin/sh -c` wrapper prepends the evaluator `bin/` to `PATH` so test
+subprocesses that `uv run <script>` resolve the evaluator interpreter. It works
+both for runtimes that exec argv directly (local) and for those that wrap the
+command in a shell (docker).
+
+Canonical measurement runs evaluate twice, each in a fresh session:
+
+1. **Correctness pass**: the command above, uninstrumented. It alone decides
+   test outcomes, counts, `is_solved()`, duration, and stdout/stderr.
+2. **Coverage pass**: the same command with `coverage run --branch -m` before
+   `pytest` and the internal `coverage_plugin` loaded. It contributes only
+   `coverage_ledger`; its command is recorded as `invocation.coverage_command`.
+
+Instrumentation slows subprocess-heavy tests enough to trip fixed timeouts, so
+coverage never decides correctness. `coverage_ledger.outcome_mismatches` lists
+nodes whose failure state differs between the passes (`null` when the passes
+cannot be compared). Regression evidence is ineligible for a checkpoint unless
+that list is empty.
 
 **Key Options:**
 - `--entrypoint`: Command to run submission (passed to test fixtures)
@@ -213,16 +233,22 @@ load the internal `coverage_plugin`.
 
 ## Test Dependencies
 
-Every problem declares evaluator packages in `pyproject.toml` and commits the
-matching `uv.lock`. Entries in `config.yaml` `test_dependencies` must also
-appear in `[project].dependencies`; they document which locked packages are
-problem-specific. The runner never resolves floating dependencies at execution
-time.
+Every problem has a harness-owned evaluator lock at
+`src/slop_code/evaluation/evaluator_locks/<problem_name>/` (`pyproject.toml` and
+`uv.lock`), keyed by the problem `name` in `config.yaml`. Problem directories
+contain no lock files, and a problem without a lock directory fails evaluation
+with a missing-input `LockedEnvironmentError`. Entries in `config.yaml`
+`test_dependencies` must also appear in the lock's `[project].dependencies`; the
+lock may contain extra evaluator dependencies the tests import. The runner never
+resolves floating dependencies at execution time.
 
 The standard evaluator set includes pytest, pytest-json-ctrf,
-pytest-json-report, pytest-timeout, coverage, and Ruff. Add libraries used by
-tests, such as `jsonschema` or `deepdiff`, to the problem project and regenerate
-`uv.lock`.
+pytest-json-report, pytest-timeout, coverage, and Ruff. Create or refresh a lock,
+adding libraries used by tests such as `jsonschema` or `deepdiff`, with:
+
+```bash
+uv run python scripts/lock_evaluator.py problems/my_problem --with jsonschema==4.23.0
+```
 
 ## Exit Codes
 
@@ -243,7 +269,7 @@ all assessment policies to fail.
 ### Locked Evaluator Isolation
 
 Evaluator environments are immutable and keyed by exact inputs:
-- `uv.lock` fixes dependency resolution
+- The harness `uv.lock` fixes dependency resolution
 - Every installed file and mode is inventoried and verified before reuse
 - A completed environment is published only after its `READY` marker is durable
 - Solution dependencies do not alter the trusted evaluator
