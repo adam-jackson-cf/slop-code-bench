@@ -718,8 +718,17 @@ class TestGetCheckpointMetrics:
         # Should return default fields when all metric files are missing
         assert result["is_first"] is False
         assert result["is_last"] is False
-        # May also include erosion metrics with default values
-        assert "erosion_velocity" in result or len(result) == 2
+        # Regression transition ledger is null without evaluations
+        assert {
+            key: value
+            for key, value in result.items()
+            if key.startswith("regression_")
+        } == {
+            "regression_retained": None,
+            "regression_broken": None,
+            "regression_repaired": None,
+            "regression_still_failing": None,
+        }
 
     def test_uses_pinned_scb_check_report(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

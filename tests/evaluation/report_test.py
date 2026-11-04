@@ -287,8 +287,10 @@ class TestCorrectnessResults:
             results.pass_counts, results.total_counts
         )
 
-    def test_passes_policy_core_cases_skipped_not_failed(self):
-        """Skipped CORE tests do not cause core-cases policy to fail."""
+    @staticmethod
+    def _results_with(
+        *cases: tuple[GroupType, Literal["passed", "failed", "skipped"]],
+    ) -> CorrectnessResults:
         results = CorrectnessResults(
             problem_name="test",
             problem_version=1,
@@ -297,216 +299,54 @@ class TestCorrectnessResults:
             duration=5.0,
             entrypoint="python main.py",
             pytest_exit_code=0,
-            pytest_collected=2,
+            pytest_collected=len(cases),
         )
-
-        results.add_test_result(
-            EvalTestResult(
-                id="test_pass",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.CORE,
-                status="passed",
-                duration_ms=10.0,
-                file_path="tests/test.py",
-            )
-        )
-        results.add_test_result(
-            EvalTestResult(
-                id="test_skip",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.CORE,
-                status="skipped",
-                duration_ms=1.0,
-                file_path="tests/test.py",
-            )
-        )
-
-        assert results.passes_policy("core-cases")
-
-    def test_passes_policy_core_cases_all_pass(self):
-        """core-cases policy passes when all CORE tests pass."""
-        results = CorrectnessResults(
-            problem_name="test",
-            problem_version=1,
-            checkpoint_name="checkpoint_1",
-            checkpoint_version=1,
-            duration=5.0,
-            entrypoint="python main.py",
-            pytest_exit_code=0,
-            pytest_collected=2,
-        )
-
-        # Two passing CORE tests
-        for i in range(2):
+        for i, (group, status) in enumerate(cases):
             results.add_test_result(
                 EvalTestResult(
                     id=f"test_{i}",
                     checkpoint="checkpoint_1",
-                    group_type=GroupType.CORE,
-                    status="passed",
-                    duration_ms=100.0,
+                    group_type=group,
+                    status=status,
+                    duration_ms=10.0,
                     file_path="tests/test.py",
                 )
             )
+        return results
 
-        assert results.passes_policy("core-cases")
-
-    def test_passes_policy_core_cases_one_fails(self):
-        """core-cases policy fails when any CORE test fails."""
-        results = CorrectnessResults(
-            problem_name="test",
-            problem_version=1,
-            checkpoint_name="checkpoint_1",
-            checkpoint_version=1,
-            duration=5.0,
-            entrypoint="python main.py",
-            pytest_exit_code=1,
-            pytest_collected=2,
+    def test_is_solved_skipped_not_failed(self):
+        """Skipped tests do not cause the strict check to fail."""
+        results = self._results_with(
+            (GroupType.CORE, "passed"), (GroupType.CORE, "skipped")
         )
+        assert results.is_solved()
 
-        # One passing, one failing CORE test
-        results.add_test_result(
-            EvalTestResult(
-                id="test_pass",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.CORE,
-                status="passed",
-                duration_ms=100.0,
-                file_path="tests/test.py",
-            )
+    def test_is_solved_all_groups_pass(self):
+        results = self._results_with(
+            (GroupType.CORE, "passed"),
+            (GroupType.FUNCTIONALITY, "passed"),
+            (GroupType.REGRESSION, "passed"),
+            (GroupType.ERROR, "passed"),
         )
-        results.add_test_result(
-            EvalTestResult(
-                id="test_fail",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.CORE,
-                status="failed",
-                duration_ms=100.0,
-                file_path="tests/test.py",
-            )
+        assert results.is_solved()
+
+    @pytest.mark.parametrize(
+        "group",
+        [
+            GroupType.CORE,
+            GroupType.FUNCTIONALITY,
+            GroupType.REGRESSION,
+            GroupType.ERROR,
+        ],
+    )
+    def test_is_solved_fails_when_any_group_fails(self, group):
+        results = self._results_with(
+            (GroupType.CORE, "passed"), (group, "failed")
         )
+        assert not results.is_solved()
 
-        assert not results.passes_policy("core-cases")
-
-    def test_passes_policy_core_cases_no_core_tests(self):
-        """core-cases policy fails when no CORE tests exist."""
-        results = CorrectnessResults(
-            problem_name="test",
-            problem_version=1,
-            checkpoint_name="checkpoint_1",
-            checkpoint_version=1,
-            duration=5.0,
-            entrypoint="python main.py",
-            pytest_exit_code=0,
-            pytest_collected=1,
-        )
-
-        # Only ERROR test, no CORE
-        results.add_test_result(
-            EvalTestResult(
-                id="test_error",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.ERROR,
-                status="passed",
-                duration_ms=100.0,
-                file_path="tests/test.py",
-            )
-        )
-
-        assert not results.passes_policy("core-cases")
-
-    def test_passes_policy_all_non_error_cases(self):
-        """all-non-error-cases policy ignores ERROR tests."""
-        results = CorrectnessResults(
-            problem_name="test",
-            problem_version=1,
-            checkpoint_name="checkpoint_1",
-            checkpoint_version=1,
-            duration=5.0,
-            entrypoint="python main.py",
-            pytest_exit_code=1,  # Exit 1 due to ERROR test failing
-            pytest_collected=3,
-        )
-
-        # CORE passes
-        results.add_test_result(
-            EvalTestResult(
-                id="test_core",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.CORE,
-                status="passed",
-                duration_ms=100.0,
-                file_path="tests/test.py",
-            )
-        )
-
-        # FUNCTIONALITY passes
-        results.add_test_result(
-            EvalTestResult(
-                id="test_func",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.FUNCTIONALITY,
-                status="passed",
-                duration_ms=100.0,
-                file_path="tests/test.py",
-            )
-        )
-
-        # ERROR fails (should be ignored)
-        results.add_test_result(
-            EvalTestResult(
-                id="test_error",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.ERROR,
-                status="failed",
-                duration_ms=100.0,
-                file_path="tests/test.py",
-            )
-        )
-
-        assert results.passes_policy("all-non-error-cases")
-
-    def test_passes_policy_all_non_error_cases_fails(self):
-        """all-non-error-cases policy fails when FUNCTIONALITY fails."""
-        results = CorrectnessResults(
-            problem_name="test",
-            problem_version=1,
-            checkpoint_name="checkpoint_1",
-            checkpoint_version=1,
-            duration=5.0,
-            entrypoint="python main.py",
-            pytest_exit_code=1,
-            pytest_collected=2,
-        )
-
-        # CORE passes
-        results.add_test_result(
-            EvalTestResult(
-                id="test_core",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.CORE,
-                status="passed",
-                duration_ms=100.0,
-                file_path="tests/test.py",
-            )
-        )
-
-        # FUNCTIONALITY fails
-        results.add_test_result(
-            EvalTestResult(
-                id="test_func",
-                checkpoint="checkpoint_1",
-                group_type=GroupType.FUNCTIONALITY,
-                status="failed",
-                duration_ms=100.0,
-                file_path="tests/test.py",
-            )
-        )
-
-        assert not results.passes_policy("all-non-error-cases")
-
-    def test_passes_policy_infrastructure_failure(self):
-        """Any policy fails when infrastructure_failure=True."""
+    def test_is_solved_infrastructure_failure(self):
+        """Infrastructure failure is never solved."""
         results = CorrectnessResults(
             problem_name="test",
             problem_version=1,
@@ -518,25 +358,11 @@ class TestCorrectnessResults:
             pytest_collected=0,
             infrastructure_failure=True,
         )
+        assert not results.is_solved()
 
-        assert not results.passes_policy("core-cases")
-        assert not results.passes_policy("all-non-error-cases")
-
-    def test_passes_policy_invalid_policy_name(self):
-        """Raises ValueError for unknown policy name."""
-        results = CorrectnessResults(
-            problem_name="test",
-            problem_version=1,
-            checkpoint_name="checkpoint_1",
-            checkpoint_version=1,
-            duration=5.0,
-            entrypoint="python main.py",
-            pytest_exit_code=0,
-            pytest_collected=0,
-        )
-
-        with pytest.raises(ValueError, match="Unknown policy"):
-            results.passes_policy("invalid-policy-name")
+    def test_removed_policy_names_are_rejected(self):
+        with pytest.raises(ValueError):
+            PassPolicy("any")
 
     def test_save_creates_file(self):
         """save() creates evaluation.json file."""

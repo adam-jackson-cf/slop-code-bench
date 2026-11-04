@@ -9,8 +9,9 @@ import shlex
 import subprocess
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, TypeGuard, TypedDict
+from typing import Any, Literal, TypeGuard, TypedDict
 
 from slop_code.common import WORKSPACE_TEST_DIR
 from slop_code.evaluation import coverage_plugin
@@ -55,6 +56,9 @@ MAX_LOG_OUTPUT = 4000
 PYTEST_REPORT_REL_PATH = ".scbench/pytest-report.json"
 CTRF_REPORT_REL_PATH = ".scbench/ctrf-report.json"
 EVALUATOR_CACHE_DIRNAME = ".scbench-evaluator-cache"
+EVALUATOR_PATH_PREFIX = (
+    "/bin/sh -c " + shlex.quote('PATH="$1:$PATH"; shift; exec "$@"') + " sh"
+)
 
 type _JsonValue = (
     str | int | float | bool | None | list[_JsonValue] | _JsonObject
@@ -136,6 +140,33 @@ def _truncate_output(text: str | None, limit: int = MAX_LOG_OUTPUT) -> str:
     if len(text) <= limit:
         return text
     return f"{text[:limit]}...<truncated {len(text) - limit} chars>"
+
+
+def coverage_outcome_mismatches(
+    json_report: Mapping[str, Any] | None, ledger: Mapping[str, Any]
+) -> list[str] | None:
+    """Return node ids whose failure state differs between the two passes.
+
+    ``json_report`` is the uninstrumented correctness pass; ``ledger`` is the
+    coverage pass. A node fails when any phase failed. ``None`` means the
+    passes cannot be compared (no correctness report).
+    """
+    if json_report is None or not isinstance(json_report.get("tests"), list):
+        return None
+    correctness = {
+        test["nodeid"]: test.get("outcome") in {"failed", "error"}
+        for test in json_report["tests"]
+        if isinstance(test, dict) and isinstance(test.get("nodeid"), str)
+    }
+    measured: dict[str, bool] = {}
+    for row in ledger.get("ledger", []):
+        node = row["node_id"]
+        measured[node] = measured.get(node, False) or row["outcome"] == "failed"
+    return sorted(
+        node
+        for node in correctness.keys() | measured.keys()
+        if correctness.get(node) != measured.get(node)
+    )
 
 
 class PytestRunner:
@@ -437,6 +468,13 @@ markers =
             timeout_args = [f"--timeout={int(timeout)}"]
 
         cmd_parts = [
+            # Upstream runs pytest under `uvx`, whose environment leads PATH,
+            # so test subprocesses that `uv run <script>` outside a project
+            # resolve the evaluator interpreter and its test_dependencies.
+            # An explicit shell keeps this valid for runtimes that exec argv
+            # directly (local) as well as those that wrap in `sh -c` (docker).
+            EVALUATOR_PATH_PREFIX,
+            shlex.quote(str(evaluator_python.parent)),
             *self._build_pytest_base_parts(evaluator_python),
             # Explicitly name the trusted evaluator test directory before its
             # custom options so pytest loads its conftest during startup.
@@ -1017,6 +1055,7 @@ markers =
                 "coverage": [],
                 "process_events": [],
                 "invalid_coverage_paths": 0,
+                "outcome_mismatches": [],
             }
             if self.measurement_coverage:
                 ledger_path = (

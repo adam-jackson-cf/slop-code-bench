@@ -58,9 +58,10 @@ REGRESSION_CONTRACT = {
     "environment": "exact_environment_id_project_lock_plugin_interpreter_sha256",
     "parity": "exact_environment_corpus_invocation_node_phase_outcome_ledger",
     "coverage": "contexts_join_exact_parametrized_node_id",
-    "attribution": "failing_canonical_regression_to_innermost_changed_symbol",
+    "attribution": "newly_broken_canonical_regression_to_innermost_changed_symbol",
+    "prior_match": "exact_origin_checkpoint_and_test_id_in_prior_canonical_evaluation",
     "deduplication": "node_path_line_symbol_stable_identity",
-    "process_audit": "failing_regression_process_event_requires_node_coverage",
+    "process_audit": "newly_broken_regression_process_event_requires_node_coverage",
     "regression": "1-affected_changed_symbols/all_changed_symbols;one_when_none",
 }
 EVIDENCE_PROJECTION_CONTRACT = {

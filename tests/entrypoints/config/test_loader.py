@@ -317,12 +317,12 @@ agent:
         """Assessment and continuation can be overridden independently."""
         config = load_run_config(
             cli_overrides=[
-                "assessment_policy=core-cases",
+                "assessment_policy=all-cases",
                 "continue_after_test_failure=true",
             ]
         )
 
-        assert config.assessment_policy == PassPolicy.CORE_CASES
+        assert config.assessment_policy == PassPolicy.ALL_CASES
         assert config.continue_after_test_failure is True
 
     def test_output_path_interpolation(self):

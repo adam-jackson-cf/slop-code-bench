@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from slop_code import problem_catalog
+from slop_code.agent_runner import continuation
 from slop_code.agent_runner.agents import AgentConfigType
 from slop_code.agent_runner.credentials import API_KEY_STORE
 from slop_code.agent_runner.credentials import CredentialNotFoundError
@@ -20,6 +21,7 @@ from slop_code.common import CHECKPOINT_RESULTS_FILENAME
 from slop_code.common import CONFIG_FILENAME
 from slop_code.common import ENV_CONFIG_NAME
 from slop_code.common import serialize_path_dict
+from slop_code.common.constants import MEASUREMENT_ANALYSIS_DIR
 from slop_code.common.llms import ModelCatalog
 from slop_code.common.llms import ModelDefinition
 from slop_code.entrypoints import evaluation as evaluation_entry
@@ -40,6 +42,7 @@ from slop_code.execution import docker_runtime
 from slop_code.logging import get_logger
 from slop_code.metrics import MetricsError
 from slop_code.metrics.scoring import finalize_benchmark_score
+from slop_code.metrics.scoring.schema import problem_key
 
 logger = get_logger(__name__)
 _AGENT_CONFIG_ADAPTER = TypeAdapter(AgentConfigType)
@@ -176,8 +179,15 @@ def _validate_resume_config(
 
 
 def _clear_problem_outputs(run_dir: Path, problem_name: str) -> None:
-    """Remove any prior outputs for a problem (but keep the run dir)."""
+    """Remove a problem's outputs and pending scoring evidence (keep the run dir)."""
     shutil.rmtree(run_dir / problem_name, ignore_errors=True)
+    shutil.rmtree(
+        run_dir
+        / MEASUREMENT_ANALYSIS_DIR
+        / "pending"
+        / problem_key(problem_name),
+        ignore_errors=True,
+    )
 
 
 def _check_problem_needs_rerun(
@@ -190,6 +200,7 @@ def _check_problem_needs_rerun(
     agent_type: str | None = None,
     agent_version: str | None = None,
     model_name: str | None = None,
+    continuation_seed: continuation.ContinuationSeed | None = None,
 ) -> tuple[bool, str | None]:
     """Check if a problem needs to be run based on checkpoint state.
 
@@ -234,8 +245,12 @@ def _check_problem_needs_rerun(
         return True, "invalid problem config"
 
     checkpoint_items = list(problem_config.iterate_checkpoint_items())
-    checkpoint_names = [name for name, _ in checkpoint_items]
-    checkpoints = [cp for _, cp in checkpoint_items]
+    checkpoint_names = continuation.names_from_seed(
+        [name for name, _ in checkpoint_items], continuation_seed
+    )
+    checkpoints = [
+        cp for name, cp in checkpoint_items if name in checkpoint_names
+    ]
 
     # Use detect_resume_point for both run_info.yaml and artifact-based detection
     resume_info = detect_resume_point(
@@ -281,6 +296,7 @@ def _filter_problems_for_execution(
     agent_type: str | None = None,
     agent_version: str | None = None,
     model_name: str | None = None,
+    continuation_seed: continuation.ContinuationSeed | None = None,
 ) -> tuple[list[str], list[str], dict[str, str]]:
     """Filter problems based on completion status and prompt changes.
 
@@ -322,6 +338,7 @@ def _filter_problems_for_execution(
             agent_type=agent_type,
             agent_version=agent_version,
             model_name=model_name,
+            continuation_seed=continuation_seed,
         )
         if needs_rerun:
             to_run.append(p)
@@ -524,6 +541,7 @@ def _preview_dry_run(
     agent_type: str | None = None,
     agent_version: str | None = None,
     model_name: str | None = None,
+    continuation_seed: continuation.ContinuationSeed | None = None,
 ) -> None:
     """Preview what would be executed without making changes.
 
@@ -563,8 +581,12 @@ def _preview_dry_run(
 
         output_path = run_dir / problem_name
         checkpoint_items = list(problem_config.iterate_checkpoint_items())
-        checkpoint_names = [name for name, _ in checkpoint_items]
-        checkpoints = [cp for _, cp in checkpoint_items]
+        checkpoint_names = continuation.names_from_seed(
+            [name for name, _ in checkpoint_items], continuation_seed
+        )
+        checkpoints = [
+            cp for name, cp in checkpoint_items if name in checkpoint_names
+        ]
 
         resume_info = detect_resume_point(
             output_path,
@@ -590,6 +612,16 @@ def _preview_dry_run(
                 bold=True,
             )
         )
+        if continuation_seed is not None:
+            seed_name = continuation.seed_checkpoint_name(
+                checkpoint_names, continuation_seed.start_checkpoint
+            )
+            typer.echo(
+                f"  Controlled continuation: seed checkpoint {seed_name} "
+                f"is copied from {continuation_seed.source_path} and "
+                "evaluated before the agent starts at "
+                f"{continuation_seed.start_checkpoint}"
+            )
 
         if resume_info:
             typer.echo(f"  Resume from: {resume_info.resume_from_checkpoint}")
@@ -978,6 +1010,62 @@ def _validate_resume_flags(
         raise typer.Exit(1)
 
 
+def _validate_start_flags(
+    *,
+    start_snapshot: Path | None,
+    start_checkpoint: str | None,
+    resume: Path | None,
+) -> None:
+    """Validate --start-snapshot/--start-checkpoint flag combinations."""
+    if start_snapshot is None and start_checkpoint is None:
+        return
+    error: str | None = None
+    if start_snapshot is None or start_checkpoint is None:
+        error = "--start-snapshot and --start-checkpoint must be used together."
+    elif resume is not None:
+        error = (
+            "Cannot use --start-snapshot/--start-checkpoint with --resume. "
+            "A resumed run keeps the seed saved in its run directory."
+        )
+    elif not start_snapshot.is_dir():
+        error = f"--start-snapshot is not a directory: {start_snapshot}"
+    if error is not None:
+        typer.echo(typer.style(error, fg=typer.colors.RED, bold=True))
+        raise typer.Exit(1)
+
+
+def _build_continuation_seed(
+    run_cfg: ResolvedRunConfig,
+    problem_names: list[str],
+    problem_root: Path,
+    start_snapshot: Path,
+    start_checkpoint: str,
+) -> continuation.ContinuationSeed:
+    """Validate the seeded start against its single problem and record it."""
+    error: str | None = None
+    seed: continuation.ContinuationSeed | None = None
+    if len(problem_names) != 1:
+        error = (
+            "--start-snapshot requires exactly one problem "
+            f"(got {len(problem_names)}); select it with --problem."
+        )
+    elif run_cfg.one_shot.enabled:
+        error = "--start-snapshot cannot be combined with one-shot mode."
+    else:
+        try:
+            seed = continuation.build_seed(
+                ProblemConfig.from_yaml(problem_root / problem_names[0]),
+                start_snapshot,
+                start_checkpoint,
+            )
+        except continuation.ContinuationSeedError as exc:
+            error = str(exc)
+    if error is not None or seed is None:
+        typer.echo(typer.style(error or "", fg=typer.colors.RED, bold=True))
+        raise typer.Exit(1)
+    return seed
+
+
 def _create_task_config(
     problem_base_path: Path,
     run_dir: Path,
@@ -1038,6 +1126,7 @@ def _create_task_config(
         image=image_name,
         resume=resume,
         one_shot=run_cfg.one_shot,
+        continuation_seed=run_cfg.continuation_seed,
     )
 
 
@@ -1251,8 +1340,8 @@ def run_agent(
             "--concurrent-evaluation/--no-concurrent-evaluation",
             help="Evaluate each checkpoint concurrently with the next "
             "checkpoint's solve (at most one solve + one eval at a time) so eval "
-            "doesn't block progress. Scores unchanged for the ANY_CASE pass "
-            "policy; cannot early-stop on test failures.",
+            "doesn't block progress. Scores are unchanged; cannot "
+            "early-stop on test failures.",
         ),
     ] = False,
     live_progress: Annotated[
@@ -1267,6 +1356,19 @@ def run_agent(
         "--resume",
         help="Resume from an existing run directory (loads saved config). "
         "Cannot be used with --config, --agent, --environment, --prompt, --model, or config overrides.",
+    ),
+    start_snapshot: Path | None = typer.Option(
+        None,
+        "--start-snapshot",
+        help="Controlled continuation: directory copied as the seed "
+        "implementation (the checkpoint before --start-checkpoint). "
+        "Requires --start-checkpoint and exactly one problem.",
+    ),
+    start_checkpoint: str | None = typer.Option(
+        None,
+        "--start-checkpoint",
+        help="Controlled continuation: first checkpoint the agent solves, "
+        "starting from --start-snapshot. Must not be the first checkpoint.",
     ),
     dry_run: Annotated[
         bool,
@@ -1296,6 +1398,10 @@ def run_agent(
 
         # Resume with different worker count
         slop-code run --resume experiments/my-run/ --num-workers 4
+
+        # Controlled continuation: start the agent at a later checkpoint from
+        # a fixed snapshot (requires exactly one problem)
+        slop-code run --problem my_problem --start-snapshot path/to/snapshot --start-checkpoint checkpoint_3
     """
     # 0. Validate --resume is not combined with conflicting options
     _validate_resume_flags(
@@ -1306,6 +1412,11 @@ def run_agent(
         prompt_template_path=prompt_template_path,
         model_override=model_override,
         overrides=overrides,
+    )
+    _validate_start_flags(
+        start_snapshot=start_snapshot,
+        start_checkpoint=start_checkpoint,
+        resume=resume,
     )
 
     # Track if we're in resume mode for later use
@@ -1420,6 +1531,19 @@ def run_agent(
     # 9. Validate problem paths exist
     _validate_problem_paths(problem_names_resolved, problem_root)
 
+    if start_snapshot is not None and start_checkpoint is not None:
+        run_cfg.continuation_seed = _build_continuation_seed(
+            run_cfg,
+            problem_names_resolved,
+            problem_root,
+            start_snapshot,
+            start_checkpoint,
+        )
+        typer.echo(
+            f"Controlled continuation: start at {start_checkpoint} "
+            f"from snapshot {start_snapshot}"
+        )
+
     if not is_resuming:
         run_dir, run_dir_preexisted = _resolve_output_directory(
             run_cfg.output_path, debug=ctx.obj.debug, create=not dry_run
@@ -1501,6 +1625,7 @@ def run_agent(
             agent_type=agent_config.type,
             agent_version=agent_config.version,
             model_name=model_def.name,
+            continuation_seed=run_cfg.continuation_seed,
         )
 
         if not ctx.obj.overwrite:
@@ -1548,6 +1673,7 @@ def run_agent(
             agent_type=agent_config.type,
             agent_version=agent_config.version,
             model_name=model_def.name,
+            continuation_seed=run_cfg.continuation_seed,
         )
         return
 

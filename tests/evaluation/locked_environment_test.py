@@ -27,6 +27,8 @@ def _problem(
 ) -> ProblemConfig:
     project = tmp_path / name
     project.mkdir(exist_ok=True)
+    lock_dir = tmp_path / "locks" / name
+    lock_dir.mkdir(parents=True, exist_ok=True)
     locked_dependencies = (
         test_dependencies
         if project_dependencies is None
@@ -39,15 +41,15 @@ def _problem(
         if locked_dependencies
         else ""
     )
-    (project / "pyproject.toml").write_text(
+    (lock_dir / "pyproject.toml").write_text(
         '[project]\nname = "fixture"\nversion = "0.1.0"\n'
         f'requires-python = ">=3.12"{dependencies}\n'
     )
-    (project / "uv.lock").write_text(
+    (lock_dir / "uv.lock").write_text(
         'version = 1\nrevision = 1\nrequires-python = ">=3.12"\n'
     )
     return ProblemConfig(
-        name="fixture",
+        name=name,
         path=project,
         version=1,
         description="fixture",
@@ -56,6 +58,29 @@ def _problem(
         entry_file="main.py",
         test_dependencies=list(test_dependencies),
     )
+
+
+@pytest.fixture(autouse=True)
+def harness_locks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    root = tmp_path / "locks"
+    monkeypatch.setattr(
+        "slop_code.evaluation.locked_environment.EVALUATOR_LOCKS_ROOT", root
+    )
+    return root
+
+
+def test_problem_directory_locks_are_not_evaluator_inputs(
+    tmp_path: Path, harness_locks: Path, fake_sync: list[Path]
+) -> None:
+    problem = _problem(tmp_path, name="upstream")
+    for name in ("pyproject.toml", "uv.lock"):
+        (harness_locks / "upstream" / name).rename(problem.path / name)
+
+    with pytest.raises(LockedEnvironmentError, match="missing required"):
+        ensure_locked_evaluator_environment(
+            tmp_path / "cache", problem, b"plugin", b"interpreter"
+        )
+    assert fake_sync == []
 
 
 @pytest.fixture

@@ -682,9 +682,16 @@ def load_config_from_run_dir(run_dir: Path) -> ResolvedRunConfig:
     if "assessment_policy" in config_dict and isinstance(
         config_dict["assessment_policy"], str
     ):
-        config_dict["assessment_policy"] = PassPolicy(
-            config_dict["assessment_policy"]
-        )
+        try:
+            config_dict["assessment_policy"] = PassPolicy(
+                config_dict["assessment_policy"]
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "Unsupported assessment_policy "
+                f"{config_dict['assessment_policy']!r}; "
+                "the only supported value is 'all-cases'."
+            ) from exc
 
     # Handle one_shot as dict -> OneShotConfig
     if "one_shot" in config_dict and isinstance(config_dict["one_shot"], dict):

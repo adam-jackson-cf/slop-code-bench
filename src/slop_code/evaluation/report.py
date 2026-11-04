@@ -107,54 +107,24 @@ PASSING_SCORE_THRESHOLD = 1.0
 
 
 class PassPolicy(str, Enum):
-    ANY = "any"
-    ANY_CASE = "any-case"
+    """Checkpoint assessment policy. Only strict ``all-cases`` exists."""
+
     ALL_CASES = "all-cases"
-    ALL_NON_ERROR_CASES = "all-non-error-cases"
-    CORE_CASES = "core-cases"
-    ANY_CORE_CASES = "any-core-cases"
-    ALL_CORE_CASES = "all-core-cases"
 
     def check(
         self,
         pass_counts: Mapping[GroupType, int],
         total_counts: Mapping[GroupType, int],
     ) -> bool:
-        """Return ``True`` when the counts satisfy the configured policy.
+        """Return ``True`` when every evaluated test in every group passed.
 
         Args:
             pass_counts: Number of passing cases per :class:`GroupType`.
             total_counts: Total executed cases per :class:`GroupType`.
         """
-        core_passed = core_tests = 0
-        non_error_passed = non_error_tests = 0
-        total_passed = total_tests = 0
-
-        for group_type in GroupType:
-            if group_type == GroupType.CORE:
-                core_passed += pass_counts.get(group_type, 0)
-                core_tests += total_counts.get(group_type, 0)
-            if group_type != GroupType.ERROR:
-                non_error_passed += pass_counts.get(group_type, 0)
-                non_error_tests += total_counts.get(group_type, 0)
-            total_passed += pass_counts.get(group_type, 0)
-            total_tests += total_counts.get(group_type, 0)
-
-        match self:
-            case PassPolicy.ANY_CASE:
-                return total_passed > 0
-            case PassPolicy.ALL_CASES:
-                return total_passed == total_tests
-            case PassPolicy.ALL_NON_ERROR_CASES:
-                return non_error_passed == non_error_tests
-            case PassPolicy.CORE_CASES:
-                return core_passed == core_tests
-            case PassPolicy.ANY_CORE_CASES:
-                return core_passed > 0
-            case PassPolicy.ALL_CORE_CASES:
-                return core_passed == core_tests
-            case _:
-                return True
+        return sum(pass_counts.get(g, 0) for g in GroupType) == sum(
+            total_counts.get(g, 0) for g in GroupType
+        )
 
 
 class GroupReport(BaseModel):
@@ -347,57 +317,14 @@ class CorrectnessResults(BaseModel):
                 self.pass_counts.get(result.group_type, 0) + 1
             )
 
-    def passes_policy(self, policy: str = "core-cases") -> bool:
-        """Check if results pass the given policy.
+    def is_solved(self) -> bool:
+        """Return ``True`` when every evaluated test in every group passed.
 
-        Policies:
-        - "core-cases": All CORE tests must pass (default for checkpoint success)
-        - "all-non-error-cases": All CORE, FUNCTIONALITY, and REGRESSION tests must pass
-
-        Infrastructure failures always result in policy failure.
-
-        Args:
-            policy: Name of the pass policy to evaluate
-
-        Returns:
-            True if the policy passes, False otherwise
-
-        Raises:
-            ValueError: If policy name is not recognized
-
-        Example:
-            >>> results.passes_policy("core-cases")
-            True
+        Infrastructure failures always fail.
         """
-        # Infrastructure failures always fail
         if self.infrastructure_failure:
             return False
-
-        if policy == "core-cases":
-            # All CORE tests must pass
-            core_total = self.total_counts.get(GroupType.CORE, 0)
-            core_passed = self.pass_counts.get(GroupType.CORE, 0)
-
-            # Need at least one core test and all must pass
-            return core_total > 0 and core_passed == core_total
-
-        if policy == "all-non-error-cases":
-            # All non-ERROR tests must pass
-            for group_type in [
-                GroupType.CORE,
-                GroupType.FUNCTIONALITY,
-                GroupType.REGRESSION,
-            ]:
-                total = self.total_counts.get(group_type, 0)
-                passed = self.pass_counts.get(group_type, 0)
-
-                # If there are tests of this type, they must all pass
-                if total > 0 and passed != total:
-                    return False
-
-            return True
-
-        raise ValueError(f"Unknown policy: {policy}")
+        return PassPolicy.ALL_CASES.check(self.pass_counts, self.total_counts)
 
     def to_output_dict(self) -> dict[str, Any]:
         """Return dict representation with grouped tests format.

@@ -15,6 +15,7 @@ from slop_code.evaluation.collection import CollectedTestCase
 from slop_code.evaluation.config import CheckpointConfig
 from slop_code.evaluation.config import MarkerConfig
 from slop_code.evaluation.config import ProblemConfig
+from slop_code.evaluation.pytest_runner import EVALUATOR_PATH_PREFIX
 from slop_code.evaluation.pytest_runner import EXIT_INTERNALERROR
 from slop_code.evaluation.pytest_runner import EXIT_INTERRUPTED
 from slop_code.evaluation.pytest_runner import EXIT_NOTESTSCOLLECTED
@@ -25,6 +26,7 @@ from slop_code.evaluation.pytest_runner import INFRA_FAILURE_CODES
 from slop_code.evaluation.pytest_runner import VALID_EXIT_CODES
 from slop_code.evaluation.pytest_runner import PytestRunner
 from slop_code.evaluation.pytest_runner import _as_dict
+from slop_code.evaluation.pytest_runner import coverage_outcome_mismatches
 from slop_code.evaluation.pytest_runner import run_checkpoint_pytest
 from slop_code.evaluation.report import CorrectnessResults
 from slop_code.evaluation.report import GroupType
@@ -351,7 +353,10 @@ class TestPytestRunner:
         evaluator_python = Path("/opt/scbench/evaluator/bin/python")
         cmd = pytest_runner._build_pytest_command(evaluator_python, timeout=30)
 
-        assert cmd.startswith("/opt/scbench/evaluator/bin/python -m pytest ")
+        assert cmd.startswith(
+            f"{EVALUATOR_PATH_PREFIX} /opt/scbench/evaluator/bin "
+            "/opt/scbench/evaluator/bin/python -m pytest "
+        )
         assert "--timeout=30" in cmd
         # The evaluator test directory is passed explicitly for startup conftest
         # discovery; individual checkpoint files are not passed.
@@ -430,7 +435,8 @@ class TestPytestRunner:
         command = pytest_runner._build_pytest_command(Path("/locked/python"))
 
         assert command.startswith(
-            "/locked/python -m coverage run --branch -m pytest "
+            f"{EVALUATOR_PATH_PREFIX} /locked /locked/python -m coverage run "
+            "--branch -m pytest "
         )
         assert "-p coverage_plugin" in command
 
@@ -448,7 +454,9 @@ class TestPytestRunner:
             timeout=60,
         )
 
-        assert cmd.startswith("/locked/python -m pytest ")
+        assert cmd.startswith(
+            f"{EVALUATOR_PATH_PREFIX} /locked /locked/python -m pytest "
+        )
         assert "--timeout=60" in cmd
         assert "-k" in cmd
         assert "test_specific" in cmd
@@ -468,7 +476,9 @@ class TestPytestRunner:
 
         cmd = runner._build_pytest_command(Path("/locked/python"))
 
-        assert cmd.startswith("/locked/python -m pytest ")
+        assert cmd.startswith(
+            f"{EVALUATOR_PATH_PREFIX} /locked /locked/python -m pytest "
+        )
         assert "--with=" not in cmd
 
     def test_build_pytest_command_no_problem_deps(
@@ -503,7 +513,9 @@ class TestPytestRunner:
 
         cmd = runner._build_pytest_command(Path("/locked/python"))
 
-        assert cmd.startswith("/locked/python -m pytest ")
+        assert cmd.startswith(
+            f"{EVALUATOR_PATH_PREFIX} /locked /locked/python -m pytest "
+        )
         assert "--with=" not in cmd
 
     def test_parse_ctrf_report_valid(self, pytest_runner, tmp_path):
@@ -1230,6 +1242,134 @@ class TestRunCheckpointPytest:
         assert result.pass_counts[GroupType.FUNCTIONALITY] == 0
         assert result.infrastructure_failure is True
 
+    def test_measurement_coverage_never_changes_correctness(
+        self,
+        mock_problem_config,
+        mock_checkpoint_config,
+        mock_environment,
+    ):
+        """A test that only fails under coverage stays passed; ledger flags it."""
+        from unittest.mock import patch
+
+        node = ".evaluation_tests/test_checkpoint_1.py::test_slow"
+
+        def fake_run(runner, pytest_args=None):
+            failed = runner.measurement_coverage
+            results = CorrectnessResults(
+                problem_name="test_problem",
+                problem_version=1,
+                checkpoint_name="checkpoint_1",
+                checkpoint_version=1,
+                duration=1.0,
+                entrypoint="python main.py",
+                pytest_exit_code=1 if failed else 0,
+                pytest_collected=1,
+                pytest_json_report={
+                    "tests": [
+                        {
+                            "nodeid": node,
+                            "outcome": "failed" if failed else "passed",
+                        }
+                    ]
+                },
+                coverage_ledger={
+                    "ledger": [
+                        {"node_id": node, "phase": "call", "outcome": "failed"}
+                    ]
+                }
+                if failed
+                else None,
+                invocation={
+                    "command": "coverage-cmd" if failed else "plain-cmd",
+                    "cwd": "snapshot",
+                },
+            )
+            results.add_test_result(
+                EvalTestResult(
+                    id="test_slow",
+                    checkpoint="checkpoint_1",
+                    group_type=GroupType.CORE,
+                    status="failed" if failed else "passed",
+                    duration_ms=5.0,
+                    file_path=".evaluation_tests/test_checkpoint_1.py",
+                )
+            )
+            return results
+
+        with (
+            patch.object(
+                PytestRunner, "run", autospec=True, side_effect=fake_run
+            ),
+            patch(
+                "slop_code.evaluation.collection.collect_checkpoint_tc",
+                return_value=None,
+            ),
+        ):
+            result = run_checkpoint_pytest(
+                submission_path=Path("submission"),
+                problem=mock_problem_config,
+                checkpoint=mock_checkpoint_config,
+                env_spec=mock_environment,
+                evaluator_environment_parent=Path("measurement_analysis"),
+                measurement_coverage=True,
+            )
+
+        assert result.is_solved()
+        assert result.pytest_exit_code == 0
+        assert result.coverage_ledger["outcome_mismatches"] == [node]
+        assert result.invocation == {
+            "command": "plain-cmd",
+            "cwd": "snapshot",
+            "coverage_command": "coverage-cmd",
+        }
+
+
+@pytest.mark.parametrize(
+    ("report", "ledger_rows", "expected"),
+    [
+        # Agreement, including a skipped call and a passed node.
+        (
+            [
+                {"nodeid": "a", "outcome": "passed"},
+                {"nodeid": "b", "outcome": "skipped"},
+            ],
+            [
+                {"node_id": "a", "phase": "setup", "outcome": "passed"},
+                {"node_id": "a", "phase": "call", "outcome": "passed"},
+                {"node_id": "b", "phase": "call", "outcome": "skipped"},
+            ],
+            [],
+        ),
+        # Setup error in correctness matches a failed setup phase.
+        (
+            [{"nodeid": "a", "outcome": "error"}],
+            [{"node_id": "a", "phase": "setup", "outcome": "failed"}],
+            [],
+        ),
+        # Fails only under coverage (teardown), and a node only one pass saw.
+        (
+            [
+                {"nodeid": "a", "outcome": "passed"},
+                {"nodeid": "c", "outcome": "passed"},
+            ],
+            [
+                {"node_id": "a", "phase": "call", "outcome": "passed"},
+                {"node_id": "a", "phase": "teardown", "outcome": "failed"},
+            ],
+            ["a", "c"],
+        ),
+    ],
+)
+def test_coverage_outcome_mismatches(report, ledger_rows, expected):
+    assert (
+        coverage_outcome_mismatches({"tests": report}, {"ledger": ledger_rows})
+        == expected
+    )
+
+
+def test_coverage_outcome_mismatches_unavailable_without_report():
+    assert coverage_outcome_mismatches(None, {"ledger": []}) is None
+
 
 class TestPytestRunnerRunMethod:
     """Integration tests for PytestRunner.run() with mocked execution."""
@@ -1361,10 +1501,13 @@ class TestPytestRunnerRunMethod:
             "coverage": [],
             "process_events": [],
             "invalid_coverage_paths": 0,
+            "outcome_mismatches": [],
         }
 
         executed_command = mock_session.exec.call_args.kwargs["command"]
-        assert executed_command.startswith("/locked/python -m pytest ")
+        assert executed_command.startswith(
+            f"{EVALUATOR_PATH_PREFIX} /locked /locked/python -m pytest "
+        )
         locked_evaluator_python.assert_called_once_with(mock_session)
 
     def test_run_materializes_static_assets_and_passes_env_vars(
@@ -2063,16 +2206,14 @@ class TestPytestRunnerRunMethod:
 
 def docker_available() -> bool:
     """Check if Docker is available and running."""
-    try:
-        import docker
-        import docker.errors  # pyright: ignore[reportMissingModuleSource]
+    from docker.errors import DockerException
 
-        client = docker.from_env()
-        client.ping()
+    from slop_code.execution.docker_runtime import docker_client
+
+    try:
+        docker_client().ping()
         return True
-    except (ImportError, AttributeError):
-        return False
-    except docker.errors.DockerException:
+    except DockerException:
         return False
 
 

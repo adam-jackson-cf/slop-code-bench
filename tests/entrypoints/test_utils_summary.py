@@ -64,7 +64,7 @@ def _config() -> dict:
         "thinking": "none",
         "prompt_path": "test_prompt.jinja",
         "agent": {"type": "test-agent", "version": "v1"},
-        "assessment_policy": "any-case",
+        "assessment_policy": "all-cases",
     }
 
 
@@ -171,7 +171,7 @@ def test_display_and_save_summary_projects_verified_score(
     assert saved["benchmark_score"] == "88.500000"
     assert saved["completion"] == {
         "model": "test-model",
-        "assessment_policy": "any-case",
+        "assessment_policy": "all-cases",
         "checkpoints_produced": 1,
         "checkpoints_configured": 8,
         "tests_passed": 23,

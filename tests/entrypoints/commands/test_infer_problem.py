@@ -129,7 +129,7 @@ def test_infer_problem_rejects_non_strict_policy_before_creating_output(
             provider_api_key_env=None,
             thinking=None,
             max_thinking_tokens=None,
-            assessment_policy="any-case",
+            assessment_policy="lenient",
             continue_after_test_failure=False,
             evaluate=True,
         )

@@ -31,6 +31,7 @@ ELIGIBILITY_CODES = frozenset(
         "production_language_unsupported",
         "production_source_loc_zero",
         "production_symbol_evidence_invalid",
+        "regression_prior_outcome_unavailable",
         "score_evidence_invalid",
         "score_formula_invalid",
     }
@@ -653,10 +654,18 @@ class RegressionRunEvidence(ScoringModel):
     process_events: tuple[ProcessAuditEvent, ...] = ()
 
 
+class PriorRegressionOutcome(ScoringModel):
+    """Canonical prior-checkpoint outcome of one produced Regression node."""
+
+    node_id: str = Field(min_length=1)
+    outcome: RegressionOutcome
+
+
 class RegressionBreadthInput(ScoringModel):
     transition_id: str = Field(min_length=1)
     baseline: RegressionRunEvidence
     produced: RegressionRunEvidence
+    prior_outcomes: tuple[PriorRegressionOutcome, ...]
     changed_symbols: tuple[SymbolIdentity, ...]
 
 
@@ -869,39 +878,6 @@ class EvidenceIndexEntry(ScoringModel):
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     producer: str = Field(min_length=1)
     status: ProducerStatus = ProducerStatus.COMPLETE
-
-
-class OracleCheckpointProjection(ScoringModel):
-    checkpoint_id: str = Field(min_length=1)
-    ordinal: int = Field(ge=0)
-    output_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    report_rows: tuple[tuple[str, ...], ...]
-
-
-class OracleArtifact(ScoringModel):
-    relative_path: str = Field(min_length=1)
-    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    bytes_base64: str
-    projections: tuple[OracleCheckpointProjection, ...]
-
-    @model_validator(mode="after")
-    def validate_projections(self) -> OracleArtifact:
-        if tuple(item.ordinal for item in self.projections) != tuple(
-            range(len(self.projections))
-        ):
-            raise ValueError(
-                "oracle projections must have contiguous ordered ordinals"
-            )
-        return self
-
-
-class OracleBaseline(ScoringModel):
-    name: str = Field(min_length=1)
-    artifacts: tuple[OracleArtifact, ...]
-
-
-class OracleBundle(ScoringModel):
-    baselines: tuple[OracleBaseline, ...]
 
 
 class Eligibility(ScoringModel):

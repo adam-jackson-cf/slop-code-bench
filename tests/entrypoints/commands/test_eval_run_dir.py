@@ -257,7 +257,7 @@ def test_rejects_non_strict_policy_before_loading_environment(
             ctx=_ctx(tmp_path),
             agent_run_dir=tmp_path / "does-not-exist",
             problem_names=[],
-            assessment_policy="any-case",
+            assessment_policy="lenient",
             env_config=None,
             live_progress=False,
             num_workers=1,

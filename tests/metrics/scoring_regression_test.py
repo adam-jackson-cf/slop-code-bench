@@ -17,6 +17,7 @@ from slop_code.metrics.scoring import CoverageContextEvidence
 from slop_code.metrics.scoring import Eligibility
 from slop_code.metrics.scoring import EvaluatorEnvironmentEvidence
 from slop_code.metrics.scoring import LineageCandidate
+from slop_code.metrics.scoring import PriorRegressionOutcome
 from slop_code.metrics.scoring import ProcessAuditEvent
 from slop_code.metrics.scoring import RegressionBreadthInput
 from slop_code.metrics.scoring import RegressionInvocationEvidence
@@ -164,6 +165,7 @@ def _measurement_results(
         },
         coverage_ledger={
             "invalid_coverage_paths": 0,
+            "outcome_mismatches": [],
             "ledger": [
                 {"node_id": node, "phase": "call", "outcome": "failed"}
                 for node in node_ids
@@ -298,6 +300,22 @@ def test_run_evidence_rejects_unresolved_ambiguous_or_conflicting_groups(
     )
 
 
+@pytest.mark.parametrize("mismatches", [["a.py::test_x"], None])
+def test_run_evidence_rejects_coverage_pass_that_diverges_from_correctness(
+    mismatches: list[str] | None,
+):
+    node_id = ".evaluation_tests/test.py::test_x"
+    results = _measurement_results(
+        [_test_result("test_x", ".evaluation_tests/test.py")], (node_id,)
+    )
+    results.coverage_ledger["outcome_mismatches"] = mismatches
+
+    assert (
+        _run_evidence(results, platform_identity={"system": "container"})
+        is None
+    )
+
+
 def test_live_regression_producer_unions_persisted_accepted_lineage(
     tmp_path, monkeypatch
 ) -> None:
@@ -350,8 +368,23 @@ def test_live_regression_producer_unions_persisted_accepted_lineage(
     }
     canonical_platform = {"system": "container"}
     measurement_platform = {"system": "container"}
-    canonical_result = object()
-    measurement_result = SimpleNamespace(platform_identity=measurement_platform)
+    node = "test.py::test_case[param]"
+
+    def regression_test(checkpoint: str, status: str) -> EvaluationTestResult:
+        return EvaluationTestResult(
+            id=node,
+            checkpoint=checkpoint,
+            group_type=GroupType.REGRESSION,
+            status=status,
+            duration_ms=1,
+            file_path="",
+        )
+
+    canonical_result = SimpleNamespace(tests=[regression_test("one", "passed")])
+    measurement_result = SimpleNamespace(
+        platform_identity=measurement_platform,
+        tests=[regression_test("one", "failed")],
+    )
     monkeypatch.setattr(
         "slop_code.metrics.scoring.live_regression._validate_live_oracle",
         lambda *_args: {"platform": canonical_platform},
@@ -412,11 +445,17 @@ def test_live_regression_producer_unions_persisted_accepted_lineage(
 
 def _input(
     produced: RegressionRunEvidence | None = None,
+    prior: RegressionOutcome = RegressionOutcome.PASSED,
 ) -> RegressionBreadthInput:
     return RegressionBreadthInput(
         transition_id="c1-c2",
         baseline=_run(),
         produced=produced or _run(),
+        prior_outcomes=(
+            PriorRegressionOutcome(
+                node_id="test.py::test_case[param]", outcome=prior
+            ),
+        ),
         changed_symbols=(
             SymbolIdentity(
                 path="src/app.py",
@@ -479,6 +518,81 @@ def test_all_affected_changed_symbols_score_zero():
     )
     assert result.eligibility.eligible
     assert result.regression == Decimal("0E-12")
+
+
+def _inherited_and_newly_broken_input(
+    prior: dict[str, RegressionOutcome],
+) -> RegressionBreadthInput:
+    nodes = {"test.py::inherited": 11, "test.py::broken": 31}
+    run = _run()
+    run = run.model_copy(
+        update={
+            "outcomes": tuple(
+                run.outcomes[0].model_copy(update={"node_id": node})
+                for node in nodes
+            ),
+            "ledger": tuple(
+                run.ledger[0].model_copy(update={"node_id": node})
+                for node in nodes
+            ),
+            "coverage": tuple(
+                CoverageContextEvidence(
+                    node_id=node, path="src/app.py", executed_lines=(line,)
+                )
+                for node, line in nodes.items()
+            ),
+        }
+    )
+    return _input(run).model_copy(
+        update={
+            "baseline": run,
+            "prior_outcomes": tuple(
+                PriorRegressionOutcome(node_id=node, outcome=outcome)
+                for node, outcome in prior.items()
+            ),
+        }
+    )
+
+
+def test_inherited_failing_regression_does_not_penalize_but_newly_broken_does():
+    inherited = _inherited_and_newly_broken_input(
+        {
+            "test.py::inherited": RegressionOutcome.FAILED,
+            "test.py::broken": RegressionOutcome.FAILED,
+        }
+    )
+    assert calculate_regression_breadth(inherited).regression == Decimal("1")
+
+    broken = calculate_regression_breadth(
+        _inherited_and_newly_broken_input(
+            {
+                "test.py::inherited": RegressionOutcome.FAILED,
+                "test.py::broken": RegressionOutcome.PASSED,
+            }
+        )
+    )
+    assert broken.regression == Decimal("0.666666666667")
+    assert {item.node_id for item in broken.attributions} == {"test.py::broken"}
+
+
+@pytest.mark.parametrize(
+    "prior",
+    [
+        {"test.py::inherited": RegressionOutcome.FAILED},
+        {
+            "test.py::inherited": RegressionOutcome.FAILED,
+            "test.py::broken": RegressionOutcome.SKIPPED,
+        },
+    ],
+)
+def test_failing_regression_without_prior_outcome_is_ineligible(prior):
+    result = calculate_regression_breadth(
+        _inherited_and_newly_broken_input(prior)
+    )
+    assert result.regression is None
+    assert result.eligibility.reasons == (
+        "regression_prior_outcome_unavailable",
+    )
 
 
 def _checkpoint(

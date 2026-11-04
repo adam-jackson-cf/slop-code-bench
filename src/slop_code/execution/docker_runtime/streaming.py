@@ -14,12 +14,12 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import docker
 from docker.errors import APIError
 from docker.errors import DockerException
 
 from slop_code.execution.assets import ResolvedStaticAsset
 from slop_code.execution.docker_runtime.models import DockerEnvironmentSpec
+from slop_code.execution.docker_runtime.utils import docker_client
 from slop_code.execution.models import EnvironmentSpec
 from slop_code.execution.protocols import StreamingRuntime
 from slop_code.execution.runtime import RuntimeEvent
@@ -32,6 +32,7 @@ from slop_code.execution.stream_processor import process_stream
 from slop_code.logging import get_logger
 
 if TYPE_CHECKING:
+    import docker
     from docker.models.containers import Container as DockerContainer
 
 logger = get_logger(__name__)
@@ -84,7 +85,7 @@ class DockerStreamingRuntime(StreamingRuntime):
         )
         self.spec = spec
         self.cwd = working_dir
-        client = docker.from_env()
+        client = docker_client()
         if client is None:
             raise SolutionRuntimeError("Failed to initialize Docker client")
         self._client: docker.DockerClient | None = client

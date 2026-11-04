@@ -10,6 +10,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import model_validator
 
+from slop_code.agent_runner.models import ContinuationSeed
 from slop_code.evaluation import PassPolicy
 
 ThinkingPresetType = Literal[
@@ -156,6 +157,8 @@ class ResolvedRunConfig(BaseModel):
         save_template: Resolved output path template (interpolations applied)
         output_path: Full output path (save_dir/save_template)
         one_shot: One-shot execution configuration.
+        continuation_seed: Seeded start (source path, start checkpoint and
+            content digest) for a controlled continuation run, if any.
     """
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
@@ -176,3 +179,4 @@ class ResolvedRunConfig(BaseModel):
     save_template: str
     output_path: str
     one_shot: OneShotConfig = Field(default_factory=OneShotConfig)
+    continuation_seed: ContinuationSeed | None = None

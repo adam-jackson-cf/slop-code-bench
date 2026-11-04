@@ -6,7 +6,6 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import docker
 import typer
 import yaml
 from pydantic import ValidationError
@@ -40,7 +39,7 @@ def build_agent_docker(
     force_build_base: bool = False,
 ) -> str:
     agent_image_name = f"{docker_runtime.IMAGE_NAME_PREFIX}:{agent_config.get_image(environment.name)}"
-    client = docker.from_env()
+    client = docker_runtime.docker_client()
     docker_runtime.build_base_image(
         client=client,
         environment_spec=environment,
@@ -49,7 +48,7 @@ def build_agent_docker(
     docker_file = agent_config.get_docker_file(environment.get_base_image())
     if docker_file is None:
         raise ValueError("Docker file is None")
-    client = docker.from_env()
+    client = docker_runtime.docker_client()
     _ = docker_runtime.build_image_from_str(
         client=client,
         image_name=agent_image_name,
@@ -178,10 +177,9 @@ def ensure_docker_ready(
 ) -> None:
     """Ensure docker base image is built if environment is docker-based."""
     if isinstance(environment, docker_runtime.DockerEnvironmentSpec):
-        import docker
 
         _ = docker_runtime.build_base_image(
-            client=docker.from_env(),
+            client=docker_runtime.docker_client(),
             environment_spec=environment,
             force_build=force_build,
         )

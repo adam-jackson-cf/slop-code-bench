@@ -57,6 +57,10 @@ TEST_COLS = KEY_COLS + [
     "error_passed",
     "regression_total",
     "regression_passed",
+    "regression_retained",
+    "regression_broken",
+    "regression_repaired",
+    "regression_still_failing",
 ]
 
 INFERENCE_COLS = KEY_COLS + [

@@ -207,6 +207,7 @@ class TestSaveResults:
         run_spec.assessment_policy = PassPolicy.ALL_CASES
         run_spec.continue_after_test_failure = False
         run_spec.skip_evaluation = False
+        run_spec.continuation_seed = None
         run_spec.environment.get_command.return_value = "python main.py"
 
         save_results(
@@ -276,6 +277,7 @@ class TestSaveResults:
         run_spec.assessment_policy = PassPolicy.ALL_CASES
         run_spec.continue_after_test_failure = False
         run_spec.skip_evaluation = False
+        run_spec.continuation_seed = None
         run_spec.environment.get_command.return_value = "python main.py"
 
         result = save_results(

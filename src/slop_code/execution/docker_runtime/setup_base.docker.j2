@@ -83,6 +83,10 @@ RUN case "$(dpkg --print-architecture)" in \
     && tar --extract --xz --file="/tmp/${NODE_TARBALL}" \
         --strip-components=1 --directory=/usr/local \
     && rm "/tmp/${NODE_TARBALL}"
+# test_translator's reference runs TypeScript testers with `npx ts-node --esm`.
+# Unpinned, npx resolves npm-latest TypeScript, which ts-node 10.9 cannot load
+# in ESM mode. Pin a known-good pair (as upstream scb-problems PR #30 does).
+RUN npm install -g typescript@5.5.4 ts-node@10.9.2
 
 
 # Install Rust

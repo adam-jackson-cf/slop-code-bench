@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Literal
 
-import docker
 import typer
 
 from slop_code.agent_runner.registry import build_agent_config
@@ -58,7 +57,7 @@ def build_base_image(
     *,
     force_build: bool = False,
 ) -> None:
-    client = docker.from_env()
+    client = docker_runtime.docker_client()
     environment_config = config_loader.resolve_environment(
         environment_config_path
     )
@@ -89,7 +88,7 @@ def build_submission_image(
     force_build: bool = False,
     build_base: bool = False,
 ) -> None:
-    client = docker.from_env()
+    client = docker_runtime.docker_client()
     environment_config = config_loader.resolve_environment(
         environment_config_path
     )
