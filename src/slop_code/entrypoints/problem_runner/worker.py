@@ -11,8 +11,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from slop_code import common
 from slop_code import evaluation
 from slop_code.agent_runner import AgentRunSpec
+from slop_code.agent_runner import continuation
 from slop_code.agent_runner import runner
 from slop_code.agent_runner.agent import Agent
 from slop_code.agent_runner.models import UsageTracker
@@ -21,10 +23,12 @@ from slop_code.agent_runner.resume import ResumeInfo
 from slop_code.agent_runner.resume import detect_resume_point
 from slop_code.agent_runner.resume import format_resume_summary
 from slop_code.agent_runner.state import AgentStateEnum
+from slop_code.common.constants import MEASUREMENT_ANALYSIS_DIR
 from slop_code.common.llms import TokenUsage
 from slop_code.entrypoints.problem_runner.models import RunTaskConfig
 from slop_code.entrypoints.problem_runner.one_shot import apply_one_shot_mode
 from slop_code.logging import get_logger
+from slop_code.metrics.scoring.schema import problem_key
 
 logger = get_logger(__name__)
 
@@ -61,15 +65,18 @@ def _send_completed_progress(
 
 def _delete_invalidated_checkpoints(
     output_path: Path,
+    problem_name: str,
     resume_info: ResumeInfo,
 ) -> None:
-    """Delete checkpoint directories that will be re-run.
+    """Delete checkpoint outputs and pending scoring evidence that will be re-run.
 
-    When resuming with invalidated checkpoints (e.g., due to spec changes),
-    deletes the old checkpoint directories to ensure a clean re-run.
+    When resuming with invalidated checkpoints (e.g., due to spec changes or
+    errors), deletes the old checkpoint directories and their pending
+    measurement evidence so the re-run commits fresh evidence.
 
     Args:
         output_path: Base output directory for the problem
+        problem_name: Problem name used to key pending scoring evidence
         resume_info: Resume information with invalidated checkpoints
     """
     if not resume_info.invalidated_checkpoints:
@@ -80,15 +87,46 @@ def _delete_invalidated_checkpoints(
         checkpoints=resume_info.invalidated_checkpoints,
     )
 
+    pending_root = (
+        output_path.parent
+        / MEASUREMENT_ANALYSIS_DIR
+        / "pending"
+        / problem_key(problem_name)
+    )
     for checkpoint_name in resume_info.invalidated_checkpoints:
-        checkpoint_dir = output_path / checkpoint_name
-        if checkpoint_dir.exists():
-            shutil.rmtree(checkpoint_dir)
-            logger.debug(
-                "Deleted checkpoint directory",
-                checkpoint=checkpoint_name,
-                path=str(checkpoint_dir),
-            )
+        for directory in (
+            output_path / checkpoint_name,
+            pending_root / checkpoint_name,
+        ):
+            if directory.exists():
+                shutil.rmtree(directory)
+                logger.debug(
+                    "Deleted invalidated checkpoint output",
+                    checkpoint=checkpoint_name,
+                    path=str(directory),
+                )
+
+
+def _evaluate_seed_checkpoint(
+    problem_config: evaluation.ProblemConfig,
+    seed_name: str,
+    config: RunTaskConfig,
+    output_path: Path,
+) -> None:
+    """Run the standard evaluation on the materialised seed checkpoint."""
+    seed_dir = output_path / seed_name
+    if (
+        config.disable_evaluation
+        or (seed_dir / common.EVALUATION_FILENAME).exists()
+    ):
+        return
+    runner.evaluate_agent_snapshot(
+        checkpoint=problem_config.checkpoints[seed_name],
+        save_dir=seed_dir,
+        snapshot_dir=seed_dir / common.SNAPSHOT_DIR_NAME,
+        problem=problem_config,
+        environment=config.env_spec,
+    )
 
 
 def run_agent_on_problem(
@@ -118,10 +156,28 @@ def run_agent_on_problem(
         problem_config=problem_config, one_shot=config.one_shot
     )
 
+    # Seeded start: materialise and evaluate the seed checkpoint, then let the
+    # normal resume machinery restore the agent session from its snapshot.
+    seed = config.continuation_seed
+    seed_name: str | None = None
+    checkpoint_items = list(problem_config.iterate_checkpoint_items())
+    if seed is not None:
+        all_names = [name for name, _ in checkpoint_items]
+        seed_name = continuation.seed_checkpoint_name(
+            all_names, seed.start_checkpoint
+        )
+        continuation.materialize_seed(problem_config, seed, output_path)
+        _evaluate_seed_checkpoint(
+            problem_config, seed_name, config, output_path
+        )
+        present = set(continuation.names_from_seed(all_names, seed))
+        checkpoint_items = [
+            (name, cp) for name, cp in checkpoint_items if name in present
+        ]
+
     # Detect resume point if resume mode is enabled
     resume_info: ResumeInfo | None = None
-    if config.resume:
-        checkpoint_items = list(problem_config.iterate_checkpoint_items())
+    if config.resume or seed is not None:
         checkpoint_names = [name for name, _ in checkpoint_items]
         checkpoints = [cp for _, cp in checkpoint_items]
         resume_info = detect_resume_point(
@@ -150,6 +206,7 @@ def run_agent_on_problem(
                 evaluation_results = [
                     runner._load_eval_result(output_path / checkpoint_name)
                     for checkpoint_name in resume_info.completed_checkpoints
+                    if checkpoint_name != seed_name
                 ]
                 passed_policy = config.disable_evaluation or all(
                     evaluation_result is not None
@@ -181,7 +238,9 @@ def run_agent_on_problem(
             )
 
             # Delete invalidated checkpoint directories
-            _delete_invalidated_checkpoints(output_path, resume_info)
+            _delete_invalidated_checkpoints(
+                output_path, problem_name, resume_info
+            )
 
     run_spec = AgentRunSpec(
         seed=config.seed,
@@ -197,6 +256,7 @@ def run_agent_on_problem(
         agent_type=config.agent_config.type,
         agent_version=config.agent_config.version,
         model_name=config.model_def.name,
+        continuation_seed=config.continuation_seed,
     )
 
     return runner.run_agent(

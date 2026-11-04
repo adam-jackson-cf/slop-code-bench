@@ -34,9 +34,11 @@ from .models import Eligibility
 from .models import EvaluatorEnvironmentEvidence
 from .models import FileRole
 from .models import LineageCandidate
+from .models import PriorRegressionOutcome
 from .models import RegressionBreadthInput
 from .models import RegressionInvocationEvidence
 from .models import RegressionLedgerEvidence
+from .models import RegressionOutcome
 from .models import RegressionOutcomeEvidence
 from .models import RegressionRunEvidence
 from .models import SymbolIdentity
@@ -77,34 +79,39 @@ def _validate_live_oracle(
     return parity
 
 
+def _resolve_node(test: Any, ledger_nodes: set[str]) -> str | None:
+    """Resolve one report test to its unique coverage-ledger node."""
+    test_id = test.id
+    if not isinstance(test_id, str):
+        return None
+    if test_id in ledger_nodes:
+        matches: tuple[str, ...] = (test_id,)
+    else:
+        file_path = test.file_path
+        projected = (
+            f"{file_path}::{test_id}"
+            if isinstance(file_path, str) and file_path
+            else ""
+        )
+        if projected in ledger_nodes:
+            matches = (projected,)
+        else:
+            suffix = f"::{test_id}"
+            matches = tuple(
+                node for node in ledger_nodes if node.endswith(suffix)
+            )
+    return matches[0] if len(matches) == 1 else None
+
+
 def _group_by_ledger_node(
     tests: Sequence[Any], ledger_nodes: set[str]
 ) -> dict[str, str] | None:
     """Resolve report identifiers to the canonical coverage-ledger nodes."""
     group_by_node: dict[str, str] = {}
     for test in tests:
-        test_id = test.id
-        if not isinstance(test_id, str):
+        node_id = _resolve_node(test, ledger_nodes)
+        if node_id is None:
             return None
-        if test_id in ledger_nodes:
-            matches = (test_id,)
-        else:
-            file_path = test.file_path
-            projected = (
-                f"{file_path}::{test_id}"
-                if isinstance(file_path, str) and file_path
-                else ""
-            )
-            if projected in ledger_nodes:
-                matches = (projected,)
-            else:
-                suffix = f"::{test_id}"
-                matches = tuple(
-                    node for node in ledger_nodes if node.endswith(suffix)
-                )
-        if len(matches) != 1:
-            return None
-        node_id = matches[0]
         group = test.group_type.value
         existing = group_by_node.get(node_id)
         if existing is not None and existing != group:
@@ -113,6 +120,35 @@ def _group_by_ledger_node(
     if set(group_by_node) != ledger_nodes:
         return None
     return group_by_node
+
+
+def _prior_regression_outcomes(
+    current_tests: Sequence[Any],
+    prior_tests: Sequence[Any],
+    ledger_nodes: set[str],
+) -> tuple[PriorRegressionOutcome, ...]:
+    """Map each current Regression node to its prior canonical outcome.
+
+    Stable identity is (origin checkpoint, test id) in the saved evaluation.
+    Nodes whose identity is absent or ambiguous in the prior evaluation are
+    omitted, which makes the transition ineligible if such a node fails now.
+    """
+    prior_status: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for test in prior_tests:
+        prior_status[(test.checkpoint, test.id)].add(test.status)
+    outcomes: dict[str, RegressionOutcome] = {}
+    for test in current_tests:
+        if test.group_type != GroupType.REGRESSION:
+            continue
+        node_id = _resolve_node(test, ledger_nodes)
+        statuses = prior_status.get((test.checkpoint, test.id))
+        if node_id is None or statuses is None or len(statuses) != 1:
+            continue
+        outcomes[node_id] = RegressionOutcome(next(iter(statuses)))
+    return tuple(
+        PriorRegressionOutcome(node_id=node, outcome=outcome)
+        for node, outcome in sorted(outcomes.items())
+    )
 
 
 def _run_evidence(
@@ -150,6 +186,11 @@ def _run_evidence(
             ).hexdigest(),
         )
         if ledger.get("invalid_coverage_paths", 0) != 0:
+            return None
+        # Coverage comes from a separate instrumented pass; if any outcome
+        # differs from the correctness pass, its evidence does not describe
+        # the scored run.
+        if ledger.get("outcome_mismatches") != []:
             return None
         raw_ledger = ledger["ledger"]
         raw_coverage = ledger["coverage"]
@@ -586,6 +627,7 @@ def produce_live_regression_evidence(
         prior_digest = _artifact_digest(prior_dir)
         current_digest = _artifact_digest(current_dir)
         canonical_result = CorrectnessResults.from_dir(current_dir)
+        prior_result = CorrectnessResults.from_dir(prior_dir)
         with tempfile.TemporaryDirectory(
             prefix="slop-code-regression-"
         ) as temporary:
@@ -687,6 +729,11 @@ def produce_live_regression_evidence(
                 transition_id=f"{prior_id}--{current_id}",
                 baseline=baseline,
                 produced=produced,
+                prior_outcomes=_prior_regression_outcomes(
+                    measurement_result.tests,
+                    prior_result.tests,
+                    {row.node_id for row in produced.ledger},
+                ),
                 changed_symbols=changed_symbols,
             )
         )

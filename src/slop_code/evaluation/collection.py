@@ -558,17 +558,25 @@ def run_checkpoint_with_collection(
     evaluator_environment_parent: Path,
     measurement_coverage: bool = False,
 ) -> CorrectnessResults:
-    """Run checkpoint pytest and apply collection-backed test inventory."""
-    from slop_code.evaluation.pytest_runner import PytestRunner
+    """Run checkpoint pytest and apply collection-backed test inventory.
 
-    runner = PytestRunner(
-        problem=problem,
-        checkpoint=checkpoint,
-        environment=env_spec,
-        submission_path=submission_path,
-        evaluator_environment_parent=evaluator_environment_parent,
-        measurement_coverage=measurement_coverage,
-    )
+    Correctness always comes from an uninstrumented pass. With
+    ``measurement_coverage``, a second pass in a fresh session runs under
+    coverage and contributes only the coverage ledger, so instrumentation
+    overhead can never change a pass/fail outcome.
+    """
+    from slop_code.evaluation.pytest_runner import PytestRunner
+    from slop_code.evaluation.pytest_runner import coverage_outcome_mismatches
+
+    def _runner(*, coverage: bool) -> PytestRunner:
+        return PytestRunner(
+            problem=problem,
+            checkpoint=checkpoint,
+            environment=env_spec,
+            submission_path=submission_path,
+            evaluator_environment_parent=evaluator_environment_parent,
+            measurement_coverage=coverage,
+        )
 
     collection: CheckpointTestCollection | None = None
     if not _has_k_filter(pytest_args):
@@ -581,7 +589,20 @@ def run_checkpoint_with_collection(
             pytest_args=pytest_args,
         )
 
-    results = runner.run(pytest_args=pytest_args)
+    results = _runner(coverage=False).run(pytest_args=pytest_args)
+    if measurement_coverage:
+        coverage_results = _runner(coverage=True).run(pytest_args=pytest_args)
+        ledger = coverage_results.coverage_ledger
+        if ledger is not None:
+            ledger["outcome_mismatches"] = coverage_outcome_mismatches(
+                results.pytest_json_report, ledger
+            )
+        results.coverage_ledger = ledger
+        if results.invocation is not None and coverage_results.invocation:
+            results.invocation = {
+                **results.invocation,
+                "coverage_command": coverage_results.invocation["command"],
+            }
     if collection is not None:
         apply_collection_inventory(results, collection)
     return results

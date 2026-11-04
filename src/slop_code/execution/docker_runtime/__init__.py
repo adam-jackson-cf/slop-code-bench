@@ -7,6 +7,7 @@ from slop_code.execution.docker_runtime.models import IMAGE_NAME_PREFIX
 from slop_code.execution.docker_runtime.models import DockerConfig
 from slop_code.execution.docker_runtime.models import DockerEnvironmentSpec
 from slop_code.execution.docker_runtime.streaming import DockerStreamingRuntime
+from slop_code.execution.docker_runtime.utils import docker_client
 from slop_code.execution.docker_runtime.utils import network_mode_for_address
 
 __all__ = [
@@ -14,6 +15,7 @@ __all__ = [
     "DockerStreamingRuntime",
     "DockerExecRuntime",
     "DockerEnvironmentSpec",
+    "docker_client",
     "network_mode_for_address",
     "DockerConfig",
     "build_base_image",

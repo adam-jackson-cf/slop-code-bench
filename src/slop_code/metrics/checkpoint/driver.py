@@ -18,6 +18,8 @@ from slop_code.metrics.checkpoint.extractors import get_evaluation_metrics
 from slop_code.metrics.checkpoint.extractors import get_inference_metrics
 from slop_code.metrics.checkpoint.extractors import get_quality_metrics
 from slop_code.metrics.checkpoint.extractors import get_rubric_metrics
+from slop_code.metrics.checkpoint.regression_ledger import load_results
+from slop_code.metrics.checkpoint.regression_ledger import regression_ledger
 
 logger = get_logger(__name__)
 
@@ -148,6 +150,9 @@ def get_checkpoint_metrics(
         **get_inference_metrics(checkpoint_dir),
         **quality_metrics,
         **get_rubric_metrics(checkpoint_dir),
+        **regression_ledger(
+            load_results(prior_checkpoint_dir), load_results(checkpoint_dir)
+        ),
     }
 
     # Add rubric density metric if applicable

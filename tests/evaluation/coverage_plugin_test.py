@@ -157,6 +157,34 @@ def test_popen_propagates_locked_coverage_context(
     }
 
 
+def test_subprocess_startup_still_runs_test_sitecustomize(tmp_path: Path) -> None:
+    plugin = CoverageAuditPlugin(tmp_path / "root")
+    plugin._prepare_subprocess_coverage()
+    test_site = tmp_path / "test-site"
+    test_site.mkdir()
+    # Stand-in for the evaluator's coverage package when it is not installed.
+    (test_site / "coverage.py").write_text("def process_startup():\n    pass\n")
+    (test_site / "sitecustomize.py").write_text(
+        "import builtins\nbuiltins.SCBENCH_TEST_PATCH = 'applied'\n"
+    )
+    startup = (tmp_path / "root/.scbench/subprocess-coverage").resolve()
+
+    result = subprocess.run(  # noqa: S603 - fixed interpreter and arguments
+        [
+            sys.executable,
+            "-c",
+            "import builtins; "
+            "print(getattr(builtins, 'SCBENCH_TEST_PATCH', 'missing'))",
+        ],
+        env={**os.environ, "PYTHONPATH": f"{startup}:{test_site}"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "applied"
+
+
 def test_plugin_records_collection_failure_and_passing_call(
     tmp_path: Path,
 ) -> None:

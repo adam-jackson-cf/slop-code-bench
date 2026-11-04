@@ -2,10 +2,40 @@
 
 from __future__ import annotations
 
-import docker
+from pathlib import Path
+
 import pytest
 from docker.errors import DockerException
 from requests.exceptions import RequestException
+
+from slop_code.execution.docker_runtime import docker_client
+
+FIXTURE_EVALUATOR_LOCKS = Path(__file__).parent / "evaluator_locks"
+
+
+@pytest.fixture(autouse=True)
+def fixture_evaluator_locks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve evaluator locks for fixture problems from the test lock root."""
+    monkeypatch.setattr(
+        "slop_code.evaluation.locked_environment.EVALUATOR_LOCKS_ROOT",
+        FIXTURE_EVALUATOR_LOCKS,
+    )
+
+
+def pytest_terminal_summary(terminalreporter) -> None:
+    """Make Docker-unavailable skips loud; ``-q`` otherwise hides them."""
+    skipped = [
+        report
+        for report in terminalreporter.stats.get("skipped", [])
+        if "docker" in str(report.longrepr).lower()
+    ]
+    if skipped:
+        terminalreporter.write_sep(
+            "!",
+            f"{len(skipped)} Docker tests SKIPPED: Docker daemon unreachable",
+            red=True,
+            bold=True,
+        )
 
 
 def is_docker_available() -> bool:
@@ -15,7 +45,7 @@ def is_docker_available() -> bool:
         True if Docker is available, False otherwise
     """
     try:
-        client = docker.from_env()
+        client = docker_client()
         client.ping()
         client.close()
         return True

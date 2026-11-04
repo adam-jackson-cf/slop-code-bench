@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import os
 from functools import cache
+from typing import TYPE_CHECKING
 
-import docker
 from docker.errors import DockerException
 from requests.exceptions import RequestException
+
+from slop_code.execution.docker_runtime import docker_client
+
+if TYPE_CHECKING:
+    import docker
 
 DOCKER_TEST_IMAGE = os.environ.get(
     "SLOP_CODE_TEST_DOCKER_IMAGE",
@@ -18,7 +23,7 @@ DOCKER_TEST_IMAGE = os.environ.get(
 def _docker_client() -> docker.DockerClient | None:
     """Return a Docker client when the daemon can be reached."""
     try:
-        client = docker.from_env()
+        client = docker_client()
         client.ping()
     except (DockerException, RequestException):
         return None

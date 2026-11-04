@@ -877,7 +877,7 @@ def test_run_problem_concurrent_eval_records_failure_and_continues(
     run_spec.concurrent_evaluation = True
     # Use a real PassPolicy so _merge_eval_reports can rebuild summaries via
     # AgentCheckpointSummary.from_results (which validates with pydantic).
-    run_spec.assessment_policy = PassPolicy.ANY_CASE
+    run_spec.assessment_policy = PassPolicy.ALL_CASES
 
     ar = runner.AgentRunner(
         run_spec=run_spec,

@@ -28,7 +28,9 @@ class TestDockerStreamingRuntimeInit:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Working directory is stored."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -45,7 +47,9 @@ class TestDockerStreamingRuntimeInit:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Environment spec is stored."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -62,7 +66,9 @@ class TestDockerStreamingRuntimeInit:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Container is None initially."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -83,7 +89,9 @@ class TestDockerStreamingRuntimeSpawn:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Spawn creates a DockerStreamingRuntime instance."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime.spawn(
                 environment=docker_spec,
                 working_dir=tmp_path,
@@ -105,7 +113,9 @@ class TestDockerStreamingRuntimeSpawn:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Spawn passes port mappings to runtime."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime.spawn(
                 environment=docker_spec,
                 working_dir=tmp_path,
@@ -117,7 +127,9 @@ class TestDockerStreamingRuntimeSpawn:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Spawn passes mount mappings to runtime."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime.spawn(
                 environment=docker_spec,
                 working_dir=tmp_path,
@@ -133,7 +145,9 @@ class TestDockerStreamingRuntimeBuildVolumes:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Workspace is mounted to container workdir."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -157,7 +171,9 @@ class TestDockerStreamingRuntimeUser:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """User from constructor takes precedence."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -175,7 +191,9 @@ class TestDockerStreamingRuntimeUser:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Evaluation context uses eval user."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -196,7 +214,9 @@ class TestDockerStreamingRuntimeContainer:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Container property raises when no container exists."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -220,7 +240,9 @@ class TestDockerStreamingRuntimePortsAndStartup:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker SDK receives container-to-host bindings."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -239,7 +261,7 @@ class TestDockerStreamingRuntimePortsAndStartup:
     ) -> None:
         """Host networking retains its lack of Docker port bindings."""
         with (
-            patch("slop_code.execution.docker_runtime.streaming.docker"),
+            patch("slop_code.execution.docker_runtime.streaming.docker_client"),
             patch("platform.system", return_value="Linux"),
         ):
             runtime = DockerStreamingRuntime(
@@ -263,7 +285,7 @@ class TestDockerStreamingRuntimePortsAndStartup:
         container = MagicMock()
         container.id = "a" * 12
         with (
-            patch("slop_code.execution.docker_runtime.streaming.docker"),
+            patch("slop_code.execution.docker_runtime.streaming.docker_client"),
             patch(
                 "slop_code.execution.docker_runtime.streaming.logger.debug"
             ) as log,
@@ -301,7 +323,7 @@ class TestDockerStreamingRuntimePortsAndStartup:
         container.id = "a" * 12
         container.start.side_effect = RuntimeError("start failed")
         with patch(
-            "slop_code.execution.docker_runtime.streaming.docker.from_env",
+            "slop_code.execution.docker_runtime.streaming.docker_client",
             return_value=client,
         ):
             runtime = DockerStreamingRuntime(
@@ -334,7 +356,7 @@ class TestDockerStreamingRuntimeEnsureContainerRunning:
     ) -> None:
         """Creates container when none exists."""
         with patch(
-            "slop_code.execution.docker_runtime.streaming.docker.from_env",
+            "slop_code.execution.docker_runtime.streaming.docker_client",
             return_value=mock_docker_client_with_container,
         ):
             runtime = DockerStreamingRuntime(
@@ -359,7 +381,9 @@ class TestDockerStreamingRuntimePrepareCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Writes entry script when setup not disabled."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -378,7 +402,9 @@ class TestDockerStreamingRuntimePrepareCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Returns command directly when disable_setup=True."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -402,7 +428,9 @@ class TestDockerStreamingRuntimePoll:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Poll returns None when no exec process is running."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -423,7 +451,9 @@ class TestDockerStreamingRuntimeKill:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Kill is safe to call when no container exists."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -445,7 +475,9 @@ class TestDockerStreamingRuntimeCleanup:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Cleanup can be called multiple times safely."""
-        with patch("slop_code.execution.docker_runtime.streaming.docker"):
+        with patch(
+            "slop_code.execution.docker_runtime.streaming.docker_client"
+        ):
             runtime = DockerStreamingRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,

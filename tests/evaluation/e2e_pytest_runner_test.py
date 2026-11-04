@@ -10,7 +10,6 @@ unavailable.
 import shutil
 from pathlib import Path
 
-import docker
 import pytest
 from docker.errors import DockerException
 from requests.exceptions import RequestException
@@ -20,17 +19,19 @@ from slop_code.evaluation.collection import collect_checkpoint_tc
 from slop_code.evaluation.config import ProblemConfig
 from slop_code.evaluation.pytest_runner import run_checkpoint_pytest
 from slop_code.evaluation.report import GroupType
+from slop_code.execution.docker_runtime import docker_client
 
 # Path to fixtures
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "word_stats"
 PROBLEM_DIR = FIXTURES_DIR / "problem"
 SUBMISSION_DIR = FIXTURES_DIR / "submission"
+LOCKS_DIR = Path(__file__).parents[1] / "evaluator_locks" / "word_stats"
 
 
 def docker_available() -> bool:
     """Check if Docker is available and running."""
     try:
-        client = docker.from_env()
+        client = docker_client()
         client.ping()
         return True
     except (DockerException, RequestException):
@@ -100,20 +101,20 @@ class TestPytestRunnerE2ECheckpoint1:
             core_passed == core_total
         ), f"CORE tests failed: {core_passed}/{core_total} passed"
 
-        # Should pass core policy
-        assert results.passes_policy("core-cases"), "Failed core-cases policy"
+        # Should be solved under the strict policy
+        assert results.is_solved(), "Checkpoint not solved"
 
 
 class TestPytestRunnerE2ECheckpoint2:
     """E2E tests for checkpoint 2 evaluation."""
 
-    def test_checkpoint_2_passes(
+    def test_checkpoint_2_strict_policy_rejects_functionality_failure(
         self,
         problem_config: ProblemConfig,
         submission_path: Path,
         docker_environment_spec,
     ):
-        """Test that checkpoint 2 passes with correct submission."""
+        """Checkpoint 2 passes CORE but strict policy rejects it."""
         checkpoint = problem_config.load_checkpoint("checkpoint_2")
 
         results = run_checkpoint_pytest(
@@ -144,8 +145,13 @@ class TestPytestRunnerE2ECheckpoint2:
             core_passed == core_total
         ), f"CORE tests failed: {core_passed}/{core_total} passed"
 
-        # Should pass core policy
-        assert results.passes_policy("core-cases"), "Failed core-cases policy"
+        # The protected fixture's test_lines_and_stopwords expects "over" to be
+        # a stopword, but static/stopwords.txt omits it. The strict all-cases
+        # policy therefore rejects the checkpoint on that FUNCTIONALITY case
+        # even though every CORE case passes.
+        not_passed = [t.id for t in results.tests if t.status != "passed"]
+        assert not_passed == ["TestCombined::test_lines_and_stopwords"]
+        assert not results.is_solved()
 
     def test_checkpoint_2_runs_checkpoint_1_tests(
         self,
@@ -245,8 +251,8 @@ class TestPytestRunnerE2ELockedEvaluator:
             path: path.read_bytes()
             for path in (
                 submission_path / "main.py",
-                PROBLEM_DIR / "pyproject.toml",
-                PROBLEM_DIR / "uv.lock",
+                LOCKS_DIR / "pyproject.toml",
+                LOCKS_DIR / "uv.lock",
                 PROBLEM_DIR / "static" / "stopwords.txt",
             )
         }

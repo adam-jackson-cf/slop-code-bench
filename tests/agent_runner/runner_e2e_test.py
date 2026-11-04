@@ -198,7 +198,8 @@ def run_spec(
         problem=problem,
         environment=local_environment,
         image="test-local-image",
-        assessment_policy=PassPolicy.ANY,
+        assessment_policy=PassPolicy.ALL_CASES,
+        continue_after_test_failure=True,
         skip_evaluation=False,
         verbose=True,
     )
@@ -221,7 +222,6 @@ def test_agent_run_problem(
     )
     assert not progress_queue.empty()
     summary = result["summary"]
-    assert summary["passed_policy"]
     assert summary["state"] == "completed"
     assert summary["total_usage"]["net_tokens"] == {
         "input": 1200,

@@ -12,10 +12,9 @@ import time
 import uuid
 from pathlib import Path
 
-import docker
-
 from slop_code.execution.assets import ResolvedStaticAsset
 from slop_code.execution.docker_runtime.models import DockerEnvironmentSpec
+from slop_code.execution.docker_runtime.utils import docker_client
 from slop_code.execution.models import EnvironmentSpec
 from slop_code.execution.protocols import ExecRuntime
 from slop_code.execution.runtime import RuntimeResult
@@ -77,7 +76,7 @@ class DockerExecRuntime(ExecRuntime):
         self.spec = spec
         self.cwd = working_dir
         self._command = command
-        self._client = docker.from_env()
+        self._client = docker_client()
         self._exit_code: int | None = None
         self._static_assets = static_assets or {}
         self._is_evaluation = is_evaluation

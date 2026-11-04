@@ -10,13 +10,13 @@ import contextlib
 import shutil
 from pathlib import Path
 
-import docker
 import pytest
 import yaml
 from docker.errors import DockerException
 
 from slop_code.execution.docker_runtime import DockerEnvironmentSpec
 from slop_code.execution.docker_runtime import DockerExecRuntime
+from slop_code.execution.docker_runtime import docker_client
 from slop_code.execution.runtime import RuntimeResult
 
 
@@ -65,7 +65,7 @@ def cleanup_as_root(path: Path) -> None:
         return
 
     with contextlib.suppress(DockerException):
-        docker.from_env().containers.run(
+        docker_client().containers.run(
             "alpine:latest",
             ["rm", "-rf", "/cleanup"],
             volumes={str(path): {"bind": "/cleanup", "mode": "rw"}},

@@ -17,6 +17,8 @@ from pydantic import field_validator
 from slop_code import common
 from slop_code.agent_runner.agent import Agent
 from slop_code.agent_runner.agent import CheckpointInferenceResult
+from slop_code.agent_runner.continuation import names_from_seed
+from slop_code.agent_runner.continuation import seed_checkpoint_name
 from slop_code.agent_runner.models import AgentRunSpec
 from slop_code.agent_runner.models import UsageTracker
 from slop_code.agent_runner.state import AgentStateEnum
@@ -75,8 +77,8 @@ class AgentCheckpointSummary(BaseModel):
                 evaluation_result.total_counts,
             )
         else:
-            # No evaluation - pass if policy allows any case
-            passed_policy = assessment_policy == PassPolicy.ANY_CASE
+            # No evaluation result: the checkpoint is not passed
+            passed_policy = False
 
         return cls(
             checkpoint_name=checkpoint_name,
@@ -95,6 +97,7 @@ class CheckpointState:
     RAN = "ran"
     SKIPPED = "skipped"
     ERROR = "error"
+    SEED = "seed"
 
 
 class RunSummary(BaseModel):
@@ -386,12 +389,24 @@ def save_results(
         output_path=output_path,
     )
 
-    # Build checkpoint state dict: name -> state (ran/skipped/error)
+    # Build checkpoint state dict: name -> state (ran/skipped/error/seed).
+    # Seeded runs only track checkpoints from the seed onward; earlier ones
+    # are absent, not skipped.
     all_checkpoint_names = list(run_spec.problem.checkpoints.keys())
+    seed = run_spec.continuation_seed
+    seed_name: str | None = None
+    if seed is not None:
+        ordered = [
+            name for name, _ in run_spec.problem.iterate_checkpoint_items()
+        ]
+        seed_name = seed_checkpoint_name(ordered, seed.start_checkpoint)
+        all_checkpoint_names = names_from_seed(ordered, seed)
     results_by_name = {r.checkpoint_name: r for r in results}
     checkpoints_state: dict[str, str] = {}
     for name in all_checkpoint_names:
-        if name in results_by_name:
+        if name == seed_name:
+            checkpoints_state[name] = CheckpointState.SEED
+        elif name in results_by_name:
             result = results_by_name[name]
             if result.had_error:
                 checkpoints_state[name] = CheckpointState.ERROR
@@ -399,6 +414,13 @@ def save_results(
                 checkpoints_state[name] = CheckpointState.RAN
         else:
             checkpoints_state[name] = CheckpointState.SKIPPED
+
+    # The seed is the starting implementation, not agent work: it never
+    # counts for or against the run's policy outcome.
+    agent_results = [r for r in results if r.checkpoint_name != seed_name]
+    agent_checkpoint_count = len(all_checkpoint_names) - (
+        1 if seed_name is not None else 0
+    )
 
     ended = datetime.now()
     summary = RunSummary(
@@ -416,9 +438,9 @@ def save_results(
         # Errored/skipped checkpoints are complete failures
         passed_policy=all(
             (r.passed_policy and not r.had_error) or run_spec.skip_evaluation
-            for r in results
+            for r in agent_results
         )
-        and len(results) == len(all_checkpoint_names),
+        and len(agent_results) == agent_checkpoint_count,
     )
 
     # Build combined run_info structure

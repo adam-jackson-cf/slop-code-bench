@@ -17,6 +17,8 @@ from rich.table import Table
 
 from slop_code import common
 from slop_code.agent_runner import ProviderCatalog
+from slop_code.agent_runner import continuation
+from slop_code.agent_runner.models import ContinuationSeed
 from slop_code.common.constants import CURRENT_POINTER_FILENAME
 from slop_code.common.constants import MEASUREMENT_ANALYSIS_DIR
 from slop_code.common.llms import ModelCatalog
@@ -561,7 +563,17 @@ def count_expected_checkpoints(config: dict, problems_dir: Path) -> int:
                 error=str(e),
             )
             continue
-        total += len(problem_config.checkpoints)
+        checkpoint_names = [
+            checkpoint_name
+            for checkpoint_name, _ in problem_config.iterate_checkpoint_items()
+        ]
+        seed = config.get("continuation_seed")
+        total += len(
+            continuation.names_from_seed(
+                checkpoint_names,
+                ContinuationSeed.model_validate(seed) if seed else None,
+            )
+        )
     return total
 
 

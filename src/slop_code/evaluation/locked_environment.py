@@ -22,6 +22,9 @@ from slop_code.common.constants import EVALUATOR_METADATA_FILENAME
 from slop_code.common.constants import EVALUATOR_READY_FILENAME
 from slop_code.evaluation.config import ProblemConfig
 
+EVALUATOR_LOCKS_ROOT = Path(__file__).parent / "evaluator_locks"
+"""Harness-owned evaluator locks, one ``<problem name>/`` directory each."""
+
 
 class LockedEnvironmentError(RuntimeError):
     """Raised when an evaluator environment cannot be safely used."""
@@ -54,10 +57,15 @@ def _read_required(path: Path) -> bytes:
         ) from exc
 
 
+def evaluator_lock_dir(problem_name: str) -> Path:
+    """Return the harness lock directory for an exact problem name."""
+    return EVALUATOR_LOCKS_ROOT / problem_name
+
+
 def _project_inputs(
     problem_config: ProblemConfig,
 ) -> tuple[Path, bytes, bytes, bytes]:
-    project = problem_config.path.resolve()
+    project = evaluator_lock_dir(problem_config.name).resolve()
     pyproject = _read_required(project / "pyproject.toml")
     lock = _read_required(project / "uv.lock")
     try:

@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from slop_code.agent_runner import continuation
+from slop_code.agent_runner.models import ContinuationSeed
 from slop_code.common import PROBLEM_CONFIG_NAME
 from slop_code.common import RUN_INFO_FILENAME
 from slop_code.common import to_relative_path
@@ -75,6 +77,7 @@ def get_run_summary(submission_dir: Path) -> dict[str, Any] | None:
     return {
         # Run spec fields
         "seed": run_info.get("seed"),
+        "continuation_seed": run_info.get("continuation_seed"),
         "assessment_policy": run_info.get("assessment_policy"),
         "skip_evaluation": run_info.get("skip_evaluation"),
         # Summary fields
@@ -170,12 +173,18 @@ def create_problem_reports(
     errors: list[tuple[str, str]] = []
     prior_metrics = None
     prior_checkpoint_dir = None
-    for idx, checkpoint_name in enumerate(
-        sorted(
-            problem.checkpoints.keys(),
-            key=lambda x: problem.checkpoints[x].order,
-        )
-    ):
+    ordered_names = sorted(
+        problem.checkpoints.keys(),
+        key=lambda x: problem.checkpoints[x].order,
+    )
+    # Seeded runs only contain checkpoints from the seed onward; earlier ones
+    # are absent by design, not errors.
+    seed_info = run_summary.get("continuation_seed") if run_summary else None
+    present_names = continuation.names_from_seed(
+        ordered_names,
+        ContinuationSeed.model_validate(seed_info) if seed_info else None,
+    )
+    for idx, checkpoint_name in enumerate(present_names):
         checkpoint_dir = submission_dir / checkpoint_name
         if not checkpoint_dir.exists():
             logger.warning(
@@ -192,7 +201,7 @@ def create_problem_reports(
                 prior_metrics=prior_metrics,
                 prior_checkpoint_dir=prior_checkpoint_dir,
                 is_first=idx == 0,
-                is_last=idx == len(problem.checkpoints) - 1,
+                is_last=idx == len(present_names) - 1,
             )
         except MetricsError as e:
             logger.error(

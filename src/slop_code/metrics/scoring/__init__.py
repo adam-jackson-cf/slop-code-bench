@@ -71,12 +71,9 @@ from .models import LedgerTransitionEvidence
 from .models import LineageCandidate
 from .models import LineageComponentEvidence
 from .models import LineageLedgerEntry
-from .models import OracleArtifact
-from .models import OracleBaseline
-from .models import OracleBundle
-from .models import OracleCheckpointProjection
 from .models import OwnedLineEvidence
 from .models import PhysicalLineEvidence
+from .models import PriorRegressionOutcome
 from .models import ProblemCostEvidence
 from .models import ProblemReworkEvidence
 from .models import ProblemScore
@@ -175,12 +172,9 @@ __all__ = [
     "LedgerTransitionEvidence",
     "LineageComponentEvidence",
     "LineageLedgerEntry",
-    "OracleArtifact",
-    "OracleBaseline",
-    "OracleBundle",
-    "OracleCheckpointProjection",
     "OwnedLineEvidence",
     "PhysicalLineEvidence",
+    "PriorRegressionOutcome",
     "ProblemReworkEvidence",
     "PENDING_ORACLES_DIR",
     "PRECISION",

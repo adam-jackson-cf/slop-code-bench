@@ -27,7 +27,7 @@ class TestDockerExecRuntimeInit:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Command is stored on the runtime."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -45,7 +45,7 @@ class TestDockerExecRuntimeInit:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Working directory is stored."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -63,7 +63,7 @@ class TestDockerExecRuntimeInit:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Environment variables are stored."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -85,7 +85,7 @@ class TestDockerExecRuntimeSpawn:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Spawn creates a DockerExecRuntime instance."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime.spawn(
                 environment=docker_spec,
                 working_dir=tmp_path,
@@ -109,7 +109,7 @@ class TestDockerExecRuntimeSpawn:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Spawn passes port mappings to runtime."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime.spawn(
                 environment=docker_spec,
                 working_dir=tmp_path,
@@ -126,7 +126,7 @@ class TestDockerExecRuntimeBuildVolumes:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Workspace is mounted to container workdir."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -147,7 +147,7 @@ class TestDockerExecRuntimeBuildVolumes:
         self, docker_spec_with_mounts: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Extra mounts from spec are included."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec_with_mounts,
                 working_dir=tmp_path,
@@ -170,7 +170,7 @@ class TestDockerExecRuntimeBuildVolumes:
         extra_mount = tmp_path / "runtime_mount"
         extra_mount.mkdir()
 
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -195,7 +195,7 @@ class TestDockerExecRuntimeCommandLogging:
         """Environment values are passed to Docker without entering logs."""
         synthetic_value = "synthetic-sensitive-value"
         with (
-            patch("slop_code.execution.docker_runtime.exec.docker"),
+            patch("slop_code.execution.docker_runtime.exec.docker_client"),
             patch(
                 "slop_code.execution.docker_runtime.exec.logger.debug"
             ) as log,
@@ -226,7 +226,7 @@ class TestDockerExecRuntimeBuildDockerRunCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker run command includes the image."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -246,7 +246,7 @@ class TestDockerExecRuntimeBuildDockerRunCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker run command includes --rm flag."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -265,7 +265,7 @@ class TestDockerExecRuntimeBuildDockerRunCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker run command includes workdir."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -286,7 +286,7 @@ class TestDockerExecRuntimeBuildDockerRunCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker run command includes network mode."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -305,7 +305,7 @@ class TestDockerExecRuntimeBuildDockerRunCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker run command includes environment variables."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -325,7 +325,7 @@ class TestDockerExecRuntimeBuildDockerRunCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker run command includes user when specified."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -344,7 +344,7 @@ class TestDockerExecRuntimeBuildDockerRunCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker run command writes entry script when setup not disabled."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -364,7 +364,7 @@ class TestDockerExecRuntimeBuildDockerRunCommand:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Docker run command skips entry script when disable_setup=True."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -389,7 +389,7 @@ class TestDockerExecRuntimeUser:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """User from constructor takes precedence."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -408,7 +408,7 @@ class TestDockerExecRuntimeUser:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Evaluation context uses eval user."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -430,7 +430,7 @@ class TestDockerExecRuntimeResolvePorts:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Returns ports for bridge networking."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime(
                 spec=docker_spec,
                 working_dir=tmp_path,
@@ -450,7 +450,7 @@ class TestDockerExecRuntimeResolvePorts:
     ) -> None:
         """Returns None for host networking (ports not needed)."""
         with (
-            patch("slop_code.execution.docker_runtime.exec.docker"),
+            patch("slop_code.execution.docker_runtime.exec.docker_client"),
             patch("platform.system", return_value="Linux"),
         ):
             runtime = DockerExecRuntime(
@@ -475,7 +475,7 @@ class TestDockerExecRuntimePoll:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Poll returns None before execute is called."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime.spawn(
                 environment=docker_spec,
                 working_dir=tmp_path,
@@ -491,7 +491,7 @@ class TestDockerExecRuntimeKill:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Kill is safe to call when no process is running."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime.spawn(
                 environment=docker_spec,
                 working_dir=tmp_path,
@@ -508,7 +508,7 @@ class TestDockerExecRuntimeCleanup:
         self, docker_spec: DockerEnvironmentSpec, tmp_path: Path
     ) -> None:
         """Cleanup can be called multiple times safely."""
-        with patch("slop_code.execution.docker_runtime.exec.docker"):
+        with patch("slop_code.execution.docker_runtime.exec.docker_client"):
             runtime = DockerExecRuntime.spawn(
                 environment=docker_spec,
                 working_dir=tmp_path,
@@ -531,7 +531,7 @@ class TestDockerExecRuntimeStdinLifecycle:
         proc.communicate.return_value = (b"output", b"")
         proc.returncode = 0
         with (
-            patch("slop_code.execution.docker_runtime.exec.docker"),
+            patch("slop_code.execution.docker_runtime.exec.docker_client"),
             patch(
                 "slop_code.execution.docker_runtime.exec.subprocess.Popen",
                 return_value=proc,

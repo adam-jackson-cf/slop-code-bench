@@ -40,15 +40,21 @@ def _process_ledger(
     )
 
 
+_PRIOR_DECIDED = (
+    {RegressionOutcome.PASSED},
+    {RegressionOutcome.FAILED},
+    {RegressionOutcome.ERROR},
+)
+
+
 def _ineligible_attribution(
     evidence: RegressionBreadthInput,
+    reason: str = "coverage_parity_unavailable",
 ) -> RegressionAttribution:
     return RegressionAttribution(
         input=evidence,
         attributions=(),
-        eligibility=Eligibility(
-            eligible=False, reasons=("coverage_parity_unavailable",)
-        ),
+        eligibility=Eligibility(eligible=False, reasons=(reason,)),
         regression=None,
     )
 
@@ -104,18 +110,37 @@ def _innermost_symbol(
 def calculate_regression_breadth(
     evidence: RegressionBreadthInput,
 ) -> RegressionAttribution:
-    """Calculate G from failing canonical regressions and changed symbols only.
+    """Calculate G from newly broken canonical regressions and changed symbols.
 
-    Exact parity is required. Process-created failing regressions are attributable
-    only when the locked measurement includes coverage for their canonical nodes.
+    A regression is newly broken only when its identical test passed in the
+    prior checkpoint's canonical evaluation and fails now; inherited failures
+    are never attributed. A failing regression without an exact prior outcome
+    makes the transition ineligible. Exact parity is required, and
+    process-created newly broken regressions are attributable only when the
+    locked measurement includes coverage for their canonical nodes.
     """
     if not _parity_available(evidence):
         return _ineligible_attribution(evidence)
-    failed_nodes = frozenset(
+    prior: dict[str, set[RegressionOutcome]] = {}
+    for item in evidence.prior_outcomes:
+        prior.setdefault(item.node_id, set()).add(item.outcome)
+    failed_regression_nodes = frozenset(
         item.node_id
         for item in evidence.produced.outcomes
         if item.group_type == "Regression"
         and item.outcome in (RegressionOutcome.FAILED, RegressionOutcome.ERROR)
+    )
+    if any(
+        prior.get(node, set()) not in _PRIOR_DECIDED
+        for node in failed_regression_nodes
+    ):
+        return _ineligible_attribution(
+            evidence, "regression_prior_outcome_unavailable"
+        )
+    failed_nodes = frozenset(
+        node
+        for node in failed_regression_nodes
+        if prior[node] == {RegressionOutcome.PASSED}
     )
     coverage_nodes = _coverage_nodes(evidence.produced)
     if any(

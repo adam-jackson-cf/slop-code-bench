@@ -16,7 +16,28 @@ PLUGIN_ID = "slop-code-coverage-audit"
 _SUBPROCESS_COVERAGE_DIRECTORY = ".scbench/subprocess-coverage"
 _SUBPROCESS_COVERAGE_CONFIG = ".scbench/subprocess-coveragerc"
 _SUBPROCESS_COVERAGE_DATA = ".scbench/runtime-cache/coverage"
-_SUBPROCESS_STARTUP = "import coverage; coverage.process_startup()\n"
+_SUBPROCESS_STARTUP = """\
+import coverage
+
+coverage.process_startup()
+
+# This module shadows any sitecustomize later on sys.path; load the next one so
+# measurement does not change the behaviour of the process under test.
+import importlib.util as _util
+import os as _os
+import sys as _sys
+
+_here = _os.path.dirname(_os.path.abspath(__file__))
+for _entry in _sys.path:
+    _directory = _os.path.abspath(_entry or _os.curdir)
+    _candidate = _os.path.join(_directory, "sitecustomize.py")
+    if _directory != _here and _os.path.isfile(_candidate):
+        _spec = _util.spec_from_file_location("sitecustomize", _candidate)
+        _module = _util.module_from_spec(_spec)
+        _sys.modules["sitecustomize"] = _module
+        _spec.loader.exec_module(_module)
+        break
+"""
 
 
 def canonical_ledger_bytes(ledger: dict[str, object]) -> bytes:

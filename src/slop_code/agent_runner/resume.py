@@ -496,7 +496,10 @@ def detect_resume_point(
             )
             continue
 
-        if state == CheckpointState.RAN and snapshot_dir.exists():
+        if (
+            state in (CheckpointState.RAN, CheckpointState.SEED)
+            and snapshot_dir.exists()
+        ):
             # Check prompt matches if validation is enabled
             if (
                 can_validate_prompts

@@ -17,7 +17,9 @@ from slop_code.agent_runner import reporting
 from slop_code.agent_runner.agent import Agent
 from slop_code.agent_runner.agent import CheckpointInferenceResult
 from slop_code.agent_runner.agent import build_prompt_context
+from slop_code.agent_runner.continuation import names_from_seed
 from slop_code.agent_runner.models import AgentRunSpec
+from slop_code.agent_runner.models import ContinuationSeed
 from slop_code.agent_runner.models import UsageTracker
 from slop_code.agent_runner.reporting import AgentCheckpointSummary
 from slop_code.agent_runner.reporting import MetricsTracker
@@ -134,7 +136,10 @@ def create_agent_session(
 
 
 def get_checkpoints(
-    problem_config: ProblemConfig, output_path: Path
+    problem_config: ProblemConfig,
+    output_path: Path,
+    *,
+    continuation_seed: ContinuationSeed | None = None,
 ) -> Generator[tuple[CheckpointConfig, Path], None, None]:
     """Generator that yields checkpoints with their output directories.
 
@@ -152,10 +157,18 @@ def get_checkpoints(
         problem=problem_config.name,
         count=len(problem_config.checkpoints),
     )
+    present = set(
+        names_from_seed(
+            [name for name, _ in problem_config.iterate_checkpoint_items()],
+            continuation_seed,
+        )
+    )
     for (
         checkpoint_name,
         checkpoint,
     ) in problem_config.iterate_checkpoint_items():
+        if checkpoint_name not in present:
+            continue
         logger.debug(
             "Loading checkpoint",
             checkpoint_name=checkpoint_name,
@@ -1119,7 +1132,11 @@ class AgentRunner:
         # Failed evals already surfaced; tracked to avoid re-logging.
         reported_fails: set[str] = set()
         for idx, (checkpoint, checkpoint_save_dir) in enumerate(
-            get_checkpoints(self.run_spec.problem, self.output_path)
+            get_checkpoints(
+                self.run_spec.problem,
+                self.output_path,
+                continuation_seed=self.run_spec.continuation_seed,
+            )
         ):
             # Skip completed checkpoints when resuming
             if checkpoint.name in completed_set:

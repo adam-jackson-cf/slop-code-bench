@@ -133,6 +133,25 @@ class AgentCostLimits(BaseModel):
         )
 
 
+class ContinuationSeed(BaseModel):
+    """Fixed starting implementation for a controlled continuation run.
+
+    The checkpoint before ``start_checkpoint`` is materialised from
+    ``source_path`` and the agent's first checkpoint is ``start_checkpoint``.
+
+    Attributes:
+        source_path: Directory the seed snapshot was copied from.
+        start_checkpoint: First checkpoint the agent solves.
+        digest: Content digest of ``source_path`` taken when the run began.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_path: str
+    start_checkpoint: str
+    digest: str
+
+
 class AgentRunSpec(BaseModel):
     """Complete specification for running an agent on a problem.
 
@@ -208,4 +227,12 @@ class AgentRunSpec(BaseModel):
     model_name: Annotated[
         str | None,
         Field(default=None, description="Model name for prompt templates"),
+    ] = None
+    continuation_seed: Annotated[
+        ContinuationSeed | None,
+        Field(
+            description="Seeded start for a controlled continuation run; "
+            "earlier checkpoints are absent and the checkpoint before "
+            "start_checkpoint is a seed.",
+        ),
     ] = None

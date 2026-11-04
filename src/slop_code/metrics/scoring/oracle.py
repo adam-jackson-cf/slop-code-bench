@@ -1,8 +1,7 @@
-"""Immutable, read-only capture of the strict baseline artifacts."""
+"""Immutable, read-only capture of live canonical checkpoint artifacts."""
 
 from __future__ import annotations
 
-import base64
 import fcntl
 import hashlib
 import json
@@ -15,26 +14,6 @@ from typing import Any
 
 from slop_code.common.constants import MEASUREMENT_ANALYSIS_DIR
 from slop_code.common.constants import PENDING_ORACLES_DIR
-
-from .models import OracleArtifact
-from .models import OracleBaseline
-from .models import OracleBundle
-from .models import OracleCheckpointProjection
-
-BASELINE_DIRECTORY_NAMES = (
-    "strict-baseline-sol-20260831",
-    "strict-baseline-terra-20260831",
-    "strict-baseline-luna-20260831",
-)
-
-_TARGET_FILENAMES = frozenset(
-    {
-        "checkpoint_results.jsonl",
-        "overall_quality.json",
-        "files.jsonl",
-        "symbols.jsonl",
-    }
-)
 
 
 def _canonical_json_bytes(value: Any) -> bytes:
@@ -82,85 +61,6 @@ def _checkpoint_id(
     if path.parent.name == "quality_analysis":
         return path.parent.parent.name
     return f"{relative_path}#{ordinal}"
-
-
-def _projections(
-    path: Path, relative_path: str, content: bytes
-) -> tuple[OracleCheckpointProjection, ...]:
-    """Project ordered report records into their typed canonical form."""
-    return tuple(
-        OracleCheckpointProjection(
-            checkpoint_id=_checkpoint_id(
-                path, relative_path, report_row, ordinal
-            ),
-            ordinal=ordinal,
-            output_sha256=hashlib.sha256(
-                _canonical_json_bytes(report_row)
-            ).hexdigest(),
-            report_rows=_projection_rows(report_row),
-        )
-        for ordinal, report_row in enumerate(_report_rows(path, content))
-    )
-
-
-def _artifact_paths(baseline_directory: Path) -> tuple[Path, ...]:
-    checkpoint_results = baseline_directory / "checkpoint_results.jsonl"
-    if not checkpoint_results.is_file():
-        raise ValueError(f"missing baseline artifact: {checkpoint_results}")
-
-    quality_artifacts = tuple(
-        path
-        for path in baseline_directory.rglob("*")
-        if path.is_file()
-        and path.parent.name == "quality_analysis"
-        and path.name in _TARGET_FILENAMES - {"checkpoint_results.jsonl"}
-    )
-    return (
-        checkpoint_results,
-        *sorted(quality_artifacts, key=lambda path: path.as_posix()),
-    )
-
-
-def capture_baseline_oracle(repository_root: Path) -> OracleBundle:
-    """Capture the three immutable baseline archives using repository-relative paths."""
-    root = repository_root.resolve()
-    baselines: list[OracleBaseline] = []
-    for baseline_name in BASELINE_DIRECTORY_NAMES:
-        baseline_directory = root / "experiments" / baseline_name
-        if not baseline_directory.is_dir():
-            raise ValueError(
-                f"missing baseline directory: {baseline_directory}"
-            )
-        artifacts: list[OracleArtifact] = []
-        for path in _artifact_paths(baseline_directory):
-            content = path.read_bytes()
-            relative_path = path.relative_to(root).as_posix()
-            artifacts.append(
-                OracleArtifact(
-                    relative_path=relative_path,
-                    sha256=hashlib.sha256(content).hexdigest(),
-                    bytes_base64=base64.b64encode(content).decode("ascii"),
-                    projections=_projections(path, relative_path, content),
-                )
-            )
-        baselines.append(
-            OracleBaseline(name=baseline_name, artifacts=tuple(artifacts))
-        )
-    return OracleBundle(baselines=tuple(baselines))
-
-
-def serialize_baseline_oracle(oracle: OracleBundle) -> bytes:
-    """Serialize an oracle in its checked-fixture canonical representation."""
-    return _canonical_json_bytes(oracle.model_dump(mode="json")) + b"\n"
-
-
-def validate_baseline_oracle(
-    repository_root: Path, oracle: OracleBundle
-) -> None:
-    """Raise when archived bytes, hashes, paths, or decoded report rows differ."""
-    captured = capture_baseline_oracle(repository_root)
-    if serialize_baseline_oracle(captured) != serialize_baseline_oracle(oracle):
-        raise ValueError("baseline oracle does not match archived artifacts")
 
 
 _LIVE_ORACLE_LOCK_FILENAME = "oracle.lock"
